@@ -127,6 +127,10 @@ export interface MetacognitionState {
   reasoningComplexity: 'simple' | 'moderate' | 'complex' | 'expert';
   shouldDecompose: boolean;
   shouldSeekClarification: boolean;
+  shouldSearchWeb: boolean;
+  isTimeSensitive: boolean;
+  ambiguityScore: number;
+  ambiguityReasons: string[];
   confidenceCalibration: number;
   cognitiveLoad: number;
 }

@@ -42,6 +42,8 @@ const Colors = {
     toolCodeEval: '#2DD4BF',
     toolCognition: '#E879F9',
     toolEmotion: '#FB923C',
+    toolClarification: '#38BDF8',
+    toolUncertainty: '#FDA4AF',
   },
 };
 

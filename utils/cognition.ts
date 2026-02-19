@@ -161,6 +161,29 @@ export function analyzeEmotion(text: string): EmotionalState {
   };
 }
 
+const TIME_SENSITIVE_PATTERNS = [
+  /\b(today|tonight|this week|this month|this year|right now|currently|latest|recent|new|just|update)\b/i,
+  /\b(news|price|stock|score|weather|election|trending|released|announced|launched)\b/i,
+  /\b(2024|2025|2026|2027)\b/,
+  /\b(yesterday|last week|last month|ago)\b/i,
+];
+
+const AMBIGUITY_SIGNALS = [
+  { pattern: /^(it|this|that|these|those|they|them|he|she)\b/i, weight: 0.8, reason: 'starts with pronoun without referent' },
+  { pattern: /^\w{1,8}[.!?]?$/i, weight: 0.7, reason: 'extremely short query' },
+  { pattern: /\b(the thing|the stuff|the one|you know)\b/i, weight: 0.6, reason: 'vague reference' },
+  { pattern: /^(do it|fix it|change it|make it|update it|help)$/i, weight: 0.9, reason: 'imperative without object' },
+  { pattern: /\b(or something|or whatever|idk|not sure|maybe)\b/i, weight: 0.4, reason: 'user expresses own uncertainty' },
+  { pattern: /\b(what about|how about)\b.*[^?]$/i, weight: 0.5, reason: 'incomplete question' },
+];
+
+const KNOWLEDGE_LIMIT_SIGNALS = [
+  /\b(proprietary|internal|private|confidential|unpublished|secret)\b/i,
+  /\b(my company|my team|my project|my codebase|my database)\b/i,
+  /\b(specific|exact|precise)\s+(number|date|time|price|cost|salary|address)\b/i,
+  /\b(real-?time|live|current|up-?to-?date|right now)\b/i,
+];
+
 export function assessMetacognition(userMessage: string, conversationLength: number): MetacognitionState {
   const msgLen = userMessage.length;
   const questionMarks = (userMessage.match(/\?/g) ?? []).length;
@@ -185,24 +208,64 @@ export function assessMetacognition(userMessage: string, conversationLength: num
   }
 
   const shouldDecompose = complexity === 'complex' || complexity === 'expert' || msgLen > 400;
-  const shouldSeekClarification = (questionMarks === 0 && msgLen < 15) || /\b(it|this|that|those|them)\b/i.test(userMessage) && msgLen < 30;
 
-  const uncertaintyLevel =
+  let ambiguityScore = 0;
+  const ambiguityReasons: string[] = [];
+  for (const signal of AMBIGUITY_SIGNALS) {
+    if (signal.pattern.test(userMessage)) {
+      ambiguityScore = Math.max(ambiguityScore, signal.weight);
+      ambiguityReasons.push(signal.reason);
+    }
+  }
+  if (questionMarks === 0 && msgLen < 15) {
+    ambiguityScore = Math.max(ambiguityScore, 0.6);
+    ambiguityReasons.push('very short non-question');
+  }
+  if (conversationLength === 0 && /\b(it|this|that|those|them)\b/i.test(userMessage)) {
+    ambiguityScore = Math.max(ambiguityScore, 0.85);
+    ambiguityReasons.push('pronoun reference with no prior context');
+  }
+
+  const shouldSeekClarification = ambiguityScore >= 0.6;
+
+  const isTimeSensitive = TIME_SENSITIVE_PATTERNS.some(p => p.test(userMessage));
+  const hitsKnowledgeLimit = KNOWLEDGE_LIMIT_SIGNALS.some(p => p.test(userMessage));
+  const shouldSearchWeb = isTimeSensitive || hitsKnowledgeLimit;
+
+  let uncertaintyLevel =
     complexity === 'expert' ? 0.6 :
     complexity === 'complex' ? 0.4 :
     complexity === 'moderate' ? 0.2 : 0.1;
+
+  if (isTimeSensitive) uncertaintyLevel = Math.min(1, uncertaintyLevel + 0.25);
+  if (hitsKnowledgeLimit) uncertaintyLevel = Math.min(1, uncertaintyLevel + 0.2);
+  if (ambiguityScore > 0.5) uncertaintyLevel = Math.min(1, uncertaintyLevel + ambiguityScore * 0.3);
 
   const cognitiveLoad = Math.min(1, (msgLen / 500) * 0.3 + (conjunctions / 5) * 0.3 + (questionMarks / 3) * 0.2 + (conversationLength / 20) * 0.2);
 
   const confidenceCalibration = 1 - uncertaintyLevel * 0.5;
 
-  console.log('[COGNITION] Metacognition:', { complexity, shouldDecompose, uncertaintyLevel: uncertaintyLevel.toFixed(2), cognitiveLoad: cognitiveLoad.toFixed(2) });
+  console.log('[COGNITION] Metacognition:', {
+    complexity,
+    shouldDecompose,
+    shouldSeekClarification,
+    shouldSearchWeb,
+    isTimeSensitive,
+    ambiguityScore: ambiguityScore.toFixed(2),
+    ambiguityReasons,
+    uncertaintyLevel: uncertaintyLevel.toFixed(2),
+    cognitiveLoad: cognitiveLoad.toFixed(2),
+  });
 
   return {
     uncertaintyLevel,
     reasoningComplexity: complexity,
     shouldDecompose,
     shouldSeekClarification,
+    shouldSearchWeb,
+    isTimeSensitive,
+    ambiguityScore,
+    ambiguityReasons,
     confidenceCalibration,
     cognitiveLoad,
   };
@@ -521,7 +584,7 @@ export function buildMetacognitionInjection(meta: MetacognitionState): string {
   const parts: string[] = [];
 
   if (meta.uncertaintyLevel > 0.4) {
-    parts.push(`Uncertainty is elevated (${(meta.uncertaintyLevel * 100).toFixed(0)}%). Express calibrated confidence — hedge appropriately on uncertain claims. Distinguish known facts from inferences.`);
+    parts.push(`Uncertainty is elevated (${(meta.uncertaintyLevel * 100).toFixed(0)}%). Express calibrated confidence — hedge appropriately on uncertain claims. Distinguish known facts from inferences. Use phrases like "I believe" or "I'm not certain" where appropriate.`);
   }
 
   if (meta.shouldDecompose) {
@@ -529,11 +592,20 @@ export function buildMetacognitionInjection(meta: MetacognitionState): string {
   }
 
   if (meta.shouldSeekClarification) {
-    parts.push(`The query may be ambiguous. Consider asking a clarifying question, but still provide a best-guess answer.`);
+    const reasons = meta.ambiguityReasons?.length ? ` (Signals: ${meta.ambiguityReasons.join(', ')})` : '';
+    parts.push(`IMPORTANT: The query is ambiguous${reasons}. Use the askClarification tool to ask the user what they mean. Provide a brief best-guess answer alongside the clarification request.`);
+  }
+
+  if (meta.shouldSearchWeb) {
+    parts.push(`This query likely requires current/external information. Use webSearch BEFORE answering. ${meta.isTimeSensitive ? 'The topic is time-sensitive — do NOT rely on training data alone.' : 'The user may be asking about something outside your knowledge.'}`);
   }
 
   if (meta.cognitiveLoad > 0.7) {
     parts.push(`High cognitive load detected. Provide clear structure (headers, numbered lists) to aid comprehension.`);
+  }
+
+  if (meta.uncertaintyLevel > 0.7) {
+    parts.push(`Very high uncertainty. Be forthright: if you genuinely don't know, say so. Search the web or ask for clarification rather than guessing.`);
   }
 
   return parts.length > 0 ? '## Self-Monitoring\n' + parts.join('\n') : '';
