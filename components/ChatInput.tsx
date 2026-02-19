@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Send, Plus, Mic, X, MicOff } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
 import Colors from '@/constants/colors';
@@ -25,11 +26,12 @@ export interface ChatFile {
 interface ChatInputProps {
   onSend: (text: string, files?: ChatFile[]) => void;
   disabled?: boolean;
+  onOpenVoiceMode?: () => void;
 }
 
 const STT_URL = 'https://toolkit.rork.com/stt/transcribe/';
 
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
+export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachedImages, setAttachedImages] = useState<ChatFile[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -342,6 +344,13 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
                 style={[styles.actionBtn, isRecording && styles.recordingBtn]}
                 activeOpacity={0.6}
                 onPress={toggleRecording}
+                onLongPress={() => {
+                  if (onOpenVoiceMode && !disabled && !isTranscribing) {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                    onOpenVoiceMode();
+                  }
+                }}
+                delayLongPress={400}
                 disabled={disabled}
                 testID="mic-button"
               >

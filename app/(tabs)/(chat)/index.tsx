@@ -8,6 +8,7 @@ import ChatBubble from '@/components/ChatBubble';
 import ToolCard from '@/components/ToolCard';
 import ChatInput, { ChatFile } from '@/components/ChatInput';
 import EmptyState from '@/components/EmptyState';
+import VoiceMode from '@/components/VoiceMode';
 import { useConversations } from '@/providers/ConversationsProvider';
 import { saveMessages, loadMessages } from '@/utils/conversations';
 import {
@@ -278,6 +279,7 @@ export default function ChatScreen() {
   }), [addMemory]);
 
   const [dismissed, setDismissed] = useState(false);
+  const [voiceModeVisible, setVoiceModeVisible] = useState(false);
 
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
@@ -448,7 +450,24 @@ export default function ChatScreen() {
           </View>
         </View>
       )}
-      <ChatInput onSend={handleSend} disabled={isStreaming} />
+      <ChatInput onSend={handleSend} disabled={isStreaming} onOpenVoiceMode={() => setVoiceModeVisible(true)} />
+      <VoiceMode
+        visible={voiceModeVisible}
+        onClose={() => setVoiceModeVisible(false)}
+        onSend={(text) => {
+          handleSend(text);
+        }}
+        isResponding={isStreaming}
+        lastAssistantText={
+          messages.length > 0
+            ? ((messages[messages.length - 1] as any)?.parts
+                ?.filter((p: any) => p.type === 'text')
+                .map((p: any) => p.text)
+                .join(' ')
+                ?.substring(0, 200) ?? '')
+            : ''
+        }
+      />
     </View>
   );
 }
