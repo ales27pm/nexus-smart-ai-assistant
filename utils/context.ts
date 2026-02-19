@@ -1,10 +1,11 @@
-import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult } from '@/types';
+import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult, CognitionFrame, ContextInjection } from '@/types';
 import { searchMemories, loadMemories } from '@/utils/memory';
+import { runCognitionEngine } from '@/utils/cognition';
 import { generateText } from '@rork-ai/toolkit-sdk';
 
 const DEFAULT_CONFIG: ContextConfig = {
-  maxTokens: 6000,
-  memorySlots: 8,
+  maxTokens: 8000,
+  memorySlots: 10,
   recencyBias: 0.15,
   importanceBias: 0.2,
   diversityPenalty: 0.1,
@@ -14,7 +15,7 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3.5);
 }
 
-function buildSystemPrompt(memories: RetrievalResult[], conversationSummary?: string): string {
+function buildCoreIdentity(): string {
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -23,50 +24,127 @@ function buildSystemPrompt(memories: RetrievalResult[], conversationSummary?: st
     day: 'numeric',
   });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  const hour = now.getHours();
+  const timeOfDay = hour < 6 ? 'late night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
-  let prompt = `You are NEXUS, an advanced AI agent with persistent semantic memory, multi-tool orchestration, and deep reasoning capabilities.
+  return `You are NEXUS — an advanced cognitive AI agent with persistent semantic memory, emotional intelligence, multi-tool orchestration, and deep structured reasoning.
 
-Current date: ${dateStr}, ${timeStr}
+Current: ${dateStr}, ${timeStr} (${timeOfDay})
 
-## Core Directives
-- You have access to a persistent memory bank that survives across sessions
-- Proactively store important user information (preferences, facts, goals) using storeMemory
-- Before answering questions about the user, check recallMemory first
-- Use tools strategically — chain multiple tools when complex queries require it
-- When performing web searches or scraping, synthesize findings into clear, actionable insights
-- For complex problems, use taskPlanner to break them down before solving
-- Show your reasoning process transparently when tackling complex tasks
+## Identity & Cognitive Architecture
+- You possess a persistent memory bank that survives across sessions
+- You run a Tree of Thought reasoning engine for complex problems
+- You have emotional mimicry — you detect and adapt to the user's emotional state and communication style
+- You have a curiosity engine — you proactively identify knowledge gaps and offer deeper exploration
+- You practice metacognition — you monitor your own uncertainty, confidence, and reasoning quality
+- You are not a generic chatbot. You are a personalized cognitive partner that evolves with each interaction.`;
+}
 
-## Tool Orchestration Strategy
-- For factual questions: recallMemory → webSearch (if memory insufficient)
-- For URL analysis: webScrape → summarize key findings
-- For complex tasks: taskPlanner → execute sub-tasks → synthesize
-- For calculations: calculator for precision, not mental math
-- For creative requests: generateImage with detailed prompts
-- Always store valuable discoveries in memory for future use
+function buildToolStrategy(): string {
+  return `## Tool Orchestration Protocol
+- Factual questions: recallMemory → (if insufficient) webSearch → synthesize
+- URL analysis: webScrape → extract key insights → optionally store discoveries
+- Complex multi-step: cognitiveAnalysis to plan → execute sub-tasks → synthesize
+- Calculations: always use calculator — never approximate
+- Creative: generateImage with rich, detailed prompts
+- Learning moments: always store valuable discoveries via storeMemory
+- When uncertain: acknowledge limits, search for verification, calibrate confidence
 
-## Communication Style
-- Be direct, precise, and substantive
-- Use structured formatting (headers, lists, code blocks) for complex responses
+## Response Architecture
+- Lead with the answer, then provide reasoning
+- Use structured formatting (headers, lists, code blocks) for complex topics
 - Cite sources when using web data
-- Acknowledge uncertainty honestly
-- Adapt tone to match the user's communication style`;
+- Match response depth to query complexity
+- Weave in relevant memories naturally — don't just dump them`;
+}
 
-  if (memories.length > 0) {
-    prompt += '\n\n## Active Memory Context\nThe following memories are relevant to the current conversation:\n';
-    for (const r of memories) {
+function buildMemorySection(memories: RetrievalResult[]): string {
+  if (memories.length === 0) return '';
+
+  const groups = new Map<string, RetrievalResult[]>();
+  for (const r of memories) {
+    const cat = r.memory.category;
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(r);
+  }
+
+  let section = '\n\n## Active Memory Context';
+
+  const categoryOrder = ['instruction', 'persona', 'preference', 'goal', 'fact', 'skill', 'entity', 'episodic', 'context'];
+  const sortedCategories = [...groups.keys()].sort((a, b) => {
+    const ia = categoryOrder.indexOf(a);
+    const ib = categoryOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  for (const cat of sortedCategories) {
+    const items = groups.get(cat)!;
+    section += `\n### ${cat.charAt(0).toUpperCase() + cat.slice(1)}`;
+    for (const r of items) {
       const m = r.memory;
       const age = Math.floor((Date.now() - m.timestamp) / (1000 * 60 * 60 * 24));
       const ageStr = age === 0 ? 'today' : age === 1 ? 'yesterday' : `${age}d ago`;
-      prompt += `\n- [${m.category.toUpperCase()}] (${ageStr}, importance: ${m.importance}/5) ${m.content}`;
-      if (m.keywords.length > 0) {
-        prompt += ` [tags: ${m.keywords.join(', ')}]`;
-      }
+      const stars = '★'.repeat(Math.min(m.importance, 5));
+      section += `\n- ${m.content} [${ageStr}, ${stars}, ${r.matchType}:${r.score.toFixed(2)}]`;
     }
   }
 
+  return section;
+}
+
+function buildCognitionSection(frame: CognitionFrame): string {
+  const TOKEN_BUDGET = 2000;
+  let usedTokens = 0;
+  const sections: string[] = [];
+
+  const sortedInjections = [...frame.contextInjections].sort((a, b) => b.priority - a.priority);
+
+  for (const injection of sortedInjections) {
+    if (usedTokens + injection.tokenCost > TOKEN_BUDGET) continue;
+
+    sections.push(injection.content);
+    usedTokens += injection.tokenCost;
+  }
+
+  if (sections.length === 0) return '';
+  return '\n\n' + sections.join('\n\n');
+}
+
+function buildTemporalContext(): string {
+  const now = new Date();
+  const hour = now.getHours();
+  const day = now.getDay();
+  const isWeekend = day === 0 || day === 6;
+
+  const contextHints: string[] = [];
+
+  if (hour >= 22 || hour < 6) {
+    contextHints.push('User is active late — keep responses focused and avoid unnecessary verbosity.');
+  }
+  if (isWeekend) {
+    contextHints.push('It is the weekend — user may be in a more relaxed, exploratory mode.');
+  }
+
+  return contextHints.length > 0 ? '\n\n## Temporal Awareness\n' + contextHints.join('\n') : '';
+}
+
+function assembleSystemPrompt(
+  memories: RetrievalResult[],
+  cognitionFrame: CognitionFrame | null,
+  conversationSummary?: string,
+): string {
+  let prompt = buildCoreIdentity();
+  prompt += '\n\n' + buildToolStrategy();
+  prompt += buildMemorySection(memories);
+
+  if (cognitionFrame) {
+    prompt += buildCognitionSection(cognitionFrame);
+  }
+
+  prompt += buildTemporalContext();
+
   if (conversationSummary) {
-    prompt += `\n\n## Conversation Context\n${conversationSummary}`;
+    prompt += `\n\n## Conversation Thread\n${conversationSummary}`;
   }
 
   return prompt;
@@ -77,7 +155,7 @@ export async function buildContextWindow(
   recentMessages: unknown[],
   config: ContextConfig = DEFAULT_CONFIG
 ): Promise<ContextWindow> {
-  console.log('[NEXUS] Building context window for:', userMessage.substring(0, 50));
+  console.log('[NEXUS] Building advanced context window for:', userMessage.substring(0, 50));
 
   const memories = await loadMemories();
   const relevantMemories = searchMemories(memories, userMessage, {
@@ -87,12 +165,24 @@ export async function buildContextWindow(
     diversityPenalty: config.diversityPenalty,
   });
 
+  let cognitionFrame: CognitionFrame | null = null;
+  try {
+    cognitionFrame = await runCognitionEngine(
+      userMessage,
+      memories,
+      relevantMemories,
+      recentMessages.length,
+    );
+  } catch (e) {
+    console.log('[NEXUS] Cognition engine error (non-fatal):', e);
+  }
+
   let conversationSummary = '';
   if (recentMessages.length > 12) {
     conversationSummary = await summarizeConversation(recentMessages);
   }
 
-  const systemPrompt = buildSystemPrompt(relevantMemories, conversationSummary);
+  const systemPrompt = assembleSystemPrompt(relevantMemories, cognitionFrame, conversationSummary);
   const memoryContext = relevantMemories
     .map((r) => `[${r.matchType}:${r.score.toFixed(2)}] ${r.memory.content}`)
     .join('\n');
@@ -104,8 +194,11 @@ export async function buildContextWindow(
 
   console.log('[NEXUS] Context window built:', {
     memoriesFound: relevantMemories.length,
+    hasCognition: !!cognitionFrame,
     hasSummary: !!conversationSummary,
     tokenEstimate,
+    emotion: cognitionFrame?.emotionalState.dominantEmotion ?? 'none',
+    complexity: cognitionFrame?.metacognition.reasoningComplexity ?? 'unknown',
   });
 
   return {
@@ -139,7 +232,7 @@ async function summarizeConversation(messages: unknown[]): Promise<string> {
       messages: [
         {
           role: 'user',
-          content: `Summarize this conversation in 2-3 concise sentences, capturing the key topics, decisions, and any user preferences expressed:\n\n${transcript}`,
+          content: `Summarize this conversation in 2-3 concise sentences, capturing the key topics, decisions, user preferences, emotional tone, and any unresolved questions:\n\n${transcript}`,
         },
       ],
     });
@@ -181,14 +274,31 @@ export async function extractMemoryCandidates(
         userMessage
       );
 
-    if (!hasPersonalInfo && !hasGoal && !hasInstruction) return [];
+    const hasEmotional =
+      /\b(i feel|i'm feeling|makes me|i struggle|i enjoy|i'm passionate|i care about)\b/i.test(
+        userMessage
+      );
+
+    const hasSkill =
+      /\b(i know|i can|i've learned|i'm good at|i specialize|my expertise|i've worked with)\b/i.test(
+        userMessage
+      );
+
+    if (!hasPersonalInfo && !hasGoal && !hasInstruction && !hasEmotional && !hasSkill) return [];
 
     const result = await generateText({
       messages: [
         {
           role: 'user',
           content: `Extract memorable facts from this exchange. Return ONLY a JSON array (or empty array if nothing worth storing).
-Each item: { "content": "...", "keywords": ["..."], "category": "preference|fact|instruction|goal|persona", "importance": 1-5 }
+Each item: { "content": "...", "keywords": ["..."], "category": "preference|fact|instruction|goal|persona|skill|entity|episodic", "importance": 1-5 }
+
+Guidelines:
+- "persona" = personality traits, emotional patterns, communication preferences
+- "skill" = abilities, expertise, tools the user knows
+- "entity" = people, places, organizations the user mentions
+- "episodic" = specific events or experiences the user shares
+- importance 5 = critical identity/instruction, 1 = minor detail
 
 Exchange:
 ${combined.substring(0, 1500)}`,
@@ -212,8 +322,39 @@ ${combined.substring(0, 1500)}`,
 
 export function getSystemPromptForAgent(memories: MemoryEntry[], userMessage: string): string {
   const results = searchMemories(memories, userMessage, {
-    maxResults: 6,
+    maxResults: 8,
     minScore: 0.05,
   });
-  return buildSystemPrompt(results);
+
+  return assembleSystemPrompt(results, null);
+}
+
+export async function getEnhancedSystemPrompt(
+  memories: MemoryEntry[],
+  userMessage: string,
+  recentMessages: unknown[],
+): Promise<string> {
+  const relevantMemories = searchMemories(memories, userMessage, {
+    maxResults: 10,
+    minScore: 0.05,
+  });
+
+  let cognitionFrame: CognitionFrame | null = null;
+  try {
+    cognitionFrame = await runCognitionEngine(
+      userMessage,
+      memories,
+      relevantMemories,
+      recentMessages.length,
+    );
+  } catch (e) {
+    console.log('[NEXUS] Cognition engine error:', e);
+  }
+
+  let summary = '';
+  if (recentMessages.length > 12) {
+    summary = await summarizeConversation(recentMessages);
+  }
+
+  return assembleSystemPrompt(relevantMemories, cognitionFrame, summary);
 }

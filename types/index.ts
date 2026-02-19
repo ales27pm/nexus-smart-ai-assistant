@@ -63,3 +63,70 @@ export interface ContextConfig {
   importanceBias: number;
   diversityPenalty: number;
 }
+
+export type EmotionalValence = 'positive' | 'negative' | 'neutral' | 'mixed';
+export type EmotionalArousal = 'high' | 'medium' | 'low';
+export type CommunicationStyle = 'formal' | 'casual' | 'technical' | 'creative' | 'urgent' | 'reflective';
+
+export interface EmotionalState {
+  valence: EmotionalValence;
+  arousal: EmotionalArousal;
+  dominantEmotion: string;
+  confidence: number;
+  style: CommunicationStyle;
+  empathyLevel: number;
+}
+
+export interface ThoughtBranch {
+  id: string;
+  hypothesis: string;
+  reasoning: string;
+  confidence: number;
+  evidence: string[];
+  counterpoints: string[];
+  children: ThoughtBranch[];
+  depth: number;
+  pruned: boolean;
+}
+
+export interface ThoughtTree {
+  root: string;
+  branches: ThoughtBranch[];
+  bestPath: string[];
+  explorationDepth: number;
+  convergenceScore: number;
+}
+
+export interface CuriositySignal {
+  topic: string;
+  knowledgeGap: number;
+  relevance: number;
+  explorationPriority: number;
+  suggestedQuestions: string[];
+  relatedConcepts: string[];
+}
+
+export interface CognitionFrame {
+  emotionalState: EmotionalState;
+  thoughtTree: ThoughtTree | null;
+  curiositySignals: CuriositySignal[];
+  contextInjections: ContextInjection[];
+  metacognition: MetacognitionState;
+  timestamp: number;
+}
+
+export interface ContextInjection {
+  source: 'memory' | 'emotion' | 'curiosity' | 'thought_tree' | 'persona' | 'temporal' | 'meta';
+  content: string;
+  priority: number;
+  tokenCost: number;
+}
+
+export interface MetacognitionState {
+  uncertaintyLevel: number;
+  reasoningComplexity: 'simple' | 'moderate' | 'complex' | 'expert';
+  shouldDecompose: boolean;
+  shouldSeekClarification: boolean;
+  confidenceCalibration: number;
+  cognitiveLoad: number;
+}

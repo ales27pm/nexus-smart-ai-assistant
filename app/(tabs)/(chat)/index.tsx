@@ -18,7 +18,8 @@ import {
   saveMemories,
   deduplicateMemories,
 } from '@/utils/memory';
-import { extractMemoryCandidates, getSystemPromptForAgent } from '@/utils/context';
+import { extractMemoryCandidates, getEnhancedSystemPrompt } from '@/utils/context';
+import { analyzeEmotion, assessMetacognition, buildThoughtTree, detectCuriosity, buildEmotionalMimicry } from '@/utils/cognition';
 import { MemoryEntry, MemoryCategory } from '@/types';
 
 export default function ChatScreen() {
@@ -314,6 +315,59 @@ export default function ChatScreen() {
         return `Summarize the following in ${style} style (target ~${maxLen} words):\n\n${input.content.substring(0, 4000)}`;
       },
     }),
+
+    cognitiveAnalysis: createRorkTool({
+      description: "Engage the Tree of Thought reasoning engine for complex, multi-faceted problems. Use when the query requires structured decomposition, exploring multiple solution paths, weighing trade-offs, or deep systematic analysis. Ideal for 'how should I approach...', design decisions, strategic planning, and nuanced questions.",
+      zodSchema: z.object({
+        problem: z.string().describe("The complex problem or question to reason through"),
+        constraints: z.array(z.string()).optional().describe("Known constraints or boundary conditions"),
+        preferredApproach: z.enum(['analytical', 'creative', 'balanced', 'adversarial']).optional().describe("Reasoning style"),
+      }),
+      async execute(input: { problem: string; constraints?: string[]; preferredApproach?: string }) {
+        console.log('[NEXUS] Cognitive analysis:', input.problem.substring(0, 60));
+        const memories = await loadMemories();
+        const relevant = searchMemories(memories, input.problem, { maxResults: 5 });
+        const meta = assessMetacognition(input.problem, 0);
+        const tree = buildThoughtTree(input.problem, relevant, meta);
+
+        const approach = input.preferredApproach ?? 'balanced';
+        const constraintStr = input.constraints?.length ? `\nConstraints: ${input.constraints.join('; ')}` : '';
+
+        const branchSummaries = tree.branches
+          .filter(b => !b.pruned)
+          .slice(0, 4)
+          .map(b => {
+            let s = `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`;
+            if (b.evidence.length > 0) s += ` — Evidence: ${b.evidence.slice(0, 2).join('; ')}`;
+            if (b.counterpoints.length > 0) s += ` — Caution: ${b.counterpoints[0]}`;
+            if (b.children.length > 0) s += ` — Sub-paths: ${b.children.map(c => c.hypothesis).join(', ')}`;
+            return s;
+          })
+          .join('\n');
+
+        return `## Tree of Thought Analysis\nProblem: "${input.problem}"${constraintStr}\nApproach: ${approach} | Complexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\nReasoning Branches:\n${branchSummaries}\n\nProvide a comprehensive response that:\n1. Explores the highest-confidence paths\n2. Addresses counterpoints honestly\n3. Synthesizes into a clear recommendation\n4. Notes remaining uncertainties`;
+      },
+    }),
+
+    emotionalPulse: createRorkTool({
+      description: "Analyze the emotional undertone of the conversation and adapt response strategy. Use when you sense the user is frustrated, excited, confused, anxious, or when emotional attunement would improve the interaction. Also use proactively when tone shifts.",
+      zodSchema: z.object({
+        context: z.string().describe("The user message or conversation context to analyze"),
+        respondWith: z.enum(['empathy', 'encouragement', 'calm', 'enthusiasm', 'directness']).optional().describe("Desired response tone"),
+      }),
+      async execute(input: { context: string; respondWith?: string }) {
+        console.log('[NEXUS] Emotional pulse check:', input.context.substring(0, 60));
+        const emotion = analyzeEmotion(input.context);
+        const mimicry = buildEmotionalMimicry(emotion);
+        const curiosity = detectCuriosity(input.context, await loadMemories(), emotion);
+
+        const curiosityHints = curiosity.length > 0
+          ? `\nKnowledge gaps detected: ${curiosity.map(c => `"${c.topic}" (gap: ${(c.knowledgeGap * 100).toFixed(0)}%)`).join(', ')}`
+          : '';
+
+        return `## Emotional Intelligence Report\nValence: ${emotion.valence} | Arousal: ${emotion.arousal} | Dominant: ${emotion.dominantEmotion}\nCommunication Style: ${emotion.style} | Empathy Level: ${(emotion.empathyLevel * 100).toFixed(0)}%\nConfidence: ${(emotion.confidence * 100).toFixed(0)}%${curiosityHints}\n\nAdaptive Tone Guidance:\n${mimicry}\n\n${input.respondWith ? `User-requested tone: ${input.respondWith}. Blend this with the detected emotional needs.` : 'Adapt naturally to the detected emotional state.'}`;
+      },
+    }),
   }), [addMemory]);
 
   const [dismissed, setDismissed] = useState(false);
@@ -426,13 +480,13 @@ export default function ChatScreen() {
     hasLoadedRef.current = true;
 
     const memories = await loadMemories();
-    const systemPrompt = getSystemPromptForAgent(memories, text);
+    const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages);
 
     sendMessage({
       text: text.trim(),
       systemPrompt,
     } as any);
-  }, [sendMessage]);
+  }, [sendMessage, messages]);
 
   const renderMessage = useCallback(({ item }: { item: any }) => {
     return (

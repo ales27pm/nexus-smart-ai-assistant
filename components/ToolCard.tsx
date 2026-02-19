@@ -10,6 +10,8 @@ import {
   Calculator,
   ListChecks,
   FileText,
+  Sparkles,
+  Heart,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
@@ -30,6 +32,8 @@ const TOOL_CONFIG: Record<string, { label: string; color: string; icon: React.El
   calculator: { label: 'Calculator', color: Colors.dark.toolCalculator, icon: Calculator, verb: 'Calculating' },
   taskPlanner: { label: 'Task Planner', color: Colors.dark.toolTaskPlan, icon: ListChecks, verb: 'Planning' },
   summarize: { label: 'Summarize', color: Colors.dark.toolSummarize, icon: FileText, verb: 'Summarizing' },
+  cognitiveAnalysis: { label: 'Cognition Engine', color: Colors.dark.toolCognition, icon: Sparkles, verb: 'Reasoning' },
+  emotionalPulse: { label: 'Emotional Pulse', color: Colors.dark.toolEmotion, icon: Heart, verb: 'Sensing' },
 };
 
 export default React.memo(function ToolCard({ toolName, state, input, output }: ToolCardProps) {
