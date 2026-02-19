@@ -41,8 +41,11 @@ interface VoiceModeProps {
 const SILENCE_THRESHOLD = -35;
 const SILENCE_DURATION_MS = 1800;
 const MIN_RECORDING_MS = 700;
+const MAX_RECORDING_MS = 60000;
 const ORB_SIZE = 160;
 const SPEECH_CHUNK_SIZE = 120;
+const TRANSCRIPTION_TIMEOUT_MS = 15000;
+const MAX_RETRIES = 2;
 
 export default function VoiceMode({
   visible,
@@ -99,6 +102,9 @@ export default function VoiceMode({
   const isSpeakingChunkRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const autoStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxRecordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transcriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
 
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -116,6 +122,7 @@ export default function VoiceMode({
       spokenLengthRef.current = 0;
       speakQueueRef.current = [];
       isSpeakingChunkRef.current = false;
+      retryCountRef.current = 0;
       orbScale.setValue(1);
       orbOpacity.setValue(0.6);
       fadeAnim.setValue(0);
@@ -128,10 +135,7 @@ export default function VoiceMode({
       }, 600);
     } else {
       isActiveRef.current = false;
-      if (autoStartTimerRef.current) {
-        clearTimeout(autoStartTimerRef.current);
-        autoStartTimerRef.current = null;
-      }
+      clearAllTimers();
       stopSpeaking();
       cleanupAll();
     }
@@ -196,6 +200,21 @@ export default function VoiceMode({
     }
     return () => stopAllAnims();
   }, [voiceState]);
+
+  const clearAllTimers = useCallback(() => {
+    if (autoStartTimerRef.current) {
+      clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
+    if (maxRecordingTimerRef.current) {
+      clearTimeout(maxRecordingTimerRef.current);
+      maxRecordingTimerRef.current = null;
+    }
+    if (transcriptionTimeoutRef.current) {
+      clearTimeout(transcriptionTimeoutRef.current);
+      transcriptionTimeoutRef.current = null;
+    }
+  }, []);
 
   const stopAllAnims = useCallback(() => {
     animLoopsRef.current.forEach(a => a.stop());
@@ -453,7 +472,13 @@ export default function VoiceMode({
       onError: (err) => {
         console.log('[VoiceMode] Chunk speech error:', err);
         isSpeakingChunkRef.current = false;
-        if (isActiveRef.current) processNextChunk();
+        if (isActiveRef.current) {
+          if (speakQueueRef.current.length > 0) {
+            processNextChunk();
+          } else {
+            finishSpeakingCycle();
+          }
+        }
       },
       onStopped: () => {
         isSpeakingChunkRef.current = false;
@@ -484,19 +509,47 @@ export default function VoiceMode({
     }
   }, []);
 
-  const transcribeAudio = useCallback(async (formData: FormData): Promise<string | null> => {
+  const transcribeAudio = useCallback(async (formData: FormData, attempt: number = 0): Promise<string | null> => {
     try {
-      console.log('[VoiceMode] Transcribing...');
-      const response = await fetch(STT_URL, { method: 'POST', body: formData });
+      console.log('[VoiceMode] Transcribing (attempt', attempt + 1, ')...');
+
+      const controller = new AbortController();
+      transcriptionTimeoutRef.current = setTimeout(() => {
+        controller.abort();
+      }, TRANSCRIPTION_TIMEOUT_MS);
+
+      const response = await fetch(STT_URL, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+      });
+
+      if (transcriptionTimeoutRef.current) {
+        clearTimeout(transcriptionTimeoutRef.current);
+        transcriptionTimeoutRef.current = null;
+      }
+
       if (!response.ok) {
         console.log('[VoiceMode] STT error:', response.status);
+        if (attempt < MAX_RETRIES) {
+          console.log('[VoiceMode] Retrying transcription...');
+          return transcribeAudio(formData, attempt + 1);
+        }
         return null;
       }
       const data = await response.json();
       console.log('[VoiceMode] Transcribed:', data.text?.substring(0, 80));
       return data.text || null;
-    } catch (e) {
-      console.log('[VoiceMode] Transcription error:', e);
+    } catch (e: unknown) {
+      if (transcriptionTimeoutRef.current) {
+        clearTimeout(transcriptionTimeoutRef.current);
+        transcriptionTimeoutRef.current = null;
+      }
+      const isAbort = e instanceof Error && e.name === 'AbortError';
+      console.log('[VoiceMode] Transcription error:', isAbort ? 'timeout' : e);
+      if (!isAbort && attempt < MAX_RETRIES) {
+        return transcribeAudio(formData, attempt + 1);
+      }
       return null;
     }
   }, []);
@@ -504,9 +557,16 @@ export default function VoiceMode({
   const handleTranscriptReady = useCallback((text: string) => {
     if (!text.trim()) {
       console.log('[VoiceMode] Empty transcript, restarting');
-      if (isActiveRef.current) startListening();
+      if (isActiveRef.current) {
+        setErrorText('Didn\'t catch that. Try again.');
+        setTimeout(() => {
+          setErrorText('');
+          if (isActiveRef.current) startListening();
+        }, 1200);
+      }
       return;
     }
+    retryCountRef.current = 0;
     setTranscript(text);
     setDisplayText(text);
     addTurn('user', text);
@@ -515,6 +575,21 @@ export default function VoiceMode({
     onSend(text);
   }, [onSend, addTurn]);
 
+  const handleTranscriptionFailure = useCallback(() => {
+    retryCountRef.current++;
+    if (retryCountRef.current >= 3) {
+      setErrorText('Voice recognition unavailable. Try again later.');
+      setVoiceState('idle');
+      setTimeout(() => setErrorText(''), 3000);
+    } else {
+      setErrorText('Could not understand. Try again.');
+      setTimeout(() => {
+        setErrorText('');
+        if (isActiveRef.current) startListening();
+      }, 1500);
+    }
+  }, []);
+
   const stopAndTranscribeNative = useCallback(async () => {
     try {
       const recording = recordingRef.current;
@@ -522,6 +597,10 @@ export default function VoiceMode({
       if (meteringIntervalRef.current) {
         clearInterval(meteringIntervalRef.current);
         meteringIntervalRef.current = null;
+      }
+      if (maxRecordingTimerRef.current) {
+        clearTimeout(maxRecordingTimerRef.current);
+        maxRecordingTimerRef.current = null;
       }
       setVoiceState('processing');
       setDisplayText('');
@@ -545,17 +624,15 @@ export default function VoiceMode({
       if (text) {
         handleTranscriptReady(text);
       } else {
-        setErrorText('Could not understand. Try again.');
-        setTimeout(() => {
-          setErrorText('');
-          if (isActiveRef.current) startListening();
-        }, 1500);
+        handleTranscriptionFailure();
       }
     } catch (e) {
       console.log('[VoiceMode] Native stop error:', e);
+      setErrorText('Recording error. Try again.');
       setVoiceState('idle');
+      setTimeout(() => setErrorText(''), 2000);
     }
-  }, [transcribeAudio, handleTranscriptReady]);
+  }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
 
   const stopAndTranscribeWeb = useCallback(async () => {
     try {
@@ -567,6 +644,10 @@ export default function VoiceMode({
       if (webLevelIntervalRef.current) {
         clearInterval(webLevelIntervalRef.current);
         webLevelIntervalRef.current = null;
+      }
+      if (maxRecordingTimerRef.current) {
+        clearTimeout(maxRecordingTimerRef.current);
+        maxRecordingTimerRef.current = null;
       }
 
       return new Promise<void>((resolve) => {
@@ -582,6 +663,17 @@ export default function VoiceMode({
             streamRef.current = null;
           }
           mediaRecorderRef.current = null;
+
+          if (blob.size < 1000) {
+            console.log('[VoiceMode] Audio too short, restarting');
+            if (isActiveRef.current) {
+              setVoiceState('idle');
+              setTimeout(() => { if (isActiveRef.current) startListening(); }, 300);
+            }
+            resolve();
+            return;
+          }
+
           const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
           const formData = new FormData();
           formData.append('audio', file);
@@ -589,11 +681,7 @@ export default function VoiceMode({
           if (text) {
             handleTranscriptReady(text);
           } else {
-            setErrorText('Could not understand. Try again.');
-            setTimeout(() => {
-              setErrorText('');
-              if (isActiveRef.current) startListening();
-            }, 1500);
+            handleTranscriptionFailure();
           }
           resolve();
         };
@@ -601,15 +689,18 @@ export default function VoiceMode({
       });
     } catch (e) {
       console.log('[VoiceMode] Web stop error:', e);
+      setErrorText('Recording error. Try again.');
       setVoiceState('idle');
+      setTimeout(() => setErrorText(''), 2000);
     }
-  }, [transcribeAudio, handleTranscriptReady]);
+  }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
 
   const startListeningNative = useCallback(async () => {
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
         setErrorText('Microphone permission required');
+        setTimeout(() => setErrorText(''), 3000);
         return;
       }
       await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
@@ -638,6 +729,11 @@ export default function VoiceMode({
       setDisplayText('');
       setErrorText('');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      maxRecordingTimerRef.current = setTimeout(() => {
+        console.log('[VoiceMode] Max recording time reached');
+        if (recordingRef.current) stopAndTranscribeNative();
+      }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
       const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / 200);
@@ -671,6 +767,7 @@ export default function VoiceMode({
       console.log('[VoiceMode] Native start error:', e);
       setErrorText('Failed to start recording');
       setVoiceState('idle');
+      setTimeout(() => setErrorText(''), 2000);
     }
   }, [stopAndTranscribeNative]);
 
@@ -699,6 +796,13 @@ export default function VoiceMode({
       setDisplayText('');
       setErrorText('');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      maxRecordingTimerRef.current = setTimeout(() => {
+        console.log('[VoiceMode] Max recording time reached (web)');
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+          stopAndTranscribeWeb();
+        }
+      }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
       const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / 200);
@@ -736,6 +840,7 @@ export default function VoiceMode({
       console.log('[VoiceMode] Web start error:', e);
       setErrorText('Microphone access required');
       setVoiceState('idle');
+      setTimeout(() => setErrorText(''), 3000);
     }
   }, [stopAndTranscribeWeb]);
 
@@ -772,10 +877,11 @@ export default function VoiceMode({
       toValue: 0, duration: 250, useNativeDriver: true,
     }).start(() => {
       stopSpeaking();
+      clearAllTimers();
       cleanupAll();
       onClose();
     });
-  }, [cleanupAll, stopSpeaking, onClose, fadeAnim]);
+  }, [cleanupAll, stopSpeaking, clearAllTimers, onClose, fadeAnim]);
 
   const toggleMute = useCallback(() => {
     const newMuted = !isMuted;
@@ -903,7 +1009,7 @@ export default function VoiceMode({
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={handleOrbPress}
-            disabled={voiceState === 'processing' || voiceState === 'thinking'}
+            disabled={voiceState === 'processing'}
           >
             <Animated.View style={[styles.orbShell, { transform: [{ scale: orbScale }] }]}>
               <Animated.View style={[styles.orbGlowBg, { opacity: innerGlow, backgroundColor: orbTint }]} />
@@ -953,6 +1059,9 @@ export default function VoiceMode({
           {voiceState === 'speaking' && (
             <Text style={styles.bottomHint}>Tap orb to interrupt</Text>
           )}
+          {voiceState === 'thinking' && (
+            <Text style={styles.bottomHint}>Tap orb to skip to listening</Text>
+          )}
           {voiceState === 'idle' && (
             <Text style={styles.bottomHint}>Conversation flows automatically</Text>
           )}
@@ -961,6 +1070,7 @@ export default function VoiceMode({
               style={styles.endBtn}
               onPress={() => {
                 cleanupAll();
+                clearAllTimers();
                 setVoiceState('idle');
                 setTranscript('');
                 setDisplayText('');
