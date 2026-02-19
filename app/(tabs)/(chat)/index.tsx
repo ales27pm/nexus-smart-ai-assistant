@@ -463,8 +463,7 @@ export default function ChatScreen() {
             ? ((messages[messages.length - 1] as any)?.parts
                 ?.filter((p: any) => p.type === 'text')
                 .map((p: any) => p.text)
-                .join(' ')
-                ?.substring(0, 200) ?? '')
+                .join(' ') ?? '')
             : ''
         }
       />
