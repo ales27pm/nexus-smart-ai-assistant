@@ -398,6 +398,16 @@ export default function ChatScreen() {
     return last.parts.some((p: any) => p.type === 'tool' && (p.state === 'input-streaming' || p.state === 'input-available'));
   }, [messages]);
 
+  const streamingAssistantText = useMemo(() => {
+    if (messages.length === 0) return '';
+    const last = messages[messages.length - 1] as any;
+    if (last.role !== 'assistant') return '';
+    return last.parts
+      ?.filter((p: any) => p.type === 'text')
+      .map((p: any) => p.text)
+      .join(' ') ?? '';
+  }, [messages]);
+
   return (
     <View style={styles.container}>
       {messages.length === 0 ? (
@@ -466,6 +476,7 @@ export default function ChatScreen() {
                 .join(' ') ?? '')
             : ''
         }
+        streamingText={isStreaming ? streamingAssistantText : undefined}
       />
     </View>
   );
