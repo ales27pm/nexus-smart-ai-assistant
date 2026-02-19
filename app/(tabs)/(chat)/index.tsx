@@ -368,6 +368,43 @@ export default function ChatScreen() {
         return `## Emotional Intelligence Report\nValence: ${emotion.valence} | Arousal: ${emotion.arousal} | Dominant: ${emotion.dominantEmotion}\nCommunication Style: ${emotion.style} | Empathy Level: ${(emotion.empathyLevel * 100).toFixed(0)}%\nConfidence: ${(emotion.confidence * 100).toFixed(0)}%${curiosityHints}\n\nAdaptive Tone Guidance:\n${mimicry}\n\n${input.respondWith ? `User-requested tone: ${input.respondWith}. Blend this with the detected emotional needs.` : 'Adapt naturally to the detected emotional state.'}`;
       },
     }),
+
+    askClarification: createRorkTool({
+      description: "Ask the user a clarifying question when their request is ambiguous, vague, or could be interpreted multiple ways. Use this BEFORE guessing. Also use when you genuinely don't have enough context to give a good answer. This shows intellectual honesty and improves response quality.",
+      zodSchema: z.object({
+        originalQuery: z.string().describe("The user's original message that needs clarification"),
+        ambiguityType: z.enum(['vague_reference', 'multiple_interpretations', 'missing_context', 'unclear_scope', 'unclear_intent']).describe("What type of ambiguity was detected"),
+        possibleInterpretations: z.array(z.string()).min(1).max(4).describe("The possible ways the query could be interpreted"),
+        clarifyingQuestion: z.string().describe("The specific clarifying question to ask the user"),
+        bestGuess: z.string().optional().describe("Your best-guess interpretation if you had to choose one"),
+      }),
+      async execute(input: { originalQuery: string; ambiguityType: string; possibleInterpretations: string[]; clarifyingQuestion: string; bestGuess?: string }) {
+        console.log('[NEXUS] Asking clarification:', input.ambiguityType, '|', input.clarifyingQuestion);
+        const interpretations = input.possibleInterpretations
+          .map((interp, i) => `${i + 1}. ${interp}`)
+          .join('\n');
+        const guessNote = input.bestGuess
+          ? `\nBest guess: ${input.bestGuess}`
+          : '';
+        return `## Clarification Needed\nAmbiguity: ${input.ambiguityType.replace(/_/g, ' ')}\nPossible interpretations:\n${interpretations}${guessNote}\n\nAsk the user: ${input.clarifyingQuestion}`;
+      },
+    }),
+
+    admitUncertainty: createRorkTool({
+      description: "Use when you genuinely don't know the answer, when the topic is outside your knowledge, or when you realize your confidence is too low to give a reliable answer. This is a signal of intellectual honesty. After using this, typically follow up with webSearch to try to find the answer.",
+      zodSchema: z.object({
+        topic: z.string().describe("The topic or question you're uncertain about"),
+        uncertaintyReason: z.enum(['outside_training', 'time_sensitive', 'too_specific', 'conflicting_info', 'no_knowledge', 'low_confidence']).describe("Why you're uncertain"),
+        whatYouKnow: z.string().optional().describe("Partial knowledge you do have, if any"),
+        suggestedAction: z.enum(['search_web', 'ask_user', 'provide_partial', 'defer']).describe("What you recommend doing next"),
+      }),
+      async execute(input: { topic: string; uncertaintyReason: string; whatYouKnow?: string; suggestedAction: string }) {
+        console.log('[NEXUS] Admitting uncertainty:', input.uncertaintyReason, '|', input.topic.substring(0, 60));
+        const partialKnowledge = input.whatYouKnow
+          ? `\nPartial knowledge: ${input.whatYouKnow}`
+          : '';
+        return `## Honesty Check\nTopic: ${input.topic}\nReason for uncertainty: ${input.uncertaintyReason.replace(/_/g, ' ')}${partialKnowledge}\nRecommended action: ${input.suggestedAction.replace(/_/g, ' ')}\n\nBe transparent with the user about what you know and don't know. ${input.suggestedAction === 'search_web' ? 'Follow up with a webSearch to find reliable information.' : input.suggestedAction === 'ask_user' ? 'Ask the user for more details.' : 'Share what you know and flag the limitations.'}`;      },
+    }),
   }), [addMemory]);
 
   const [dismissed, setDismissed] = useState(false);

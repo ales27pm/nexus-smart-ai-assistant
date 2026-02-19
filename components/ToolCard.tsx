@@ -12,6 +12,8 @@ import {
   FileText,
   Sparkles,
   Heart,
+  HelpCircle,
+  ShieldQuestion,
 } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
@@ -34,6 +36,8 @@ const TOOL_CONFIG: Record<string, { label: string; color: string; icon: React.El
   summarize: { label: 'Summarize', color: Colors.dark.toolSummarize, icon: FileText, verb: 'Summarizing' },
   cognitiveAnalysis: { label: 'Cognition Engine', color: Colors.dark.toolCognition, icon: Sparkles, verb: 'Reasoning' },
   emotionalPulse: { label: 'Emotional Pulse', color: Colors.dark.toolEmotion, icon: Heart, verb: 'Sensing' },
+  askClarification: { label: 'Clarifying', color: Colors.dark.toolClarification, icon: HelpCircle, verb: 'Asking' },
+  admitUncertainty: { label: 'Honesty Check', color: Colors.dark.toolUncertainty, icon: ShieldQuestion, verb: 'Evaluating' },
 };
 
 export default React.memo(function ToolCard({ toolName, state, input, output }: ToolCardProps) {
