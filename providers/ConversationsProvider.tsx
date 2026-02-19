@@ -1,15 +1,20 @@
 import { useState, useCallback } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Conversation, MemoryEntry } from '@/types';
+import { Conversation, MemoryEntry, MemoryCategory } from '@/types';
 import {
   loadConversationList,
   upsertConversation,
   removeConversation,
   clearAllConversations,
 } from '@/utils/conversations';
-import { loadMemories, saveMemories } from '@/utils/memory';
-import { generateId } from '@/utils/memory';
+import {
+  loadMemories,
+  saveMemories,
+  deduplicateMemories,
+  consolidateMemories,
+  generateId,
+} from '@/utils/memory';
 
 export const [ConversationsProvider, useConversations] = createContextHook(() => {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -47,8 +52,11 @@ export const [ConversationsProvider, useConversations] = createContextHook(() =>
     mutationFn: async (entry: MemoryEntry) => {
       const current = await loadMemories();
       current.unshift(entry);
-      await saveMemories(current);
-      return current;
+      const deduped = deduplicateMemories(current);
+      const consolidated = deduped.length > 50 ? consolidateMemories(deduped) : deduped;
+      await saveMemories(consolidated);
+      console.log('[NEXUS] Memory added. Total:', consolidated.length, '(was', current.length, ')');
+      return consolidated;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['memories'] }),
   });
