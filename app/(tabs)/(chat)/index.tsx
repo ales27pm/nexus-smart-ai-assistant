@@ -170,13 +170,32 @@ export default function ChatScreen() {
       }),
       async execute(input: { prompt: string; size?: string }) {
         try {
+          console.log('[NEXUS] Generating image:', input.prompt.substring(0, 60));
           const response = await fetch('https://toolkit.rork.com/images/generate/', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: input.prompt, size: input.size ?? '1024x1024' }),
           });
+          if (!response.ok) {
+            console.log('[NEXUS] Image API error:', response.status, response.statusText);
+            return JSON.stringify({ error: true, message: `Image API returned ${response.status}. Try again.` });
+          }
           const data = await response.json();
-          return data.image?.base64Data ? `Image generated: "${input.prompt.substring(0, 100)}"` : 'No image data returned.';
-        } catch { return 'Image generation failed.'; }
+          console.log('[NEXUS] Image response keys:', Object.keys(data));
+          if (data.image?.base64Data) {
+            const mimeType = data.image.mimeType ?? 'image/png';
+            return JSON.stringify({
+              success: true,
+              imageUri: `data:${mimeType};base64,${data.image.base64Data}`,
+              prompt: input.prompt.substring(0, 100),
+            });
+          }
+          console.log('[NEXUS] No image data in response:', JSON.stringify(data).substring(0, 200));
+          return JSON.stringify({ error: true, message: 'No image data in response. The service may be temporarily unavailable.' });
+        } catch (e: unknown) {
+          console.log('[NEXUS] Image generation error:', e);
+          return JSON.stringify({ error: true, message: `Image generation failed: ${e instanceof Error ? e.message : 'Unknown error'}` });
+        }
       },
     }),
 
