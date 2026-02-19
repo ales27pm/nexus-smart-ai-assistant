@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback, useMemo, useState } from 'react';
-import { View, FlatList, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { View, FlatList, StyleSheet, Text, TouchableOpacity, Animated, Easing } from 'react-native';
 import { RefreshCw, X } from 'lucide-react-native';
 import { useRorkAgent, createRorkTool } from '@rork-ai/toolkit-sdk';
 import { z } from 'zod';
@@ -24,6 +24,52 @@ import {
 import { extractMemoryCandidates, getEnhancedSystemPrompt } from '@/utils/context';
 import { analyzeEmotion, assessMetacognition, buildThoughtTree, detectCuriosity, buildEmotionalMimicry } from '@/utils/cognition';
 import { MemoryEntry, MemoryCategory } from '@/types';
+
+function TypingIndicator() {
+  const dots = useRef([
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+    new Animated.Value(0.3),
+  ]).current;
+
+  useEffect(() => {
+    const animations = dots.map((dot, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(dot, { toValue: 1, duration: 400, easing: Easing.ease, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, easing: Easing.ease, useNativeDriver: true }),
+        ])
+      )
+    );
+    animations.forEach(a => a.start());
+    return () => animations.forEach(a => a.stop());
+  }, [dots]);
+
+  return (
+    <View style={styles.typingWrap}>
+      <View style={styles.typingBubble}>
+        {dots.map((dot, i) => (
+          <Animated.View
+            key={i}
+            style={[
+              styles.typingDot,
+              {
+                opacity: dot,
+                transform: [{
+                  translateY: dot.interpolate({
+                    inputRange: [0.3, 1],
+                    outputRange: [0, -4],
+                  }),
+                }],
+              },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 export default function ChatScreen() {
   const { activeId, setActiveId, upsertConversation, addMemory, startNewChat } = useConversations();
@@ -373,6 +419,10 @@ export default function ChatScreen() {
     sendMessage(messagePayload);
   }, [sendMessage, messages]);
 
+  const handleSuggestion = useCallback((text: string) => {
+    handleSend(text);
+  }, [handleSend]);
+
   const renderMessage = useCallback(({ item }: { item: any }) => {
     return (
       <View>
@@ -411,7 +461,7 @@ export default function ChatScreen() {
   return (
     <View style={styles.container}>
       {messages.length === 0 ? (
-        <EmptyState />
+        <EmptyState onSuggestion={handleSuggestion} />
       ) : (
         <FlatList
           ref={flatListRef}
@@ -420,15 +470,7 @@ export default function ChatScreen() {
           keyExtractor={keyExtractor}
           contentContainerStyle={styles.messageList}
           showsVerticalScrollIndicator={false}
-          ListFooterComponent={
-            isStreaming ? (
-              <View style={styles.typingWrap}>
-                <View style={styles.typingDot} />
-                <View style={[styles.typingDot, styles.typingDotDelay]} />
-                <View style={[styles.typingDot, styles.typingDotDelay2]} />
-              </View>
-            ) : null
-          }
+          ListFooterComponent={isStreaming ? <TypingIndicator /> : null}
         />
       )}
       {error && !dismissed && (
@@ -485,10 +527,28 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.dark.background },
   messageList: { paddingTop: 12, paddingBottom: 12 },
-  typingWrap: { flexDirection: 'row', paddingHorizontal: 24, paddingVertical: 12, gap: 5 },
-  typingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.dark.accent, opacity: 0.7 },
-  typingDotDelay: { opacity: 0.45 },
-  typingDotDelay2: { opacity: 0.2 },
+  typingWrap: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  typingBubble: {
+    flexDirection: 'row',
+    backgroundColor: Colors.dark.assistantBubble,
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderSubtle,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 5,
+    alignSelf: 'flex-start',
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: Colors.dark.accent,
+  },
   errorBar: { backgroundColor: Colors.dark.errorDim, paddingHorizontal: 16, paddingVertical: 10 },
   errorContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   errorText: { color: Colors.dark.error, fontSize: 13, flex: 1 },

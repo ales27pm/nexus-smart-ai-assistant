@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, ScrollView } from 'react-native';
 import {
   Sparkles,
   Globe,
@@ -11,7 +11,9 @@ import {
   ListChecks,
   FileText,
   LinkIcon,
+  ArrowRight,
 } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import Colors from '@/constants/colors';
 
 const CAPABILITIES = [
@@ -26,16 +28,35 @@ const CAPABILITIES = [
   { icon: FileText, label: 'Summarize', color: Colors.dark.toolSummarize },
 ];
 
-export default function EmptyState() {
+const SUGGESTIONS = [
+  { text: 'What can you do?', icon: Sparkles },
+  { text: 'Search for the latest AI news', icon: Globe },
+  { text: 'Generate an image of a sunset', icon: ImageIcon },
+  { text: 'Analyze pros and cons of remote work', icon: Zap },
+  { text: 'Remember my name is...', icon: Brain },
+];
+
+interface EmptyStateProps {
+  onSuggestion?: (text: string) => void;
+}
+
+export default function EmptyState({ onSuggestion }: EmptyStateProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(16)).current;
   const glowAnim = useRef(new Animated.Value(0.3)).current;
+  const chipAnims = useRef(SUGGESTIONS.map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-    ]).start();
+    ]).start(() => {
+      Animated.stagger(80,
+        chipAnims.map(a =>
+          Animated.timing(a, { toValue: 1, duration: 300, useNativeDriver: true })
+        )
+      ).start();
+    });
 
     const glow = Animated.loop(
       Animated.sequence([
@@ -45,55 +66,101 @@ export default function EmptyState() {
     );
     glow.start();
     return () => glow.stop();
-  }, [fadeAnim, slideAnim, glowAnim]);
+  }, [fadeAnim, slideAnim, glowAnim, chipAnims]);
+
+  const handleSuggestion = useCallback((text: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onSuggestion?.(text);
+  }, [onSuggestion]);
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-      <View style={styles.logoWrap}>
-        <Animated.View style={[styles.logoGlow, { opacity: glowAnim }]} />
-        <View style={styles.logoOuter}>
-          <View style={styles.logoInner}>
-            <Sparkles size={26} color={Colors.dark.accent} />
+    <ScrollView
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Animated.View style={[styles.container, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        <View style={styles.logoWrap}>
+          <Animated.View style={[styles.logoGlow, { opacity: glowAnim }]} />
+          <View style={styles.logoOuter}>
+            <View style={styles.logoInner}>
+              <Sparkles size={26} color={Colors.dark.accent} />
+            </View>
           </View>
         </View>
-      </View>
 
-      <Text style={styles.title}>NEXUS</Text>
-      <Text style={styles.subtitle}>Context-Aware AI Agent</Text>
-      <Text style={styles.version}>TF-IDF Memory · Auto-Extract · Tool Orchestration</Text>
+        <Text style={styles.title}>NEXUS</Text>
+        <Text style={styles.subtitle}>Context-Aware AI Agent</Text>
+        <Text style={styles.version}>TF-IDF Memory · Auto-Extract · Tool Orchestration</Text>
 
-      <View style={styles.capsGrid}>
-        {CAPABILITIES.map((cap, i) => {
-          const Icon = cap.icon;
-          return (
-            <View key={i} style={styles.capItem}>
-              <View style={[styles.capIcon, { backgroundColor: cap.color + '12' }]}>
-                <Icon size={13} color={cap.color} />
+        <View style={styles.capsGrid}>
+          {CAPABILITIES.map((cap, i) => {
+            const Icon = cap.icon;
+            return (
+              <View key={i} style={styles.capItem}>
+                <View style={[styles.capIcon, { backgroundColor: cap.color + '12' }]}>
+                  <Icon size={13} color={cap.color} />
+                </View>
+                <Text style={styles.capLabel}>{cap.label}</Text>
               </View>
-              <Text style={styles.capLabel}>{cap.label}</Text>
-            </View>
-          );
-        })}
-      </View>
+            );
+          })}
+        </View>
 
-      <View style={styles.hintBox}>
-        <Text style={styles.hintTitle}>How it works</Text>
-        <Text style={styles.hintItem}>→ Memories persist across sessions via semantic search</Text>
-        <Text style={styles.hintItem}>→ Important facts are auto-extracted and stored</Text>
-        <Text style={styles.hintItem}>→ Tools chain together for complex tasks</Text>
-        <Text style={styles.hintItem}>→ Context window is optimized per message</Text>
-      </View>
-    </Animated.View>
+        {onSuggestion && (
+          <View style={styles.suggestionsSection}>
+            <Text style={styles.suggestionsTitle}>Try asking</Text>
+            {SUGGESTIONS.map((s, i) => {
+              const SIcon = s.icon;
+              return (
+                <Animated.View
+                  key={i}
+                  style={{
+                    opacity: chipAnims[i],
+                    transform: [{
+                      translateY: chipAnims[i].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [8, 0],
+                      }),
+                    }],
+                  }}
+                >
+                  <TouchableOpacity
+                    style={styles.suggestionChip}
+                    onPress={() => handleSuggestion(s.text)}
+                    activeOpacity={0.7}
+                    testID={`suggestion-${i}`}
+                  >
+                    <SIcon size={14} color={Colors.dark.accent} />
+                    <Text style={styles.suggestionText}>{s.text}</Text>
+                    <ArrowRight size={12} color={Colors.dark.textTertiary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={styles.hintBox}>
+          <Text style={styles.hintTitle}>How it works</Text>
+          <Text style={styles.hintItem}>→ Memories persist across sessions via semantic search</Text>
+          <Text style={styles.hintItem}>→ Important facts are auto-extracted and stored</Text>
+          <Text style={styles.hintItem}>→ Tools chain together for complex tasks</Text>
+          <Text style={styles.hintItem}>→ Context window is optimized per message</Text>
+        </View>
+      </Animated.View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+  },
+  container: {
     alignItems: 'center',
     paddingHorizontal: 28,
-    paddingBottom: 20,
+    paddingVertical: 20,
   },
   logoWrap: {
     marginBottom: 16,
@@ -171,6 +238,35 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.dark.textSecondary,
     fontWeight: '500' as const,
+  },
+  suggestionsSection: {
+    width: '100%',
+    marginBottom: 18,
+    gap: 6,
+  },
+  suggestionsTitle: {
+    fontSize: 11,
+    fontWeight: '700' as const,
+    color: Colors.dark.accent,
+    textTransform: 'uppercase' as const,
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  suggestionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.dark.surfaceElevated,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderSubtle,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.dark.text,
   },
   hintBox: {
     backgroundColor: Colors.dark.surfaceElevated,

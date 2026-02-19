@@ -5,6 +5,7 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ConversationsProvider } from "@/providers/ConversationsProvider";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import Colors from "@/constants/colors";
 
 SplashScreen.preventAutoHideAsync();
@@ -28,10 +29,12 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.dark.background }}>
-        <ConversationsProvider>
-          <StatusBar style="light" />
-          <RootLayoutNav />
-        </ConversationsProvider>
+        <ErrorBoundary>
+          <ConversationsProvider>
+            <StatusBar style="light" />
+            <RootLayoutNav />
+          </ConversationsProvider>
+        </ErrorBoundary>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );

@@ -10,8 +10,9 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Text,
 } from 'react-native';
-import { Send, Plus, Mic, X, MicOff } from 'lucide-react-native';
+import { Send, Plus, Mic, X, MicOff, AudioLines } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { Audio } from 'expo-av';
@@ -42,10 +43,12 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if ((!trimmed && attachedImages.length === 0) || disabled) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.sequence([
       Animated.timing(scaleAnim, { toValue: 0.85, duration: 80, useNativeDriver: true }),
       Animated.timing(scaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
@@ -79,6 +82,7 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
           uri = asset.uri;
         }
         setAttachedImages(prev => [...prev, { type: 'file', mimeType, uri }]);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         console.log('[ChatInput] Image attached:', mimeType);
       }
     } catch (e) {
@@ -94,15 +98,19 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
   const startPulse = useCallback(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.2, duration: 600, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
       ])
     );
+    pulseLoopRef.current = loop;
     loop.start();
   }, [pulseAnim]);
 
   const stopPulse = useCallback(() => {
-    pulseAnim.stopAnimation();
+    if (pulseLoopRef.current) {
+      pulseLoopRef.current.stop();
+      pulseLoopRef.current = null;
+    }
     pulseAnim.setValue(1);
   }, [pulseAnim]);
 
@@ -121,6 +129,7 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       const data = await response.json();
       if (data.text) {
         setText(prev => (prev ? prev + ' ' + data.text : data.text));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         console.log('[ChatInput] Transcribed:', data.text.substring(0, 60));
       }
     } catch (e) {
@@ -169,6 +178,7 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       recordingRef.current = recording;
       setIsRecording(true);
       startPulse();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log('[ChatInput] Recording started (native)');
     } catch (e) {
       console.log('[ChatInput] Recording start error:', e);
@@ -218,6 +228,7 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
       startPulse();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log('[ChatInput] Recording started (web)');
     } catch (e) {
       console.log('[ChatInput] Web recording error:', e);
@@ -270,6 +281,13 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       }
     }
   }, [isRecording, disabled, isTranscribing, startRecordingNative, stopRecordingNative, startRecordingWeb, stopRecordingWeb]);
+
+  const handleOpenVoiceMode = useCallback(() => {
+    if (onOpenVoiceMode && !disabled && !isTranscribing) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      onOpenVoiceMode();
+    }
+  }, [onOpenVoiceMode, disabled, isTranscribing]);
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;
 
@@ -339,28 +357,32 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
               <ActivityIndicator size="small" color={Colors.dark.accent} />
             </View>
           ) : (
-            <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
+            <View style={styles.micRow}>
               <TouchableOpacity
-                style={[styles.actionBtn, isRecording && styles.recordingBtn]}
+                style={styles.voiceModeBtn}
                 activeOpacity={0.6}
-                onPress={toggleRecording}
-                onLongPress={() => {
-                  if (onOpenVoiceMode && !disabled && !isTranscribing) {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                    onOpenVoiceMode();
-                  }
-                }}
-                delayLongPress={400}
+                onPress={handleOpenVoiceMode}
                 disabled={disabled}
-                testID="mic-button"
+                testID="voice-mode-button"
               >
-                {isRecording ? (
-                  <MicOff size={18} color={Colors.dark.error} />
-                ) : (
-                  <Mic size={18} color={Colors.dark.textSecondary} />
-                )}
+                <AudioLines size={16} color={disabled ? Colors.dark.textTertiary : Colors.dark.cyan} />
               </TouchableOpacity>
-            </Animated.View>
+              <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, isRecording && styles.recordingBtn]}
+                  activeOpacity={0.6}
+                  onPress={toggleRecording}
+                  disabled={disabled}
+                  testID="mic-button"
+                >
+                  {isRecording ? (
+                    <MicOff size={18} color={Colors.dark.error} />
+                  ) : (
+                    <Mic size={18} color={Colors.dark.textSecondary} />
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            </View>
           )}
         </View>
       </View>
@@ -411,12 +433,24 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.border,
     paddingHorizontal: 6,
     paddingVertical: 4,
-    gap: 4,
+    gap: 2,
   },
   actionBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  micRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 0,
+  },
+  voiceModeBtn: {
+    width: 32,
+    height: 36,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
