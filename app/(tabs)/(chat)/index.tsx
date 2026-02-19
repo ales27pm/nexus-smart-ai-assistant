@@ -6,7 +6,7 @@ import { z } from 'zod';
 import Colors from '@/constants/colors';
 import ChatBubble from '@/components/ChatBubble';
 import ToolCard from '@/components/ToolCard';
-import ChatInput from '@/components/ChatInput';
+import ChatInput, { ChatFile } from '@/components/ChatInput';
 import EmptyState from '@/components/EmptyState';
 import { useConversations } from '@/providers/ConversationsProvider';
 import { saveMessages, loadMessages } from '@/utils/conversations';
@@ -358,13 +358,17 @@ export default function ChatScreen() {
     }
   }, [messages]);
 
-  const handleSend = useCallback(async (text: string) => {
-    if (!text.trim()) return;
-    console.log('[NEXUS] Sending:', text.substring(0, 50));
+  const handleSend = useCallback(async (text: string, files?: ChatFile[]) => {
+    if (!text.trim() && (!files || files.length === 0)) return;
+    console.log('[NEXUS] Sending:', text.substring(0, 50), files ? `with ${files.length} file(s)` : '');
     hasLoadedRef.current = true;
     const memories = await loadMemories();
     const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages);
-    sendMessage({ text: text.trim(), systemPrompt } as any);
+    const messagePayload: any = { text: text.trim(), systemPrompt };
+    if (files && files.length > 0) {
+      messagePayload.files = files;
+    }
+    sendMessage(messagePayload);
   }, [sendMessage, messages]);
 
   const renderMessage = useCallback(({ item }: { item: any }) => {
