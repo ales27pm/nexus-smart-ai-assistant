@@ -1,6 +1,16 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
-import { Globe, Brain, Search, Zap, LinkIcon } from 'lucide-react-native';
+import {
+  Globe,
+  Brain,
+  Search,
+  Zap,
+  LinkIcon,
+  ImageIcon,
+  Calculator,
+  ListChecks,
+  FileText,
+} from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 interface ToolCardProps {
@@ -10,18 +20,24 @@ interface ToolCardProps {
   output?: unknown;
 }
 
-const TOOL_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  webSearch: { label: 'Web Search', color: Colors.dark.toolWebSearch, icon: Globe },
-  storeMemory: { label: 'Store Memory', color: Colors.dark.toolMemoryStore, icon: Brain },
-  recallMemory: { label: 'Recall Memory', color: Colors.dark.toolMemoryRecall, icon: Search },
-  deepAnalysis: { label: 'Deep Analysis', color: Colors.dark.toolAnalysis, icon: Zap },
-  webScrape: { label: 'Web Scrape', color: Colors.dark.toolWebScrape, icon: LinkIcon },
+const TOOL_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType; verb: string }> = {
+  webSearch: { label: 'Web Search', color: Colors.dark.toolWebSearch, icon: Globe, verb: 'Searching' },
+  storeMemory: { label: 'Store Memory', color: Colors.dark.toolMemoryStore, icon: Brain, verb: 'Storing' },
+  recallMemory: { label: 'Recall Memory', color: Colors.dark.toolMemoryRecall, icon: Search, verb: 'Recalling' },
+  deepAnalysis: { label: 'Deep Analysis', color: Colors.dark.toolAnalysis, icon: Zap, verb: 'Analyzing' },
+  webScrape: { label: 'Web Scrape', color: Colors.dark.toolWebScrape, icon: LinkIcon, verb: 'Scraping' },
+  generateImage: { label: 'Image Gen', color: Colors.dark.toolImageGen, icon: ImageIcon, verb: 'Generating' },
+  calculator: { label: 'Calculator', color: Colors.dark.toolCalculator, icon: Calculator, verb: 'Calculating' },
+  taskPlanner: { label: 'Task Planner', color: Colors.dark.toolTaskPlan, icon: ListChecks, verb: 'Planning' },
+  summarize: { label: 'Summarize', color: Colors.dark.toolSummarize, icon: FileText, verb: 'Summarizing' },
 };
 
-export default function ToolCard({ toolName, state, input, output }: ToolCardProps) {
+export default React.memo(function ToolCard({ toolName, state, input, output }: ToolCardProps) {
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
-  const config = TOOL_CONFIG[toolName] ?? { label: toolName, color: Colors.dark.accent, icon: Zap };
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const config = TOOL_CONFIG[toolName] ?? { label: toolName, color: Colors.dark.accent, icon: Zap, verb: 'Running' };
   const IconComp = config.icon;
 
   const isRunning = state === 'input-streaming' || state === 'input-available';
@@ -31,46 +47,49 @@ export default function ToolCard({ toolName, state, input, output }: ToolCardPro
   useEffect(() => {
     Animated.timing(slideAnim, {
       toValue: 1,
-      duration: 300,
+      duration: 250,
       useNativeDriver: true,
     }).start();
   }, [slideAnim]);
 
   useEffect(() => {
     if (isRunning) {
-      const loop = Animated.loop(
+      const pulse = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 0.5, duration: 700, useNativeDriver: true }),
         ])
       );
-      loop.start();
-      return () => loop.stop();
+      pulse.start();
+
+      const progress = Animated.loop(
+        Animated.timing(progressAnim, { toValue: 1, duration: 1500, useNativeDriver: false })
+      );
+      progress.start();
+
+      return () => {
+        pulse.stop();
+        progress.stop();
+      };
     } else {
       pulseAnim.setValue(1);
+      progressAnim.setValue(isComplete ? 1 : 0);
     }
-  }, [isRunning, pulseAnim]);
-
-  const getStatusText = () => {
-    if (isRunning) return 'Executing...';
-    if (isComplete) return 'Completed';
-    if (isError) return 'Failed';
-    return 'Pending';
-  };
+  }, [isRunning, isComplete, pulseAnim, progressAnim]);
 
   const getInputPreview = () => {
     if (!input) return null;
-    const query = input.query ?? input.content ?? input.url ?? input.topic;
-    if (typeof query === 'string') return query.length > 80 ? query.slice(0, 80) + '...' : query;
+    const val = input.query ?? input.content ?? input.url ?? input.topic ?? input.task ?? input.expression ?? input.prompt;
+    if (typeof val === 'string') return val.length > 90 ? val.slice(0, 90) + '…' : val;
     return null;
   };
 
   const getOutputPreview = () => {
     if (!output) return null;
-    if (typeof output === 'string') return output.length > 120 ? output.slice(0, 120) + '...' : output;
+    if (typeof output === 'string') return output.length > 140 ? output.slice(0, 140) + '…' : output;
     if (typeof output === 'object' && output !== null) {
       const str = JSON.stringify(output);
-      return str.length > 120 ? str.slice(0, 120) + '...' : str;
+      return str.length > 140 ? str.slice(0, 140) + '…' : str;
     }
     return null;
   };
@@ -79,23 +98,66 @@ export default function ToolCard({ toolName, state, input, output }: ToolCardPro
   const inputPreview = getInputPreview();
   const outputPreview = getOutputPreview();
 
+  const statusLabel = isRunning
+    ? `${config.verb}...`
+    : isComplete
+    ? 'Done'
+    : isError
+    ? 'Failed'
+    : 'Queued';
+
+  const statusColor = isComplete
+    ? Colors.dark.accent
+    : isError
+    ? Colors.dark.error
+    : borderColor;
+
   return (
     <Animated.View
       style={[
         styles.container,
-        { borderLeftColor: borderColor, opacity: pulseAnim, transform: [{ translateY: slideAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
+        {
+          borderLeftColor: borderColor,
+          opacity: isRunning ? pulseAnim : 1,
+          transform: [
+            {
+              translateY: slideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [6, 0],
+              }),
+            },
+          ],
+        },
       ]}
     >
       <View style={styles.header}>
-        <View style={[styles.iconWrap, { backgroundColor: borderColor + '20' }]}>
-          <IconComp size={14} color={borderColor} />
+        <View style={[styles.iconWrap, { backgroundColor: borderColor + '18' }]}>
+          <IconComp size={13} color={borderColor} />
         </View>
-        <Text style={styles.label}>{config.label}</Text>
-        <View style={[styles.statusBadge, { backgroundColor: isComplete ? Colors.dark.accentGlow : isError ? Colors.dark.errorDim : borderColor + '20' }]}>
-          <View style={[styles.statusDot, { backgroundColor: isComplete ? Colors.dark.accent : isError ? Colors.dark.error : borderColor }]} />
-          <Text style={[styles.statusText, { color: isComplete ? Colors.dark.accent : isError ? Colors.dark.error : borderColor }]}>{getStatusText()}</Text>
+        <Text style={[styles.label, { color: borderColor }]}>{config.label}</Text>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
         </View>
       </View>
+
+      {isRunning && (
+        <View style={styles.progressTrack}>
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                backgroundColor: borderColor,
+                width: progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['5%', '85%'],
+                }),
+              },
+            ]}
+          />
+        </View>
+      )}
+
       {inputPreview && (
         <View style={styles.previewWrap}>
           <Text style={styles.previewLabel}>Input</Text>
@@ -104,47 +166,46 @@ export default function ToolCard({ toolName, state, input, output }: ToolCardPro
       )}
       {isComplete && outputPreview && (
         <View style={styles.previewWrap}>
-          <Text style={styles.previewLabel}>Result</Text>
+          <Text style={[styles.previewLabel, { color: Colors.dark.accent }]}>Result</Text>
           <Text style={styles.previewText} numberOfLines={3}>{outputPreview}</Text>
         </View>
       )}
     </Animated.View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
     backgroundColor: Colors.dark.surfaceElevated,
     borderRadius: 10,
     borderLeftWidth: 3,
-    padding: 12,
-    marginVertical: 4,
+    padding: 10,
+    marginVertical: 3,
     marginHorizontal: 16,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 7,
   },
   iconWrap: {
-    width: 26,
-    height: 26,
+    width: 24,
+    height: 24,
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   label: {
-    color: Colors.dark.text,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600' as const,
     flex: 1,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
     gap: 4,
   },
   statusDot: {
@@ -156,18 +217,29 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600' as const,
   },
-  previewWrap: {
+  progressTrack: {
+    height: 2,
+    backgroundColor: Colors.dark.border,
+    borderRadius: 1,
     marginTop: 8,
+    overflow: 'hidden',
+  },
+  progressBar: {
+    height: 2,
+    borderRadius: 1,
+  },
+  previewWrap: {
+    marginTop: 7,
     backgroundColor: Colors.dark.surface,
     borderRadius: 6,
     padding: 8,
   },
   previewLabel: {
     color: Colors.dark.textTertiary,
-    fontSize: 10,
-    fontWeight: '600' as const,
+    fontSize: 9,
+    fontWeight: '700' as const,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
     marginBottom: 3,
   },
   previewText: {

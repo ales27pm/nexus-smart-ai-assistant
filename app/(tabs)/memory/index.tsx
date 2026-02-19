@@ -7,10 +7,10 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
-import { Brain, Tag, Trash2, Zap, Star } from 'lucide-react-native';
+import { Brain, Tag, Trash2, Zap, Star, Activity, Eye } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 import { useConversations } from '@/providers/ConversationsProvider';
-import { MemoryEntry } from '@/types';
+import { MemoryEntry, MemoryCategory } from '@/types';
 
 const CATEGORY_COLORS: Record<string, string> = {
   preference: Colors.dark.toolMemoryStore,
@@ -18,11 +18,29 @@ const CATEGORY_COLORS: Record<string, string> = {
   instruction: Colors.dark.toolAnalysis,
   context: Colors.dark.toolMemoryRecall,
   goal: Colors.dark.accent,
+  persona: Colors.dark.rose,
+  skill: Colors.dark.toolCodeEval,
+  entity: Colors.dark.cyan,
+  episodic: Colors.dark.toolTaskPlan,
 };
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function formatDecay(decay: number): string {
+  if (decay > 0.8) return 'Strong';
+  if (decay > 0.5) return 'Active';
+  if (decay > 0.2) return 'Fading';
+  return 'Weak';
+}
+
+function getDecayColor(decay: number): string {
+  if (decay > 0.8) return Colors.dark.accent;
+  if (decay > 0.5) return Colors.dark.warning;
+  if (decay > 0.2) return Colors.dark.toolWebScrape;
+  return Colors.dark.textTertiary;
 }
 
 export default function MemoryScreen() {
@@ -43,34 +61,60 @@ export default function MemoryScreen() {
     ]);
   }, [memories.length, clearMemories]);
 
+  const autoCount = memories.filter((m) => m.source === 'auto-extract').length;
+  const manualCount = memories.length - autoCount;
+
   const renderItem = useCallback(({ item }: { item: MemoryEntry }) => {
     const catColor = CATEGORY_COLORS[item.category] ?? Colors.dark.textSecondary;
+    const decay = item.decay ?? 1.0;
+    const decayColor = getDecayColor(decay);
+    const isAutoExtracted = item.source === 'auto-extract';
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View style={[styles.catBadge, { backgroundColor: catColor + '20' }]}>
+          <View style={[styles.catBadge, { backgroundColor: catColor + '18' }]}>
             <Text style={[styles.catText, { color: catColor }]}>{item.category}</Text>
           </View>
+          {isAutoExtracted && (
+            <View style={[styles.sourceBadge]}>
+              <Zap size={8} color={Colors.dark.toolImageGen} />
+              <Text style={styles.sourceText}>auto</Text>
+            </View>
+          )}
           <View style={styles.importanceWrap}>
-            {Array.from({ length: item.importance }).map((_, i) => (
-              <Star key={i} size={10} color={Colors.dark.warning} fill={Colors.dark.warning} />
+            {Array.from({ length: Math.min(item.importance, 5) }).map((_, i) => (
+              <Star key={i} size={9} color={Colors.dark.warning} fill={Colors.dark.warning} />
             ))}
           </View>
           <TouchableOpacity
             onPress={() => handleDelete(item.id)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Trash2 size={14} color={Colors.dark.textTertiary} />
+            <Trash2 size={13} color={Colors.dark.textTertiary} />
           </TouchableOpacity>
         </View>
-        <Text style={styles.cardContent}>{item.content}</Text>
+
+        <Text style={styles.cardContent} selectable>{item.content}</Text>
+
         {item.keywords.length > 0 && (
           <View style={styles.tagsRow}>
-            <Tag size={10} color={Colors.dark.textTertiary} />
-            <Text style={styles.tagsText}>{item.keywords.join(', ')}</Text>
+            <Tag size={9} color={Colors.dark.textTertiary} />
+            <Text style={styles.tagsText} numberOfLines={1}>{item.keywords.join(', ')}</Text>
           </View>
         )}
-        <Text style={styles.cardDate}>{formatDate(item.timestamp)}</Text>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.footerMeta}>
+            <Activity size={9} color={decayColor} />
+            <Text style={[styles.decayText, { color: decayColor }]}>{formatDecay(decay)}</Text>
+          </View>
+          <View style={styles.footerMeta}>
+            <Eye size={9} color={Colors.dark.textTertiary} />
+            <Text style={styles.accessText}>{item.accessCount ?? 0}×</Text>
+          </View>
+          <Text style={styles.cardDate}>{formatDate(item.timestamp)}</Text>
+        </View>
       </View>
     );
   }, [handleDelete]);
@@ -82,8 +126,13 @@ export default function MemoryScreen() {
       {memories.length > 0 && (
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
-            <Zap size={14} color={Colors.dark.accent} />
-            <Text style={styles.headerCount}>{memories.length} memor{memories.length !== 1 ? 'ies' : 'y'}</Text>
+            <Brain size={14} color={Colors.dark.accent} />
+            <Text style={styles.headerCount}>
+              {memories.length} memor{memories.length !== 1 ? 'ies' : 'y'}
+            </Text>
+            {autoCount > 0 && (
+              <Text style={styles.headerAuto}>({autoCount} auto)</Text>
+            )}
           </View>
           <TouchableOpacity onPress={handleClearAll}>
             <Text style={styles.clearBtn}>Erase All</Text>
@@ -103,7 +152,7 @@ export default function MemoryScreen() {
             </View>
             <Text style={styles.emptyTitle}>Memory Bank Empty</Text>
             <Text style={styles.emptySubtitle}>
-              Ask NEXUS to remember things and they'll appear here for future recall
+              NEXUS auto-extracts important facts from conversations and stores them here for future recall
             </Text>
           </View>
         }
@@ -135,6 +184,10 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     fontSize: 13,
   },
+  headerAuto: {
+    color: Colors.dark.textTertiary,
+    fontSize: 11,
+  },
   clearBtn: {
     color: Colors.dark.error,
     fontSize: 13,
@@ -142,41 +195,55 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
-    gap: 10,
+    gap: 8,
   },
   card: {
     backgroundColor: Colors.dark.surfaceElevated,
     borderRadius: 12,
-    padding: 14,
+    padding: 12,
     borderWidth: 1,
     borderColor: Colors.dark.borderSubtle,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     marginBottom: 8,
   },
   catBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   catText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700' as const,
     textTransform: 'uppercase' as const,
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.dark.accentSoft,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  sourceText: {
+    fontSize: 8,
+    color: Colors.dark.toolImageGen,
+    fontWeight: '600' as const,
   },
   importanceWrap: {
     flexDirection: 'row',
-    gap: 2,
+    gap: 1,
     flex: 1,
   },
   cardContent: {
     color: Colors.dark.text,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 19,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -189,11 +256,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     flex: 1,
   },
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.dark.borderSubtle,
+  },
+  footerMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  decayText: {
+    fontSize: 10,
+    fontWeight: '600' as const,
+  },
+  accessText: {
+    fontSize: 10,
+    color: Colors.dark.textTertiary,
+  },
   cardDate: {
     color: Colors.dark.textTertiary,
     fontSize: 10,
-    marginTop: 6,
-    textAlign: 'right',
+    marginLeft: 'auto',
   },
   emptyContainer: {
     flex: 1,
