@@ -16,7 +16,6 @@ import {
   generateId,
   reinforceMemory,
   saveMemories,
-  deduplicateMemories,
   buildAssociativeLinks,
   loadAssociativeLinks,
   saveAssociativeLinks,
@@ -43,16 +42,14 @@ export default function ChatScreen() {
 
   const tools = useMemo(() => ({
     webSearch: createRorkTool({
-      description: "Search the internet for current information. Use for news, facts, real-time data, or anything beyond your training cutoff. Always prefer this over guessing.",
+      description: "Search the internet for current information, news, facts, or real-time data.",
       zodSchema: z.object({
-        query: z.string().describe("Search query — be specific and include date context if relevant"),
+        query: z.string().describe("Search query"),
       }),
       async execute(input: { query: string }) {
         console.log('[NEXUS] Web search:', input.query);
         try {
-          const response = await fetch(
-            `https://api.duckduckgo.com/?q=${encodeURIComponent(input.query)}&format=json&no_html=1&skip_disambig=1`
-          );
+          const response = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(input.query)}&format=json&no_html=1&skip_disambig=1`);
           const data = await response.json();
           const results: string[] = [];
           if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
@@ -61,368 +58,203 @@ export default function ChatScreen() {
               if (topic.Text) results.push(`- ${topic.Text}`);
             }
           }
-          if (results.length > 0) {
-            return `Search results for "${input.query}":\n\n${results.join('\n')}`;
-          }
-          return `Search completed for: "${input.query}". No structured results from DuckDuckGo API. Provide a comprehensive answer based on your knowledge, noting any limitations.`;
+          return results.length > 0
+            ? `Search results for "${input.query}":\n\n${results.join('\n')}`
+            : `No structured results for "${input.query}". Answer from knowledge and note limitations.`;
         } catch {
-          return `Search for "${input.query}" encountered a network issue. Answer from your knowledge and note the limitation.`;
+          return `Search failed for "${input.query}". Answer from knowledge.`;
         }
       },
     }),
 
     storeMemory: createRorkTool({
-      description: "Store information in the user's persistent semantic memory bank. Use when: user says 'remember this', shares personal preferences, states goals, gives instructions for future behavior, or shares important facts.",
+      description: "Store info in persistent memory. Use when user shares preferences, goals, instructions, or says 'remember'.",
       zodSchema: z.object({
-        content: z.string().describe("The information to store — be precise and self-contained"),
-        keywords: z.array(z.string()).describe("3-6 relevant keywords for future retrieval"),
-        category: z.enum(['preference', 'fact', 'instruction', 'context', 'goal', 'persona', 'skill', 'entity', 'episodic']).describe("Memory category"),
-        importance: z.number().min(1).max(5).describe("1=trivial, 2=low, 3=moderate, 4=high, 5=critical"),
-        relations: z.array(z.string()).optional().describe("IDs of related memories if known"),
+        content: z.string().describe("Information to store"),
+        keywords: z.array(z.string()).describe("3-6 keywords"),
+        category: z.enum(['preference', 'fact', 'instruction', 'context', 'goal', 'persona', 'skill', 'entity', 'episodic']),
+        importance: z.number().min(1).max(5).describe("1=trivial, 5=critical"),
       }),
-      async execute(input: { content: string; keywords: string[]; category: string; importance: number; relations?: string[] }) {
-        console.log('[NEXUS] Storing memory:', input.content.substring(0, 60));
+      async execute(input: { content: string; keywords: string[]; category: string; importance: number }) {
+        console.log('[NEXUS] Storing:', input.content.substring(0, 60));
         const entry: MemoryEntry = {
-          id: generateId(),
-          content: input.content,
-          keywords: input.keywords,
-          category: input.category as MemoryCategory,
-          timestamp: Date.now(),
-          importance: input.importance,
-          source: 'conversation',
-          accessCount: 0,
-          lastAccessed: Date.now(),
-          relations: input.relations ?? [],
-          consolidated: false,
-          decay: 1.0,
-          activationLevel: 0.5,
-          emotionalValence: 0,
-          contextSignature: '',
+          id: generateId(), content: input.content, keywords: input.keywords,
+          category: input.category as MemoryCategory, timestamp: Date.now(),
+          importance: input.importance, source: 'conversation', accessCount: 0,
+          lastAccessed: Date.now(), relations: [], consolidated: false,
+          decay: 1.0, activationLevel: 0.5, emotionalValence: 0, contextSignature: '',
         };
         addMemory(entry);
-
         try {
           const allMems = await loadMemories();
           const existingLinks = await loadAssociativeLinks();
           const newLinks = buildAssociativeLinks(entry, allMems, existingLinks);
-          if (newLinks.length > 0) {
-            await saveAssociativeLinks([...existingLinks, ...newLinks]);
-            console.log('[NEXUS] Built', newLinks.length, 'associative links for new memory');
-          }
-        } catch (e) {
-          console.log('[NEXUS] Link building error (non-fatal):', e);
-        }
-
-        return `Memory stored [${input.category}/${input.importance}★]: "${input.content.substring(0, 80)}..." | Tags: ${input.keywords.join(', ')}`;
+          if (newLinks.length > 0) await saveAssociativeLinks([...existingLinks, ...newLinks]);
+        } catch (e) { console.log('[NEXUS] Link error:', e); }
+        return `Stored [${input.category}/${input.importance}★]: "${input.content.substring(0, 80)}"`;
       },
     }),
 
     recallMemory: createRorkTool({
-      description: "Search the user's semantic memory bank. Use BEFORE answering questions about user preferences, past conversations, stored facts, or anything the user previously asked you to remember.",
+      description: "Search user's memory bank for preferences, past facts, or stored info.",
       zodSchema: z.object({
-        query: z.string().describe("Natural language search query"),
-        category: z.enum(['preference', 'fact', 'instruction', 'context', 'goal', 'persona', 'skill', 'entity', 'episodic', 'all']).optional().describe("Filter by category, or 'all'"),
-        maxResults: z.number().min(1).max(15).optional().describe("Max results to return"),
+        query: z.string().describe("Search query"),
+        category: z.enum(['preference', 'fact', 'instruction', 'context', 'goal', 'persona', 'skill', 'entity', 'episodic', 'all']).optional(),
+        maxResults: z.number().min(1).max(15).optional(),
       }),
       async execute(input: { query: string; category?: string; maxResults?: number }) {
-        console.log('[NEXUS] Recalling memory:', input.query);
+        console.log('[NEXUS] Recalling:', input.query);
         const memories = await loadMemories();
-        const categoryFilter = input.category && input.category !== 'all'
-          ? [input.category as MemoryCategory]
-          : undefined;
-        const results = searchMemories(memories, input.query, {
-          maxResults: input.maxResults ?? 8,
-          categoryFilter,
-        });
-
-        if (results.length === 0) {
-          return 'No relevant memories found. The memory bank has ' + memories.length + ' total entries.';
-        }
-
-        const reinforced = results.map((r) => reinforceMemory(r.memory));
+        const categoryFilter = input.category && input.category !== 'all' ? [input.category as MemoryCategory] : undefined;
+        const results = searchMemories(memories, input.query, { maxResults: input.maxResults ?? 8, categoryFilter });
+        if (results.length === 0) return `No relevant memories. Bank has ${memories.length} entries.`;
+        const reinforced = results.map(r => reinforceMemory(r.memory));
         const allMemories = await loadMemories();
         for (const rm of reinforced) {
-          const idx = allMemories.findIndex((m) => m.id === rm.id);
+          const idx = allMemories.findIndex(m => m.id === rm.id);
           if (idx >= 0) allMemories[idx] = rm;
         }
         await saveMemories(allMemories);
-
-        const formatted = results.map((r) => ({
-          content: r.memory.content,
-          category: r.memory.category,
-          keywords: r.memory.keywords,
-          importance: r.memory.importance,
-          relevanceScore: parseFloat(r.score.toFixed(3)),
-          matchType: r.matchType,
-          stored: new Date(r.memory.timestamp).toLocaleDateString(),
-          accessCount: r.memory.accessCount,
-        }));
-        return JSON.stringify(formatted, null, 2);
+        return JSON.stringify(results.map(r => ({
+          content: r.memory.content, category: r.memory.category,
+          keywords: r.memory.keywords, importance: r.memory.importance,
+          score: parseFloat(r.score.toFixed(3)), matchType: r.matchType,
+        })), null, 2);
       },
     }),
 
     deepAnalysis: createRorkTool({
-      description: "Perform structured multi-dimensional analysis. Use for complex topics requiring systematic evaluation, comparison matrices, SWOT analysis, pros/cons, or decision frameworks.",
+      description: "Structured multi-dimensional analysis for complex topics.",
       zodSchema: z.object({
-        topic: z.string().describe("The subject to analyze"),
-        framework: z.enum(['swot', 'pros_cons', 'comparison', 'root_cause', 'decision_matrix', 'general']).optional().describe("Analysis framework"),
-        aspects: z.array(z.string()).optional().describe("Specific dimensions to evaluate"),
-        depth: z.enum(['quick', 'standard', 'comprehensive']).optional().describe("Analysis depth"),
+        topic: z.string().describe("Subject to analyze"),
+        framework: z.enum(['swot', 'pros_cons', 'comparison', 'root_cause', 'decision_matrix', 'general']).optional(),
       }),
-      async execute(input: { topic: string; framework?: string; aspects?: string[]; depth?: string }) {
-        console.log('[NEXUS] Deep analysis:', input.topic);
-        const fw = input.framework ?? 'general';
-        const depth = input.depth ?? 'standard';
-        const aspects = input.aspects?.join(', ') ?? 'all relevant dimensions';
-        return `Analysis framework: ${fw.toUpperCase()} | Depth: ${depth} | Topic: "${input.topic}" | Aspects: ${aspects}. Provide a structured, thorough analysis with clear sections, evidence-based reasoning, and actionable conclusions. Use tables or matrices where appropriate.`;
+      async execute(input: { topic: string; framework?: string }) {
+        return `Analysis: ${(input.framework ?? 'general').toUpperCase()} | "${input.topic}". Provide structured analysis with evidence-based reasoning.`;
       },
     }),
 
     webScrape: createRorkTool({
-      description: "Fetch and extract content from a URL. Use when the user shares a link or when you need to read a specific webpage.",
+      description: "Fetch and extract content from a URL.",
       zodSchema: z.object({
-        url: z.string().describe("Full URL to fetch"),
-        extractType: z.enum(['full', 'summary', 'links', 'headings', 'metadata']).optional().describe("What to extract"),
+        url: z.string().describe("URL to fetch"),
       }),
-      async execute(input: { url: string; extractType?: string }) {
+      async execute(input: { url: string }) {
         console.log('[NEXUS] Scraping:', input.url);
         try {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 10000);
-
           const response = await fetch(input.url, {
-            headers: {
-              'Accept': 'text/html,application/xhtml+xml,text/plain,application/json',
-              'User-Agent': 'Mozilla/5.0 (compatible; NexusBot/1.0)',
-            },
+            headers: { 'Accept': 'text/html,text/plain,application/json', 'User-Agent': 'Mozilla/5.0 (compatible; NexusBot/1.0)' },
             signal: controller.signal,
           });
           clearTimeout(timeout);
-
-          const contentType = response.headers.get('content-type') ?? '';
           const text = await response.text();
-
+          const contentType = response.headers.get('content-type') ?? '';
           if (contentType.includes('json')) {
-            const pretty = JSON.stringify(JSON.parse(text), null, 2).substring(0, 3000);
-            return `JSON from ${input.url}:\n\`\`\`json\n${pretty}\n\`\`\``;
+            return `JSON from ${input.url}:\n\`\`\`json\n${JSON.stringify(JSON.parse(text), null, 2).substring(0, 3000)}\n\`\`\``;
           }
-
-          let cleaned = text
-            .replace(/<script[\s\S]*?<\/script>/gi, '')
-            .replace(/<style[\s\S]*?<\/style>/gi, '')
-            .replace(/<nav[\s\S]*?<\/nav>/gi, '')
-            .replace(/<footer[\s\S]*?<\/footer>/gi, '')
-            .replace(/<header[\s\S]*?<\/header>/gi, '')
-            .replace(/<[^>]*>/g, ' ')
-            .replace(/&[a-z]+;/gi, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          if (input.extractType === 'headings') {
-            const headings = text.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi) ?? [];
-            const extracted = headings.map((h) => h.replace(/<[^>]*>/g, '').trim());
-            return `Headings from ${input.url}:\n${extracted.map((h, i) => `${i + 1}. ${h}`).join('\n')}`;
-          }
-
-          if (input.extractType === 'links') {
-            const links = text.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi) ?? [];
-            const extracted = links.slice(0, 20).map((l) => {
-              const href = l.match(/href="([^"]+)"/)?.[1] ?? '';
-              const label = l.replace(/<[^>]*>/g, '').trim();
-              return `- [${label}](${href})`;
-            });
-            return `Links from ${input.url}:\n${extracted.join('\n')}`;
-          }
-
-          const preview = cleaned.substring(0, 3000);
-          return `Content from ${input.url} (${cleaned.length} chars):\n\n${preview}${cleaned.length > 3000 ? '\n\n[Truncated...]' : ''}`;
+          const cleaned = text.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          return `Content from ${input.url} (${cleaned.length} chars):\n\n${cleaned.substring(0, 3000)}`;
         } catch (e: unknown) {
-          const message = e instanceof Error ? e.message : 'Unknown error';
-          return `Failed to fetch ${input.url}: ${message}. The site may block automated access.`;
+          return `Failed to fetch ${input.url}: ${e instanceof Error ? e.message : 'Unknown error'}`;
         }
       },
     }),
 
     generateImage: createRorkTool({
-      description: "Generate an image using DALL-E 3. Use for creative requests, visualizations, concept art, diagrams, or when the user asks you to create/draw/generate an image.",
+      description: "Generate an image. Use for creative requests or visualizations.",
       zodSchema: z.object({
-        prompt: z.string().describe("Detailed image generation prompt — include style, composition, colors, mood"),
-        size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional().describe("Image dimensions"),
+        prompt: z.string().describe("Detailed image prompt"),
+        size: z.enum(['1024x1024', '1024x1792', '1792x1024']).optional(),
       }),
       async execute(input: { prompt: string; size?: string }) {
-        console.log('[NEXUS] Generating image:', input.prompt.substring(0, 60));
         try {
           const response = await fetch('https://toolkit.rork.com/images/generate/', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt: input.prompt, size: input.size ?? '1024x1024' }),
           });
           const data = await response.json();
-          if (data.image?.base64Data) {
-            return `Image generated successfully. [Generated image based on: "${input.prompt.substring(0, 100)}"]`;
-          }
-          return 'Image generation completed but no image data was returned.';
-        } catch {
-          return 'Image generation failed due to a network error. Please try again.';
-        }
+          return data.image?.base64Data ? `Image generated: "${input.prompt.substring(0, 100)}"` : 'No image data returned.';
+        } catch { return 'Image generation failed.'; }
       },
     }),
 
     calculator: createRorkTool({
-      description: "Evaluate mathematical expressions with precision. Use for any calculations, unit conversions, percentages, or numeric operations instead of mental math.",
+      description: "Evaluate math expressions. Use instead of mental math.",
       zodSchema: z.object({
-        expression: z.string().describe("Mathematical expression (e.g., '(45.5 * 1.08) + 200', 'Math.sqrt(144)', '15% of 2400')"),
-        description: z.string().optional().describe("What this calculation represents"),
+        expression: z.string().describe("Math expression"),
       }),
-      async execute(input: { expression: string; description?: string }) {
-        console.log('[NEXUS] Calculating:', input.expression);
+      async execute(input: { expression: string }) {
         try {
-          let expr = input.expression
-            .replace(/(\d+)%\s*of\s*(\d+(?:\.\d+)?)/gi, '($1/100)*$2')
-            .replace(/(\d+(?:\.\d+)?)\s*%/g, '($1/100)');
-
-          const safeExpr = expr.replace(/[^0-9+\-*/().%,\s]|Math\.\w+/g, (match) => {
-            if (match.startsWith('Math.')) return match;
-            return '';
-          });
-
+          let expr = input.expression.replace(/(\d+)%\s*of\s*(\d+(?:\.\d+)?)/gi, '($1/100)*$2').replace(/(\d+(?:\.\d+)?)\s*%/g, '($1/100)');
+          const safeExpr = expr.replace(/[^0-9+\-*/().%,\s]|Math\.\w+/g, (m) => m.startsWith('Math.') ? m : '');
           const fn = new Function('Math', `return (${safeExpr})`);
           const result = fn(Math);
-
-          if (typeof result !== 'number' || !isFinite(result)) {
-            return `Could not evaluate: "${input.expression}". Result was ${result}.`;
-          }
-
+          if (typeof result !== 'number' || !isFinite(result)) return `Could not evaluate: "${input.expression}"`;
           const formatted = Number.isInteger(result) ? result.toString() : result.toFixed(6).replace(/\.?0+$/, '');
-          const label = input.description ? ` (${input.description})` : '';
-          return `${input.expression} = ${formatted}${label}`;
+          return `${input.expression} = ${formatted}`;
         } catch (e: unknown) {
-          const message = e instanceof Error ? e.message : 'Unknown error';
-          return `Calculation error for "${input.expression}": ${message}`;
+          return `Error: ${e instanceof Error ? e.message : 'Unknown'}`;
         }
       },
     }),
 
-    taskPlanner: createRorkTool({
-      description: "Break down complex tasks into structured, actionable steps. Use when facing multi-step problems, project planning, or when the user asks 'how do I...' for complex goals.",
-      zodSchema: z.object({
-        task: z.string().describe("The complex task or goal to plan"),
-        constraints: z.array(z.string()).optional().describe("Known constraints or requirements"),
-        timeframe: z.string().optional().describe("Desired completion timeframe"),
-      }),
-      async execute(input: { task: string; constraints?: string[]; timeframe?: string }) {
-        console.log('[NEXUS] Planning task:', input.task.substring(0, 60));
-        const constraintStr = input.constraints?.length
-          ? `\nConstraints: ${input.constraints.join('; ')}`
-          : '';
-        const timeStr = input.timeframe ? `\nTimeframe: ${input.timeframe}` : '';
-        return `Task decomposition for: "${input.task}"${constraintStr}${timeStr}\n\nProvide a structured plan with:\n1. Prerequisites and preparation\n2. Ordered action steps with time estimates\n3. Dependencies between steps\n4. Risk factors and mitigations\n5. Success criteria and milestones`;
-      },
-    }),
-
-    summarize: createRorkTool({
-      description: "Create a concise summary of long text, articles, or conversation history. Use when the user asks to summarize content or when context is getting too long.",
-      zodSchema: z.object({
-        content: z.string().describe("The text content to summarize"),
-        style: z.enum(['brief', 'detailed', 'bullets', 'executive']).optional().describe("Summary format"),
-        maxLength: z.number().optional().describe("Target word count"),
-      }),
-      async execute(input: { content: string; style?: string; maxLength?: number }) {
-        console.log('[NEXUS] Summarizing content, length:', input.content.length);
-        const style = input.style ?? 'brief';
-        const maxLen = input.maxLength ?? 150;
-        return `Summarize the following in ${style} style (target ~${maxLen} words):\n\n${input.content.substring(0, 4000)}`;
-      },
-    }),
-
     cognitiveAnalysis: createRorkTool({
-      description: "Engage the Tree of Thought reasoning engine for complex, multi-faceted problems. Use when the query requires structured decomposition, exploring multiple solution paths, weighing trade-offs, or deep systematic analysis. Ideal for 'how should I approach...', design decisions, strategic planning, and nuanced questions.",
+      description: "Tree of Thought reasoning for complex problems.",
       zodSchema: z.object({
-        problem: z.string().describe("The complex problem or question to reason through"),
-        constraints: z.array(z.string()).optional().describe("Known constraints or boundary conditions"),
-        preferredApproach: z.enum(['analytical', 'creative', 'balanced', 'adversarial']).optional().describe("Reasoning style"),
+        problem: z.string().describe("Problem to reason through"),
+        preferredApproach: z.enum(['analytical', 'creative', 'balanced', 'adversarial']).optional(),
       }),
-      async execute(input: { problem: string; constraints?: string[]; preferredApproach?: string }) {
-        console.log('[NEXUS] Cognitive analysis:', input.problem.substring(0, 60));
+      async execute(input: { problem: string; preferredApproach?: string }) {
         const memories = await loadMemories();
         const relevant = searchMemories(memories, input.problem, { maxResults: 5 });
         const meta = assessMetacognition(input.problem, 0);
         const tree = buildThoughtTree(input.problem, relevant, meta);
-
-        const approach = input.preferredApproach ?? 'balanced';
-        const constraintStr = input.constraints?.length ? `\nConstraints: ${input.constraints.join('; ')}` : '';
-
-        const branchSummaries = tree.branches
-          .filter(b => !b.pruned)
-          .slice(0, 4)
-          .map(b => {
-            let s = `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`;
-            if (b.evidence.length > 0) s += ` — Evidence: ${b.evidence.slice(0, 2).join('; ')}`;
-            if (b.counterpoints.length > 0) s += ` — Caution: ${b.counterpoints[0]}`;
-            if (b.children.length > 0) s += ` — Sub-paths: ${b.children.map(c => c.hypothesis).join(', ')}`;
-            return s;
-          })
-          .join('\n');
-
-        return `## Tree of Thought Analysis\nProblem: "${input.problem}"${constraintStr}\nApproach: ${approach} | Complexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\nReasoning Branches:\n${branchSummaries}\n\nProvide a comprehensive response that:\n1. Explores the highest-confidence paths\n2. Addresses counterpoints honestly\n3. Synthesizes into a clear recommendation\n4. Notes remaining uncertainties`;
+        const branches = tree.branches.filter(b => !b.pruned).slice(0, 4)
+          .map(b => `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`).join('\n');
+        return `## Analysis\nProblem: "${input.problem}"\nComplexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\n${branches}\n\nExplore highest-confidence paths and synthesize.`;
       },
     }),
 
     emotionalPulse: createRorkTool({
-      description: "Analyze the emotional undertone of the conversation and adapt response strategy. Use when you sense the user is frustrated, excited, confused, anxious, or when emotional attunement would improve the interaction. Also use proactively when tone shifts.",
+      description: "Analyze emotional undertone and adapt response.",
       zodSchema: z.object({
-        context: z.string().describe("The user message or conversation context to analyze"),
-        respondWith: z.enum(['empathy', 'encouragement', 'calm', 'enthusiasm', 'directness']).optional().describe("Desired response tone"),
+        context: z.string().describe("Context to analyze"),
       }),
-      async execute(input: { context: string; respondWith?: string }) {
-        console.log('[NEXUS] Emotional pulse check:', input.context.substring(0, 60));
+      async execute(input: { context: string }) {
         const emotion = analyzeEmotion(input.context);
         const mimicry = buildEmotionalMimicry(emotion);
-        const curiosity = detectCuriosity(input.context, await loadMemories(), emotion);
-
-        const curiosityHints = curiosity.length > 0
-          ? `\nKnowledge gaps detected: ${curiosity.map(c => `"${c.topic}" (gap: ${(c.knowledgeGap * 100).toFixed(0)}%)`).join(', ')}`
-          : '';
-
-        return `## Emotional Intelligence Report\nValence: ${emotion.valence} | Arousal: ${emotion.arousal} | Dominant: ${emotion.dominantEmotion}\nCommunication Style: ${emotion.style} | Empathy Level: ${(emotion.empathyLevel * 100).toFixed(0)}%\nConfidence: ${(emotion.confidence * 100).toFixed(0)}%${curiosityHints}\n\nAdaptive Tone Guidance:\n${mimicry}\n\n${input.respondWith ? `User-requested tone: ${input.respondWith}. Blend this with the detected emotional needs.` : 'Adapt naturally to the detected emotional state.'}`;
+        return `Emotion: ${emotion.valence}/${emotion.arousal}, ${emotion.dominantEmotion}\nStyle: ${emotion.style}\n\n${mimicry}`;
       },
     }),
 
     askClarification: createRorkTool({
-      description: "Ask the user a clarifying question when their request is ambiguous, vague, or could be interpreted multiple ways. Use this BEFORE guessing. Also use when you genuinely don't have enough context to give a good answer. This shows intellectual honesty and improves response quality.",
+      description: "Ask clarifying question when request is ambiguous.",
       zodSchema: z.object({
-        originalQuery: z.string().describe("The user's original message that needs clarification"),
-        ambiguityType: z.enum(['vague_reference', 'multiple_interpretations', 'missing_context', 'unclear_scope', 'unclear_intent']).describe("What type of ambiguity was detected"),
-        possibleInterpretations: z.array(z.string()).min(1).max(4).describe("The possible ways the query could be interpreted"),
-        clarifyingQuestion: z.string().describe("The specific clarifying question to ask the user"),
-        bestGuess: z.string().optional().describe("Your best-guess interpretation if you had to choose one"),
+        originalQuery: z.string(),
+        ambiguityType: z.enum(['vague_reference', 'multiple_interpretations', 'missing_context', 'unclear_scope', 'unclear_intent']),
+        possibleInterpretations: z.array(z.string()).min(1).max(4),
+        clarifyingQuestion: z.string(),
+        bestGuess: z.string().optional(),
       }),
       async execute(input: { originalQuery: string; ambiguityType: string; possibleInterpretations: string[]; clarifyingQuestion: string; bestGuess?: string }) {
-        console.log('[NEXUS] Asking clarification:', input.ambiguityType, '|', input.clarifyingQuestion);
-        const interpretations = input.possibleInterpretations
-          .map((interp, i) => `${i + 1}. ${interp}`)
-          .join('\n');
-        const guessNote = input.bestGuess
-          ? `\nBest guess: ${input.bestGuess}`
-          : '';
-        return `## Clarification Needed\nAmbiguity: ${input.ambiguityType.replace(/_/g, ' ')}\nPossible interpretations:\n${interpretations}${guessNote}\n\nAsk the user: ${input.clarifyingQuestion}`;
+        const interps = input.possibleInterpretations.map((i, idx) => `${idx + 1}. ${i}`).join('\n');
+        return `## Clarification Needed\nType: ${input.ambiguityType.replace(/_/g, ' ')}\nInterpretations:\n${interps}\n${input.bestGuess ? `Best guess: ${input.bestGuess}\n` : ''}Ask: ${input.clarifyingQuestion}`;
       },
     }),
 
     admitUncertainty: createRorkTool({
-      description: "Use when you genuinely don't know the answer, when the topic is outside your knowledge, or when you realize your confidence is too low to give a reliable answer. This is a signal of intellectual honesty. After using this, typically follow up with webSearch to try to find the answer.",
+      description: "Use when you don't know the answer. Follow with webSearch.",
       zodSchema: z.object({
-        topic: z.string().describe("The topic or question you're uncertain about"),
-        uncertaintyReason: z.enum(['outside_training', 'time_sensitive', 'too_specific', 'conflicting_info', 'no_knowledge', 'low_confidence']).describe("Why you're uncertain"),
-        whatYouKnow: z.string().optional().describe("Partial knowledge you do have, if any"),
-        suggestedAction: z.enum(['search_web', 'ask_user', 'provide_partial', 'defer']).describe("What you recommend doing next"),
+        topic: z.string(),
+        uncertaintyReason: z.enum(['outside_training', 'time_sensitive', 'too_specific', 'conflicting_info', 'no_knowledge', 'low_confidence']),
+        whatYouKnow: z.string().optional(),
+        suggestedAction: z.enum(['search_web', 'ask_user', 'provide_partial', 'defer']),
       }),
       async execute(input: { topic: string; uncertaintyReason: string; whatYouKnow?: string; suggestedAction: string }) {
-        console.log('[NEXUS] Admitting uncertainty:', input.uncertaintyReason, '|', input.topic.substring(0, 60));
-        const partialKnowledge = input.whatYouKnow
-          ? `\nPartial knowledge: ${input.whatYouKnow}`
-          : '';
-        return `## Honesty Check\nTopic: ${input.topic}\nReason for uncertainty: ${input.uncertaintyReason.replace(/_/g, ' ')}${partialKnowledge}\nRecommended action: ${input.suggestedAction.replace(/_/g, ' ')}\n\nBe transparent with the user about what you know and don't know. ${input.suggestedAction === 'search_web' ? 'Follow up with a webSearch to find reliable information.' : input.suggestedAction === 'ask_user' ? 'Ask the user for more details.' : 'Share what you know and flag the limitations.'}`;      },
+        return `## Uncertainty\nTopic: ${input.topic}\nReason: ${input.uncertaintyReason.replace(/_/g, ' ')}${input.whatYouKnow ? `\nPartial: ${input.whatYouKnow}` : ''}\nAction: ${input.suggestedAction.replace(/_/g, ' ')}`;
+      },
     }),
   }), [addMemory]);
 
@@ -433,9 +265,7 @@ export default function ChatScreen() {
   });
 
   useEffect(() => {
-    if (error) {
-      setDismissed(false);
-    }
+    if (error) setDismissed(false);
   }, [error]);
 
   useEffect(() => {
@@ -449,7 +279,6 @@ export default function ChatScreen() {
           setMessages([] as unknown as Parameters<typeof setMessages>[0]);
         }
         hasLoadedRef.current = true;
-        console.log('[NEXUS] Loaded messages for:', activeId, 'count:', msgs.length);
       });
     } else if (!hasLoadedRef.current) {
       hasLoadedRef.current = true;
@@ -458,79 +287,47 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!hasLoadedRef.current || messages.length === 0) return;
-
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       const id = convIdRef.current;
       saveMessages(id, messages);
-
       const firstUserMsg = messages.find((m: any) => m.role === 'user') as any;
       const title = firstUserMsg?.parts?.find((p: any) => p.type === 'text')?.text?.substring(0, 60) ?? 'New Chat';
       const lastMsg = messages[messages.length - 1] as any;
       const lastText = lastMsg?.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ') ?? '';
-
-      upsertConversation({
-        id,
-        title,
-        preview: lastText.substring(0, 100),
-        timestamp: Date.now(),
-        messageCount: messages.length,
-      });
+      upsertConversation({ id, title, preview: lastText.substring(0, 100), timestamp: Date.now(), messageCount: messages.length });
     }, 800);
-
-    return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
   }, [messages, upsertConversation]);
 
   useEffect(() => {
     if (!extractionRef.current && messages.length >= 4) {
       const last = messages[messages.length - 1] as any;
       const secondLast = messages.length >= 2 ? messages[messages.length - 2] as any : null;
-
       if (last?.role === 'assistant' && secondLast?.role === 'user') {
         const userText = secondLast.parts?.find((p: any) => p.type === 'text')?.text ?? '';
         const assistantText = last.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join(' ') ?? '';
-
         if (userText.length > 20 && assistantText.length > 20) {
           extractionRef.current = true;
           extractMemoryCandidates(userText, assistantText).then(async (candidates) => {
             for (const c of candidates) {
               const entry: MemoryEntry = {
-                id: generateId(),
-                content: c.content,
-                keywords: c.keywords,
-                category: c.category as MemoryCategory,
-                timestamp: Date.now(),
-                importance: c.importance,
-                source: 'auto-extract',
-                accessCount: 0,
-                lastAccessed: Date.now(),
-                relations: [],
-                consolidated: false,
-                decay: 1.0,
-                activationLevel: 0,
-                emotionalValence: 0,
-                contextSignature: '',
+                id: generateId(), content: c.content, keywords: c.keywords,
+                category: c.category as MemoryCategory, timestamp: Date.now(),
+                importance: c.importance, source: 'auto-extract', accessCount: 0,
+                lastAccessed: Date.now(), relations: [], consolidated: false,
+                decay: 1.0, activationLevel: 0, emotionalValence: 0, contextSignature: '',
               };
               addMemory(entry);
-              console.log('[NEXUS] Auto-stored memory:', c.content.substring(0, 50));
-
               try {
                 const allMems = await loadMemories();
                 const existingLinks = await loadAssociativeLinks();
                 const newLinks = buildAssociativeLinks(entry, allMems, existingLinks);
-                if (newLinks.length > 0) {
-                  await saveAssociativeLinks([...existingLinks, ...newLinks]);
-                }
-              } catch (_linkErr) {
-                console.log('[NEXUS] Auto-link error (non-fatal)');
-              }
+                if (newLinks.length > 0) await saveAssociativeLinks([...existingLinks, ...newLinks]);
+              } catch (_e) { console.log('[NEXUS] Auto-link error'); }
             }
             extractionRef.current = false;
-          }).catch(() => {
-            extractionRef.current = false;
-          });
+          }).catch(() => { extractionRef.current = false; });
         }
       }
     }
@@ -538,24 +335,17 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 150);
+      setTimeout(() => { flatListRef.current?.scrollToEnd({ animated: true }); }, 150);
     }
   }, [messages]);
 
   const handleSend = useCallback(async (text: string) => {
     if (!text.trim()) return;
-    console.log('[NEXUS] Sending message:', text.substring(0, 50));
+    console.log('[NEXUS] Sending:', text.substring(0, 50));
     hasLoadedRef.current = true;
-
     const memories = await loadMemories();
     const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages);
-
-    sendMessage({
-      text: text.trim(),
-      systemPrompt,
-    } as any);
+    sendMessage({ text: text.trim(), systemPrompt } as any);
   }, [sendMessage, messages]);
 
   const renderMessage = useCallback(({ item }: { item: any }) => {
@@ -563,24 +353,10 @@ export default function ChatScreen() {
       <View>
         {item.parts.map((part: any, i: number) => {
           if (part.type === 'text' && part.text) {
-            return (
-              <ChatBubble
-                key={`${item.id}-${i}`}
-                role={item.role as 'user' | 'assistant'}
-                text={part.text}
-              />
-            );
+            return <ChatBubble key={`${item.id}-${i}`} role={item.role as 'user' | 'assistant'} text={part.text} />;
           }
           if (part.type === 'tool' && part.toolName) {
-            return (
-              <ToolCard
-                key={`${item.id}-${i}`}
-                toolName={part.toolName}
-                state={part.state ?? 'pending'}
-                input={part.input}
-                output={part.output}
-              />
-            );
+            return <ToolCard key={`${item.id}-${i}`} toolName={part.toolName} state={part.state ?? 'pending'} input={part.input} output={part.output} />;
           }
           return null;
         })}
@@ -594,9 +370,7 @@ export default function ChatScreen() {
     if (messages.length === 0) return false;
     const last = messages[messages.length - 1] as any;
     if (last.role === 'user') return true;
-    return last.parts.some((p: any) =>
-      p.type === 'tool' && (p.state === 'input-streaming' || p.state === 'input-available')
-    );
+    return last.parts.some((p: any) => p.type === 'tool' && (p.state === 'input-streaming' || p.state === 'input-available'));
   }, [messages]);
 
   return (
@@ -627,7 +401,7 @@ export default function ChatScreen() {
           <View style={styles.errorContent}>
             <Text style={styles.errorText}>
               {error.message === 'Load failed' || error.message === 'Failed to fetch'
-                ? 'Connection error — check your network and try again'
+                ? 'Connection error — check your network'
                 : error.message ?? 'Something went wrong'}
             </Text>
             <View style={styles.errorActions}>
@@ -637,21 +411,14 @@ export default function ChatScreen() {
                   setDismissed(true);
                   const lastUserMsg = [...messages].reverse().find((m: any) => m.role === 'user') as any;
                   const lastText = lastUserMsg?.parts?.find((p: any) => p.type === 'text')?.text;
-                  if (lastText) {
-                    console.log('[NEXUS] Retrying:', lastText.substring(0, 50));
-                    sendMessage(lastText);
-                  }
+                  if (lastText) sendMessage(lastText);
                 }}
                 activeOpacity={0.7}
               >
                 <RefreshCw size={13} color="#fff" />
                 <Text style={styles.retryText}>Retry</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.dismissBtn}
-                onPress={() => setDismissed(true)}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity style={styles.dismissBtn} onPress={() => setDismissed(true)} activeOpacity={0.7}>
                 <X size={13} color={Colors.dark.textTertiary} />
               </TouchableOpacity>
             </View>
@@ -664,69 +431,17 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.dark.background,
-  },
-  messageList: {
-    paddingTop: 12,
-    paddingBottom: 12,
-  },
-  typingWrap: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    gap: 5,
-  },
-  typingDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: Colors.dark.accent,
-    opacity: 0.7,
-  },
-  typingDotDelay: {
-    opacity: 0.45,
-  },
-  typingDotDelay2: {
-    opacity: 0.2,
-  },
-  errorBar: {
-    backgroundColor: Colors.dark.errorDim,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  errorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  errorText: {
-    color: Colors.dark.error,
-    fontSize: 13,
-    flex: 1,
-  },
-  errorActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.dark.error,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  retryText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600' as const,
-  },
-  dismissBtn: {
-    padding: 4,
-  },
+  container: { flex: 1, backgroundColor: Colors.dark.background },
+  messageList: { paddingTop: 12, paddingBottom: 12 },
+  typingWrap: { flexDirection: 'row', paddingHorizontal: 24, paddingVertical: 12, gap: 5 },
+  typingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: Colors.dark.accent, opacity: 0.7 },
+  typingDotDelay: { opacity: 0.45 },
+  typingDotDelay2: { opacity: 0.2 },
+  errorBar: { backgroundColor: Colors.dark.errorDim, paddingHorizontal: 16, paddingVertical: 10 },
+  errorContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  errorText: { color: Colors.dark.error, fontSize: 13, flex: 1 },
+  errorActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.dark.error, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12 },
+  retryText: { color: '#fff', fontSize: 12, fontWeight: '600' as const },
+  dismissBtn: { padding: 4 },
 });
