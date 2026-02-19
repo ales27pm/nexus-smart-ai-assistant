@@ -17,6 +17,9 @@ import {
   reinforceMemory,
   saveMemories,
   deduplicateMemories,
+  buildAssociativeLinks,
+  loadAssociativeLinks,
+  saveAssociativeLinks,
 } from '@/utils/memory';
 import { extractMemoryCandidates, getEnhancedSystemPrompt } from '@/utils/context';
 import { analyzeEmotion, assessMetacognition, buildThoughtTree, detectCuriosity, buildEmotionalMimicry } from '@/utils/cognition';
@@ -92,8 +95,24 @@ export default function ChatScreen() {
           relations: input.relations ?? [],
           consolidated: false,
           decay: 1.0,
+          activationLevel: 0.5,
+          emotionalValence: 0,
+          contextSignature: '',
         };
         addMemory(entry);
+
+        try {
+          const allMems = await loadMemories();
+          const existingLinks = await loadAssociativeLinks();
+          const newLinks = buildAssociativeLinks(entry, allMems, existingLinks);
+          if (newLinks.length > 0) {
+            await saveAssociativeLinks([...existingLinks, ...newLinks]);
+            console.log('[NEXUS] Built', newLinks.length, 'associative links for new memory');
+          }
+        } catch (e) {
+          console.log('[NEXUS] Link building error (non-fatal):', e);
+        }
+
         return `Memory stored [${input.category}/${input.importance}★]: "${input.content.substring(0, 80)}..." | Tags: ${input.keywords.join(', ')}`;
       },
     }),
@@ -475,7 +494,7 @@ export default function ChatScreen() {
 
         if (userText.length > 20 && assistantText.length > 20) {
           extractionRef.current = true;
-          extractMemoryCandidates(userText, assistantText).then((candidates) => {
+          extractMemoryCandidates(userText, assistantText).then(async (candidates) => {
             for (const c of candidates) {
               const entry: MemoryEntry = {
                 id: generateId(),
@@ -490,9 +509,23 @@ export default function ChatScreen() {
                 relations: [],
                 consolidated: false,
                 decay: 1.0,
+                activationLevel: 0,
+                emotionalValence: 0,
+                contextSignature: '',
               };
               addMemory(entry);
               console.log('[NEXUS] Auto-stored memory:', c.content.substring(0, 50));
+
+              try {
+                const allMems = await loadMemories();
+                const existingLinks = await loadAssociativeLinks();
+                const newLinks = buildAssociativeLinks(entry, allMems, existingLinks);
+                if (newLinks.length > 0) {
+                  await saveAssociativeLinks([...existingLinks, ...newLinks]);
+                }
+              } catch (_linkErr) {
+                console.log('[NEXUS] Auto-link error (non-fatal)');
+              }
             }
             extractionRef.current = false;
           }).catch(() => {

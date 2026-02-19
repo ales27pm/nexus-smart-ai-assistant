@@ -11,9 +11,15 @@ import {
   MetacognitionState,
   MemoryEntry,
   RetrievalResult,
+  IntentClassification,
+  DiscourseState,
+  ReasoningFrame,
+  SalienceMap,
 } from '@/types';
-import { generateText } from '@rork-ai/toolkit-sdk';
-import { searchMemories } from '@/utils/memory';
+import { searchMemories, loadAssociativeLinks, getAssociativeMemories } from '@/utils/memory';
+import { classifyIntent, buildIntentInjection } from '@/utils/intent';
+import { analyzeDiscourse, buildDiscourseInjection } from '@/utils/discourse';
+import { buildReasoningFrame, extractSalience, buildReasoningInjection, buildSalienceInjection } from '@/utils/reasoning';
 
 const EMOTION_LEXICON: Record<string, { valence: number; arousal: number; label: string }> = {
   happy: { valence: 0.8, arousal: 0.6, label: 'joy' },
@@ -28,6 +34,12 @@ const EMOTION_LEXICON: Record<string, { valence: number; arousal: number; label:
   wonderful: { valence: 0.9, arousal: 0.6, label: 'joy' },
   curious: { valence: 0.5, arousal: 0.6, label: 'curiosity' },
   interesting: { valence: 0.6, arousal: 0.5, label: 'interest' },
+  fascinated: { valence: 0.7, arousal: 0.7, label: 'fascination' },
+  inspired: { valence: 0.8, arousal: 0.7, label: 'inspiration' },
+  proud: { valence: 0.8, arousal: 0.6, label: 'pride' },
+  relieved: { valence: 0.6, arousal: 0.3, label: 'relief' },
+  hopeful: { valence: 0.6, arousal: 0.5, label: 'hope' },
+  grateful: { valence: 0.8, arousal: 0.4, label: 'gratitude' },
   frustrated: { valence: -0.7, arousal: 0.8, label: 'frustration' },
   angry: { valence: -0.9, arousal: 0.9, label: 'anger' },
   annoyed: { valence: -0.6, arousal: 0.6, label: 'annoyance' },
@@ -41,6 +53,12 @@ const EMOTION_LEXICON: Record<string, { valence: number; arousal: number; label:
   scared: { valence: -0.7, arousal: 0.9, label: 'fear' },
   disappointed: { valence: -0.6, arousal: 0.4, label: 'disappointment' },
   sorry: { valence: -0.3, arousal: 0.4, label: 'regret' },
+  overwhelmed: { valence: -0.5, arousal: 0.8, label: 'overwhelm' },
+  lonely: { valence: -0.6, arousal: 0.3, label: 'loneliness' },
+  jealous: { valence: -0.5, arousal: 0.6, label: 'jealousy' },
+  guilty: { valence: -0.6, arousal: 0.5, label: 'guilt' },
+  ashamed: { valence: -0.7, arousal: 0.5, label: 'shame' },
+  nostalgic: { valence: 0.2, arousal: 0.4, label: 'nostalgia' },
   help: { valence: -0.2, arousal: 0.5, label: 'need' },
   urgent: { valence: -0.3, arousal: 0.9, label: 'urgency' },
   asap: { valence: -0.3, arousal: 0.9, label: 'urgency' },
@@ -57,18 +75,29 @@ const EMOTION_LEXICON: Record<string, { valence: number; arousal: number; label:
   omg: { valence: 0.5, arousal: 0.9, label: 'surprise' },
   lol: { valence: 0.6, arousal: 0.6, label: 'amusement' },
   haha: { valence: 0.6, arousal: 0.6, label: 'amusement' },
+  whoa: { valence: 0.5, arousal: 0.8, label: 'surprise' },
+  damn: { valence: -0.2, arousal: 0.7, label: 'intensity' },
+  incredible: { valence: 0.8, arousal: 0.8, label: 'awe' },
+  brilliant: { valence: 0.9, arousal: 0.7, label: 'admiration' },
+  struggling: { valence: -0.6, arousal: 0.6, label: 'struggle' },
+  suffering: { valence: -0.8, arousal: 0.7, label: 'pain' },
+  miserable: { valence: -0.9, arousal: 0.4, label: 'misery' },
+  delighted: { valence: 0.9, arousal: 0.7, label: 'delight' },
+  thrilled: { valence: 0.9, arousal: 0.9, label: 'thrill' },
+  peaceful: { valence: 0.6, arousal: 0.2, label: 'peace' },
+  content: { valence: 0.5, arousal: 0.3, label: 'contentment' },
 };
 
 const STYLE_PATTERNS: Array<{ pattern: RegExp; style: CommunicationStyle; weight: number }> = [
   { pattern: /\b(please|kindly|would you|could you|sir|madam|dear)\b/i, style: 'formal', weight: 0.7 },
-  { pattern: /\b(whereas|furthermore|consequently|therefore|thus|hence)\b/i, style: 'formal', weight: 0.9 },
-  { pattern: /\b(hey|yo|sup|lol|haha|lmao|bruh|dude|gonna|wanna)\b/i, style: 'casual', weight: 0.8 },
+  { pattern: /\b(whereas|furthermore|consequently|therefore|thus|hence|moreover|nevertheless)\b/i, style: 'formal', weight: 0.9 },
+  { pattern: /\b(hey|yo|sup|lol|haha|lmao|bruh|dude|gonna|wanna|gotta|kinda|sorta|nah|yep|yup)\b/i, style: 'casual', weight: 0.8 },
   { pattern: /[!]{2,}|[?]{2,}|\.{3,}/g, style: 'casual', weight: 0.4 },
-  { pattern: /\b(api|sdk|function|class|algorithm|database|server|deploy|debug|compile|runtime)\b/i, style: 'technical', weight: 0.8 },
-  { pattern: /\b(code|programming|software|framework|library|module|async|sync)\b/i, style: 'technical', weight: 0.6 },
-  { pattern: /\b(imagine|create|design|story|poem|write me|make me|dream|vision|art)\b/i, style: 'creative', weight: 0.8 },
-  { pattern: /\b(asap|urgent|immediately|right now|hurry|deadline|critical|emergency)\b/i, style: 'urgent', weight: 0.9 },
-  { pattern: /\b(think about|consider|reflect|ponder|wonder|what if|meaning|philosophy)\b/i, style: 'reflective', weight: 0.7 },
+  { pattern: /\b(api|sdk|function|class|algorithm|database|server|deploy|debug|compile|runtime|async|interface|module|binary|stack|heap)\b/i, style: 'technical', weight: 0.8 },
+  { pattern: /\b(code|programming|software|framework|library|architecture|microservice|container|pipeline)\b/i, style: 'technical', weight: 0.6 },
+  { pattern: /\b(imagine|create|design|story|poem|write me|make me|dream|vision|art|aesthetic|vibe|mood)\b/i, style: 'creative', weight: 0.8 },
+  { pattern: /\b(asap|urgent|immediately|right now|hurry|deadline|critical|emergency|time-sensitive)\b/i, style: 'urgent', weight: 0.9 },
+  { pattern: /\b(think about|consider|reflect|ponder|wonder|what if|meaning|philosophy|contemplate|meditate)\b/i, style: 'reflective', weight: 0.7 },
 ];
 
 const COMPLEXITY_INDICATORS = {
@@ -78,7 +107,20 @@ const COMPLEXITY_INDICATORS = {
   expert: [/\b(optimize|architect|design system|scalab|distributed|consensus|theorem)\b/i, /\b(prove|derive|formalize|axiom|contradict)\b/i],
 };
 
-export function analyzeEmotion(text: string): EmotionalState {
+const MICRO_EXPRESSION_PATTERNS: Array<{ pattern: RegExp; expression: string }> = [
+  { pattern: /\.{3,}/g, expression: 'hesitation' },
+  { pattern: /\b(um|uh|hmm|well|so)\b/i, expression: 'uncertainty' },
+  { pattern: /[A-Z]{3,}/g, expression: 'emphasis' },
+  { pattern: /[!]{2,}/g, expression: 'exclamation' },
+  { pattern: /[?]{2,}/g, expression: 'intense_questioning' },
+  { pattern: /\b(sigh|ugh|meh|bleh)\b/i, expression: 'exasperation' },
+  { pattern: /😊|😄|😁|🙂|❤️|💕|🎉|🔥|👍/g, expression: 'positive_emoji' },
+  { pattern: /😢|😭|😞|😔|💔|😡|🤬|😤/g, expression: 'negative_emoji' },
+  { pattern: /🤔|🧐|❓|💭/g, expression: 'thinking_emoji' },
+  { pattern: /\((.*?)\)/g, expression: 'parenthetical_aside' },
+];
+
+export function analyzeEmotion(text: string, previousEmotion?: EmotionalState): EmotionalState {
   const words = text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/);
   let totalValence = 0;
   let totalArousal = 0;
@@ -149,7 +191,35 @@ export function analyzeEmotion(text: string): EmotionalState {
     dominantEmotion === 'confusion' ? 0.7 :
     dominantEmotion === 'curiosity' ? 0.5 : 0.3;
 
-  console.log('[COGNITION] Emotion analysis:', { valence, arousal, dominantEmotion, detectedStyle, confidence: confidence.toFixed(2) });
+  let emotionalTrajectory: EmotionalState['emotionalTrajectory'] = 'stable';
+  if (previousEmotion) {
+    const prevValNum = previousEmotion.valence === 'positive' ? 1 : previousEmotion.valence === 'negative' ? -1 : 0;
+    const currValNum = valence === 'positive' ? 1 : valence === 'negative' ? -1 : 0;
+    const diff = currValNum - prevValNum;
+
+    if (diff > 0) emotionalTrajectory = 'deescalating';
+    else if (diff < 0) emotionalTrajectory = 'escalating';
+
+    const prevArousalNum = previousEmotion.arousal === 'high' ? 1 : previousEmotion.arousal === 'low' ? -1 : 0;
+    const currArousalNum = arousal === 'high' ? 1 : arousal === 'low' ? -1 : 0;
+    if (Math.abs(currArousalNum - prevArousalNum) > 0 && Math.abs(diff) > 0) {
+      emotionalTrajectory = 'volatile';
+    }
+  }
+
+  const microExpressions: string[] = [];
+  for (const { pattern, expression } of MICRO_EXPRESSION_PATTERNS) {
+    if (pattern.test(text)) {
+      microExpressions.push(expression);
+    }
+  }
+
+  console.log('[COGNITION] Emotion analysis:', {
+    valence, arousal, dominantEmotion, detectedStyle,
+    confidence: confidence.toFixed(2),
+    trajectory: emotionalTrajectory,
+    microExpressions: microExpressions.length,
+  });
 
   return {
     valence,
@@ -158,6 +228,8 @@ export function analyzeEmotion(text: string): EmotionalState {
     confidence,
     style: detectedStyle,
     empathyLevel,
+    emotionalTrajectory,
+    microExpressions,
   };
 }
 
@@ -246,13 +318,8 @@ export function assessMetacognition(userMessage: string, conversationLength: num
   const confidenceCalibration = 1 - uncertaintyLevel * 0.5;
 
   console.log('[COGNITION] Metacognition:', {
-    complexity,
-    shouldDecompose,
-    shouldSeekClarification,
-    shouldSearchWeb,
-    isTimeSensitive,
-    ambiguityScore: ambiguityScore.toFixed(2),
-    ambiguityReasons,
+    complexity, shouldDecompose, shouldSeekClarification, shouldSearchWeb,
+    isTimeSensitive, ambiguityScore: ambiguityScore.toFixed(2),
     uncertaintyLevel: uncertaintyLevel.toFixed(2),
     cognitiveLoad: cognitiveLoad.toFixed(2),
   });
@@ -349,6 +416,59 @@ export function buildThoughtTree(query: string, memories: RetrievalResult[], met
     branches.push(verifyBranch);
   }
 
+  const hasConditional = /\b(if|assuming|given that|suppose|what if)\b/i.test(query);
+  if (hasConditional) {
+    branches.push({
+      id: `tb_${branchId++}`,
+      hypothesis: 'Evaluate conditional branches separately',
+      reasoning: 'Conditional logic requires examining both branches of the condition',
+      confidence: 0.65,
+      evidence: ['Conditional structure detected'],
+      counterpoints: ['User may only care about one branch'],
+      children: [
+        {
+          id: `tb_${branchId++}`,
+          hypothesis: 'Condition is true — explore implications',
+          reasoning: 'Follow the affirmative path',
+          confidence: 0.6,
+          evidence: [],
+          counterpoints: [],
+          children: [],
+          depth: 1,
+          pruned: false,
+        },
+        {
+          id: `tb_${branchId++}`,
+          hypothesis: 'Condition is false — explore alternative',
+          reasoning: 'Follow the negation path',
+          confidence: 0.5,
+          evidence: [],
+          counterpoints: [],
+          children: [],
+          depth: 1,
+          pruned: false,
+        },
+      ],
+      depth: 0,
+      pruned: false,
+    });
+  }
+
+  const hasComparison = /\b(compare|versus|vs|difference|better|worse|pros|cons)\b/i.test(query);
+  if (hasComparison) {
+    branches.push({
+      id: `tb_${branchId++}`,
+      hypothesis: 'Structured comparison with multiple criteria',
+      reasoning: 'Comparison queries benefit from systematic evaluation across dimensions',
+      confidence: 0.75,
+      evidence: ['Comparison markers detected'],
+      counterpoints: ['Some comparisons are simple enough for direct answer'],
+      children: [],
+      depth: 0,
+      pruned: false,
+    });
+  }
+
   branches.sort((a, b) => b.confidence - a.confidence);
 
   const bestPath = branches
@@ -360,7 +480,7 @@ export function buildThoughtTree(query: string, memories: RetrievalResult[], met
     ? branches.reduce((sum, b) => sum + b.confidence, 0) / branches.length
     : 0.5;
 
-  console.log('[COGNITION] Thought tree built:', branches.length, 'branches, convergence:', convergenceScore.toFixed(2));
+  console.log('[COGNITION] Thought tree:', branches.length, 'branches, convergence:', convergenceScore.toFixed(2));
 
   return {
     root: query,
@@ -489,7 +609,7 @@ function extractRelatedConcepts(topic: string, memories: MemoryEntry[]): string[
 }
 
 export function buildEmotionalMimicry(emotionalState: EmotionalState): string {
-  const { valence, arousal, dominantEmotion, style, empathyLevel } = emotionalState;
+  const { valence, arousal, dominantEmotion, style, empathyLevel, emotionalTrajectory, microExpressions } = emotionalState;
 
   let toneDirective = '';
 
@@ -533,7 +653,24 @@ export function buildEmotionalMimicry(emotionalState: EmotionalState): string {
     ? 'Show genuine understanding of their situation. Validate their experience before offering solutions.'
     : '';
 
-  return [toneDirective, styleDirective, empathyDirective].filter(Boolean).join('\n');
+  let trajectoryDirective = '';
+  if (emotionalTrajectory === 'escalating') {
+    trajectoryDirective = 'EMOTIONAL ESCALATION detected. De-escalate with calm, validating language. Do not mirror the intensity — be a stabilizing presence.';
+  } else if (emotionalTrajectory === 'volatile') {
+    trajectoryDirective = 'Emotional volatility detected. Be steady and consistent. Avoid sudden tonal shifts in your response.';
+  }
+
+  let microDirective = '';
+  if (microExpressions && microExpressions.length > 0) {
+    if (microExpressions.includes('hesitation')) {
+      microDirective += ' The user seems hesitant — be encouraging and non-judgmental.';
+    }
+    if (microExpressions.includes('exasperation')) {
+      microDirective += ' Signs of exasperation — be extra direct and avoid verbose explanations.';
+    }
+  }
+
+  return [toneDirective, styleDirective, empathyDirective, trajectoryDirective, microDirective].filter(Boolean).join('\n');
 }
 
 export function buildCuriosityInjection(signals: CuriositySignal[]): string {
@@ -611,18 +748,40 @@ export function buildMetacognitionInjection(meta: MetacognitionState): string {
   return parts.length > 0 ? '## Self-Monitoring\n' + parts.join('\n') : '';
 }
 
+let _previousEmotion: EmotionalState | undefined;
+let _previousDiscourse: DiscourseState | null = null;
+
 export async function runCognitionEngine(
   userMessage: string,
   memories: MemoryEntry[],
   relevantMemories: RetrievalResult[],
   conversationLength: number,
+  recentMessages?: unknown[],
 ): Promise<CognitionFrame> {
-  console.log('[COGNITION] Running cognition engine for:', userMessage.substring(0, 60));
+  console.log('[COGNITION] Running full cognition pipeline for:', userMessage.substring(0, 60));
 
-  const emotionalState = analyzeEmotion(userMessage);
+  const emotionalState = analyzeEmotion(userMessage, _previousEmotion);
+  _previousEmotion = emotionalState;
+
   const metacognition = assessMetacognition(userMessage, conversationLength);
   const thoughtTree = buildThoughtTree(userMessage, relevantMemories, metacognition);
   const curiositySignals = detectCuriosity(userMessage, memories, emotionalState);
+  const intent = classifyIntent(userMessage, conversationLength);
+  const discourse = analyzeDiscourse(userMessage, recentMessages ?? [], _previousDiscourse);
+  _previousDiscourse = discourse;
+
+  const reasoning = buildReasoningFrame(userMessage, memories, relevantMemories);
+  const salience = extractSalience(userMessage, memories);
+
+  let associativeMemories: RetrievalResult[] = [];
+  try {
+    const links = await loadAssociativeLinks();
+    if (links.length > 0) {
+      associativeMemories = getAssociativeMemories(userMessage, memories, links, relevantMemories);
+    }
+  } catch (e) {
+    console.log('[COGNITION] Associative retrieval error (non-fatal):', e);
+  }
 
   const contextInjections: ContextInjection[] = [];
 
@@ -666,15 +825,73 @@ export async function runCognitionEngine(
     });
   }
 
+  const intentContent = buildIntentInjection(intent);
+  if (intentContent) {
+    contextInjections.push({
+      source: 'intent',
+      content: intentContent,
+      priority: intent.isMultiIntent ? 7 : intent.urgency > 0.6 ? 8 : 4,
+      tokenCost: estimateTokens(intentContent),
+    });
+  }
+
+  const discourseContent = buildDiscourseInjection(discourse);
+  if (discourseContent) {
+    contextInjections.push({
+      source: 'discourse',
+      content: discourseContent,
+      priority: discourse.userSatisfaction < 0.4 ? 9 : discourse.topicShiftDetected ? 6 : 3,
+      tokenCost: estimateTokens(discourseContent),
+    });
+  }
+
+  const reasoningContent = buildReasoningInjection(reasoning);
+  if (reasoningContent) {
+    contextInjections.push({
+      source: 'reasoning',
+      content: reasoningContent,
+      priority: reasoning.contradictions.length > 0 ? 8 : reasoning.biases.length > 0 ? 6 : 3,
+      tokenCost: estimateTokens(reasoningContent),
+    });
+  }
+
+  const salienceContent = buildSalienceInjection(salience);
+  if (salienceContent) {
+    contextInjections.push({
+      source: 'salience',
+      content: salienceContent,
+      priority: salience.informationDensity > 0.7 ? 7 : 4,
+      tokenCost: estimateTokens(salienceContent),
+    });
+  }
+
+  if (associativeMemories.length > 0) {
+    const assocContent = '## Associative Memory Network\nAdditional context surfaced through memory associations:\n' +
+      associativeMemories.map(r => `- [${r.matchType}] ${r.memory.content.substring(0, 80)}`).join('\n');
+    contextInjections.push({
+      source: 'priming',
+      content: assocContent,
+      priority: 5,
+      tokenCost: estimateTokens(assocContent),
+    });
+  }
+
   contextInjections.sort((a, b) => b.priority - a.priority);
 
-  console.log('[COGNITION] Frame built:', {
+  console.log('[COGNITION] Full frame built:', {
     emotion: emotionalState.dominantEmotion,
+    trajectory: emotionalState.emotionalTrajectory,
     style: emotionalState.style,
+    intent: intent.primary,
     complexity: metacognition.reasoningComplexity,
+    phase: discourse.conversationPhase,
     branches: thoughtTree.branches.length,
     curiosity: curiositySignals.length,
+    biases: reasoning.biases.length,
+    contradictions: reasoning.contradictions.length,
+    entities: salience.keyEntities.length,
     injections: contextInjections.length,
+    associative: associativeMemories.length,
   });
 
   return {
@@ -683,6 +900,10 @@ export async function runCognitionEngine(
     curiositySignals,
     contextInjections,
     metacognition,
+    intent,
+    discourse,
+    reasoning,
+    salience,
     timestamp: Date.now(),
   };
 }

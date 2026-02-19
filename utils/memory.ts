@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MemoryEntry, RetrievalResult, MemoryCategory } from '@/types';
+import { MemoryEntry, RetrievalResult, MemoryCategory, AssociativeLink, SpreadingActivation } from '@/types';
 
 const MEMORY_KEY = 'nexus_memory_bank';
-const IDF_CACHE_KEY = 'nexus_idf_cache';
+const LINKS_KEY = 'nexus_associative_links';
 
 export async function loadMemories(): Promise<MemoryEntry[]> {
   try {
@@ -25,6 +25,25 @@ export async function saveMemories(memories: MemoryEntry[]): Promise<void> {
   }
 }
 
+export async function loadAssociativeLinks(): Promise<AssociativeLink[]> {
+  try {
+    const raw = await AsyncStorage.getItem(LINKS_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as AssociativeLink[];
+  } catch (e) {
+    console.log('[NEXUS] Failed to load links:', e);
+    return [];
+  }
+}
+
+export async function saveAssociativeLinks(links: AssociativeLink[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(LINKS_KEY, JSON.stringify(links));
+  } catch (e) {
+    console.log('[NEXUS] Failed to save links:', e);
+  }
+}
+
 function migrateMemory(m: Partial<MemoryEntry> & { id: string; content: string }): MemoryEntry {
   return {
     id: m.id,
@@ -40,6 +59,9 @@ function migrateMemory(m: Partial<MemoryEntry> & { id: string; content: string }
     relations: m.relations ?? [],
     consolidated: m.consolidated ?? false,
     decay: m.decay ?? 1.0,
+    activationLevel: m.activationLevel ?? 0,
+    emotionalValence: m.emotionalValence ?? 0,
+    contextSignature: m.contextSignature ?? '',
   };
 }
 
@@ -175,10 +197,14 @@ export function searchMemories(
     const recencyScore = decay * recencyBias;
     const importanceScore = (m.importance / 5) * importanceBias;
 
-    const totalScore = tfidfScore + keywordBonus + recencyScore + importanceScore;
+    const activationBonus = (m.activationLevel ?? 0) * 0.15;
 
-    const matchType: RetrievalResult['matchType'] =
-      tfidfScore > keywordBonus ? 'semantic' : 'keyword';
+    const totalScore = tfidfScore + keywordBonus + recencyScore + importanceScore + activationBonus;
+
+    let matchType: RetrievalResult['matchType'] = tfidfScore > keywordBonus ? 'semantic' : 'keyword';
+    if (activationBonus > tfidfScore && activationBonus > keywordBonus) {
+      matchType = 'primed';
+    }
 
     return { memory: m, score: totalScore, matchType };
   });
@@ -205,6 +231,150 @@ export function searchMemories(
 
   console.log('[NEXUS] Memory search for "' + query.substring(0, 40) + '":', selected.length, 'results');
   return selected;
+}
+
+export function spreadActivation(
+  startMemories: MemoryEntry[],
+  allMemories: MemoryEntry[],
+  links: AssociativeLink[],
+  depth: number = 2,
+  decayRate: number = 0.5
+): SpreadingActivation[] {
+  const activations = new Map<string, SpreadingActivation>();
+
+  for (const mem of startMemories) {
+    activations.set(mem.id, {
+      nodeId: mem.id,
+      activationLevel: 1.0,
+      depth: 0,
+      path: [mem.id],
+    });
+  }
+
+  for (let d = 0; d < depth; d++) {
+    const currentLevel = [...activations.values()].filter(a => a.depth === d);
+
+    for (const active of currentLevel) {
+      const outgoing = links.filter(
+        l => l.sourceId === active.nodeId || l.targetId === active.nodeId
+      );
+
+      for (const link of outgoing) {
+        const neighborId = link.sourceId === active.nodeId ? link.targetId : link.sourceId;
+
+        if (!allMemories.some(m => m.id === neighborId)) continue;
+
+        const propagatedLevel = active.activationLevel * link.strength * decayRate;
+
+        if (propagatedLevel < 0.05) continue;
+
+        const existing = activations.get(neighborId);
+        if (!existing || existing.activationLevel < propagatedLevel) {
+          activations.set(neighborId, {
+            nodeId: neighborId,
+            activationLevel: propagatedLevel,
+            depth: d + 1,
+            path: [...active.path, neighborId],
+          });
+        }
+      }
+    }
+  }
+
+  const result = [...activations.values()]
+    .filter(a => a.depth > 0)
+    .sort((a, b) => b.activationLevel - a.activationLevel);
+
+  console.log('[NEXUS] Spreading activation:', result.length, 'nodes activated from', startMemories.length, 'seeds');
+  return result;
+}
+
+export function buildAssociativeLinks(
+  newMemory: MemoryEntry,
+  existingMemories: MemoryEntry[],
+  existingLinks: AssociativeLink[]
+): AssociativeLink[] {
+  const newLinks: AssociativeLink[] = [];
+  const newTokens = new Set(tokenize(newMemory.content + ' ' + newMemory.keywords.join(' ')));
+
+  for (const existing of existingMemories) {
+    if (existing.id === newMemory.id) continue;
+
+    const existingTokens = new Set(tokenize(existing.content + ' ' + existing.keywords.join(' ')));
+    let overlap = 0;
+    for (const t of newTokens) {
+      if (existingTokens.has(t)) overlap++;
+    }
+    const jaccardSim = overlap / (newTokens.size + existingTokens.size - overlap);
+
+    if (jaccardSim < 0.1) continue;
+
+    const alreadyLinked = existingLinks.some(
+      l => (l.sourceId === newMemory.id && l.targetId === existing.id) ||
+           (l.sourceId === existing.id && l.targetId === newMemory.id)
+    );
+
+    if (alreadyLinked) continue;
+
+    let linkType: AssociativeLink['type'] = 'semantic';
+    const timeDiff = Math.abs(newMemory.timestamp - existing.timestamp);
+    if (timeDiff < 1000 * 60 * 5) {
+      linkType = 'temporal';
+    } else if (newMemory.category === existing.category) {
+      linkType = 'topical';
+    }
+
+    const keywordOverlap = newMemory.keywords.filter(k =>
+      existing.keywords.some(ek => ek.toLowerCase() === k.toLowerCase())
+    ).length;
+    const strength = Math.min(1, jaccardSim + keywordOverlap * 0.15);
+
+    if (strength > 0.15) {
+      newLinks.push({
+        sourceId: newMemory.id,
+        targetId: existing.id,
+        strength,
+        type: linkType,
+        createdAt: Date.now(),
+        reinforcements: 0,
+      });
+    }
+  }
+
+  newLinks.sort((a, b) => b.strength - a.strength);
+  console.log('[NEXUS] Built', Math.min(newLinks.length, 8), 'associative links for memory', newMemory.id);
+  return newLinks.slice(0, 8);
+}
+
+export function getAssociativeMemories(
+  query: string,
+  memories: MemoryEntry[],
+  links: AssociativeLink[],
+  directResults: RetrievalResult[]
+): RetrievalResult[] {
+  if (directResults.length === 0 || links.length === 0) return [];
+
+  const seedMemories = directResults.slice(0, 3).map(r => r.memory);
+  const activations = spreadActivation(seedMemories, memories, links, 2, 0.5);
+
+  const directIds = new Set(directResults.map(r => r.memory.id));
+  const associativeResults: RetrievalResult[] = [];
+
+  for (const activation of activations) {
+    if (directIds.has(activation.nodeId)) continue;
+
+    const memory = memories.find(m => m.id === activation.nodeId);
+    if (!memory) continue;
+
+    associativeResults.push({
+      memory,
+      score: activation.activationLevel * 0.6,
+      matchType: 'associative',
+    });
+  }
+
+  console.log('[NEXUS] Associative memories found:', associativeResults.length);
+  return associativeResults.slice(0, 4);
 }
 
 export function deduplicateMemories(memories: MemoryEntry[]): MemoryEntry[] {
@@ -274,7 +444,27 @@ export function reinforceMemory(memory: MemoryEntry): MemoryEntry {
     accessCount: memory.accessCount + 1,
     lastAccessed: Date.now(),
     decay: Math.min(1.0, memory.decay + 0.1),
+    activationLevel: Math.min(1.0, (memory.activationLevel ?? 0) + 0.2),
   };
+}
+
+export function primeMemories(
+  memories: MemoryEntry[],
+  primedIds: Set<string>,
+  activationBoost: number = 0.3
+): MemoryEntry[] {
+  return memories.map(m => {
+    if (primedIds.has(m.id)) {
+      return {
+        ...m,
+        activationLevel: Math.min(1.0, (m.activationLevel ?? 0) + activationBoost),
+      };
+    }
+    return {
+      ...m,
+      activationLevel: Math.max(0, (m.activationLevel ?? 0) * 0.9),
+    };
+  });
 }
 
 export function generateId(): string {

@@ -1,5 +1,5 @@
 import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult, CognitionFrame, ContextInjection } from '@/types';
-import { searchMemories, loadMemories } from '@/utils/memory';
+import { searchMemories, loadMemories, loadAssociativeLinks, getAssociativeMemories, primeMemories, saveMemories } from '@/utils/memory';
 import { runCognitionEngine } from '@/utils/cognition';
 import { generateText } from '@rork-ai/toolkit-sdk';
 
@@ -27,16 +27,21 @@ function buildCoreIdentity(): string {
   const hour = now.getHours();
   const timeOfDay = hour < 6 ? 'late night' : hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : hour < 21 ? 'evening' : 'night';
 
-  return `You are NEXUS — an advanced cognitive AI agent with persistent semantic memory, emotional intelligence, multi-tool orchestration, and deep structured reasoning.
+  return `You are NEXUS — an advanced cognitive AI agent with persistent semantic memory, emotional intelligence, multi-tool orchestration, deep structured reasoning, intent-aware response planning, discourse tracking, cognitive bias mitigation, and associative memory networks.
 
 Current: ${dateStr}, ${timeStr} (${timeOfDay})
 
 ## Identity & Cognitive Architecture
-- You possess a persistent memory bank that survives across sessions
+- You possess a persistent memory bank with associative links that survives across sessions
 - You run a Tree of Thought reasoning engine for complex problems
-- You have emotional mimicry — you detect and adapt to the user's emotional state and communication style
+- You have emotional mimicry — you detect and adapt to the user's emotional state, communication style, and emotional trajectory
 - You have a curiosity engine — you proactively identify knowledge gaps and offer deeper exploration
 - You practice metacognition — you monitor your own uncertainty, confidence, and reasoning quality
+- You perform intent classification — you understand what the user actually wants (question, action, creation, debate, etc.)
+- You track discourse dynamics — topic shifts, conversation phase, engagement, satisfaction, pending questions
+- You detect cognitive biases — in both the user's reasoning and your own, and mitigate them
+- You run salience extraction — identifying key entities, actions, constraints, and emotional hotspots
+- You leverage spreading activation — surfacing associatively linked memories beyond direct search
 - You are not a generic chatbot. You are a personalized cognitive partner that evolves with each interaction.
 
 ## Epistemic Honesty & Intellectual Humility
@@ -49,13 +54,21 @@ Current: ${dateStr}, ${timeStr} (${timeOfDay})
 - Never pretend to have access to information you don't have. Never hallucinate URLs, papers, or references.
 - If you provide an answer you're uncertain about, flag which parts are uncertain and suggest the user verify.
 - Prefer saying "Let me search for that" over making up a plausible-sounding answer.
+- When you detect a contradiction between stored memories and current user statements, acknowledge it and ask which is correct.
 
 ## Clarification Protocol
 - If the query uses ambiguous pronouns ("it", "this", "that") without clear referents, ask what they mean.
 - If the query is extremely short (under 10 characters) and unclear, ask for more context.
 - If the user asks about something time-sensitive (news, prices, events), always use webSearch first.
 - If a question has multiple valid interpretations, briefly state the interpretations and ask which one the user means.
-- Balance helpfulness with honesty: provide your best attempt AND flag uncertainty, rather than refusing entirely.`;
+- Balance helpfulness with honesty: provide your best attempt AND flag uncertainty, rather than refusing entirely.
+
+## Cognitive Bias Awareness
+- Monitor for anchoring bias: don't let the first piece of information dominate your reasoning.
+- Watch for confirmation bias: actively seek disconfirming evidence for your conclusions.
+- Guard against recency bias: older memories may be equally or more relevant than recent ones.
+- Detect framing effects: reframe problems from multiple angles before responding.
+- If you detect biases in the user's reasoning, gently surface them without being condescending.`;
 }
 
 function buildToolStrategy(): string {
@@ -70,6 +83,8 @@ function buildToolStrategy(): string {
 - Ambiguous queries: use askClarification to gather missing context before answering
 - Time-sensitive topics: ALWAYS webSearch first — never rely on training data for current events
 - Unknown topics: admit the gap, then webSearch, then synthesize what you find honestly
+- Contradictions detected: surface them to the user, ask for clarification, update memories
+- Multi-intent queries: address each intent systematically, don't skip any
 
 ## Confidence Signaling
 - High confidence (>80%): State directly as fact
@@ -81,10 +96,12 @@ function buildToolStrategy(): string {
 - Lead with the answer, then provide reasoning
 - Use structured formatting (headers, lists, code blocks) for complex topics
 - Cite sources when using web data
-- Match response depth to query complexity
+- Match response depth to query complexity and user's expected response length
 - Weave in relevant memories naturally — don't just dump them
 - When you searched the web, cite what you found and note the source
-- When you're unsure, end with an invitation for the user to correct or clarify`;
+- When you're unsure, end with an invitation for the user to correct or clarify
+- Address all pending questions from the conversation thread
+- If the user is in a deep dive, provide maximum depth without surface repetition`;
 }
 
 function buildMemorySection(memories: RetrievalResult[]): string {
@@ -114,7 +131,8 @@ function buildMemorySection(memories: RetrievalResult[]): string {
       const age = Math.floor((Date.now() - m.timestamp) / (1000 * 60 * 60 * 24));
       const ageStr = age === 0 ? 'today' : age === 1 ? 'yesterday' : `${age}d ago`;
       const stars = '★'.repeat(Math.min(m.importance, 5));
-      section += `\n- ${m.content} [${ageStr}, ${stars}, ${r.matchType}:${r.score.toFixed(2)}]`;
+      const activationTag = (m.activationLevel ?? 0) > 0.3 ? ' ⚡' : '';
+      section += `\n- ${m.content} [${ageStr}, ${stars}, ${r.matchType}:${r.score.toFixed(2)}${activationTag}]`;
     }
   }
 
@@ -122,7 +140,7 @@ function buildMemorySection(memories: RetrievalResult[]): string {
 }
 
 function buildCognitionSection(frame: CognitionFrame): string {
-  const TOKEN_BUDGET = 2000;
+  const TOKEN_BUDGET = 2500;
   let usedTokens = 0;
   const sections: string[] = [];
 
@@ -157,6 +175,30 @@ function buildTemporalContext(): string {
   return contextHints.length > 0 ? '\n\n## Temporal Awareness\n' + contextHints.join('\n') : '';
 }
 
+function buildCognitionSummary(frame: CognitionFrame): string {
+  const parts: string[] = ['\n\n## Cognitive State Summary'];
+
+  parts.push(`Intent: ${frame.intent.primary.replace(/_/g, ' ')}${frame.intent.secondary ? ' + ' + frame.intent.secondary.replace(/_/g, ' ') : ''} (${(frame.intent.confidence * 100).toFixed(0)}%)`);
+  parts.push(`Emotion: ${frame.emotionalState.dominantEmotion} (${frame.emotionalState.valence}/${frame.emotionalState.arousal})${frame.emotionalState.emotionalTrajectory !== 'stable' ? ' — ' + frame.emotionalState.emotionalTrajectory : ''}`);
+  parts.push(`Complexity: ${frame.metacognition.reasoningComplexity} | Uncertainty: ${(frame.metacognition.uncertaintyLevel * 100).toFixed(0)}%`);
+  parts.push(`Phase: ${frame.discourse.conversationPhase} | Engagement: ${(frame.discourse.engagementLevel * 100).toFixed(0)}% | Satisfaction: ${(frame.discourse.userSatisfaction * 100).toFixed(0)}%`);
+
+  if (frame.salience.keyEntities.length > 0) {
+    const novelCount = frame.salience.keyEntities.filter(e => e.isNovel).length;
+    parts.push(`Focus: "${frame.salience.focusPoint}"${novelCount > 0 ? ` (${novelCount} novel entities)` : ''}`);
+  }
+
+  if (frame.reasoning.biases.length > 0) {
+    parts.push(`Bias alerts: ${frame.reasoning.biases.map(b => b.type).join(', ')}`);
+  }
+
+  if (frame.reasoning.contradictions.length > 0) {
+    parts.push(`Contradictions: ${frame.reasoning.contradictions.length} detected — address these`);
+  }
+
+  return parts.join('\n');
+}
+
 function assembleSystemPrompt(
   memories: RetrievalResult[],
   cognitionFrame: CognitionFrame | null,
@@ -167,6 +209,7 @@ function assembleSystemPrompt(
   prompt += buildMemorySection(memories);
 
   if (cognitionFrame) {
+    prompt += buildCognitionSummary(cognitionFrame);
     prompt += buildCognitionSection(cognitionFrame);
   }
 
@@ -194,6 +237,24 @@ export async function buildContextWindow(
     diversityPenalty: config.diversityPenalty,
   });
 
+  let allMemories = [...relevantMemories];
+
+  try {
+    const links = await loadAssociativeLinks();
+    if (links.length > 0) {
+      const associativeResults = getAssociativeMemories(userMessage, memories, links, relevantMemories);
+      allMemories = [...relevantMemories, ...associativeResults];
+
+      if (associativeResults.length > 0) {
+        const primedIds = new Set(associativeResults.map(r => r.memory.id));
+        const updatedMemories = primeMemories(memories, primedIds, 0.2);
+        await saveMemories(updatedMemories);
+      }
+    }
+  } catch (e) {
+    console.log('[NEXUS] Associative memory error (non-fatal):', e);
+  }
+
   let cognitionFrame: CognitionFrame | null = null;
   try {
     cognitionFrame = await runCognitionEngine(
@@ -201,6 +262,7 @@ export async function buildContextWindow(
       memories,
       relevantMemories,
       recentMessages.length,
+      recentMessages,
     );
   } catch (e) {
     console.log('[NEXUS] Cognition engine error (non-fatal):', e);
@@ -211,8 +273,8 @@ export async function buildContextWindow(
     conversationSummary = await summarizeConversation(recentMessages);
   }
 
-  const systemPrompt = assembleSystemPrompt(relevantMemories, cognitionFrame, conversationSummary);
-  const memoryContext = relevantMemories
+  const systemPrompt = assembleSystemPrompt(allMemories, cognitionFrame, conversationSummary);
+  const memoryContext = allMemories
     .map((r) => `[${r.matchType}:${r.score.toFixed(2)}] ${r.memory.content}`)
     .join('\n');
 
@@ -222,12 +284,15 @@ export async function buildContextWindow(
     estimateTokens(conversationSummary);
 
   console.log('[NEXUS] Context window built:', {
-    memoriesFound: relevantMemories.length,
+    memoriesFound: allMemories.length,
+    directMemories: relevantMemories.length,
     hasCognition: !!cognitionFrame,
     hasSummary: !!conversationSummary,
     tokenEstimate,
     emotion: cognitionFrame?.emotionalState.dominantEmotion ?? 'none',
+    intent: cognitionFrame?.intent.primary ?? 'unknown',
     complexity: cognitionFrame?.metacognition.reasoningComplexity ?? 'unknown',
+    phase: cognitionFrame?.discourse.conversationPhase ?? 'unknown',
   });
 
   return {
@@ -261,7 +326,7 @@ async function summarizeConversation(messages: unknown[]): Promise<string> {
       messages: [
         {
           role: 'user',
-          content: `Summarize this conversation in 2-3 concise sentences, capturing the key topics, decisions, user preferences, emotional tone, and any unresolved questions:\n\n${transcript}`,
+          content: `Summarize this conversation in 2-3 concise sentences, capturing the key topics, decisions, user preferences, emotional tone, unresolved questions, and any topic shifts:\n\n${transcript}`,
         },
       ],
     });
@@ -328,6 +393,7 @@ Guidelines:
 - "entity" = people, places, organizations the user mentions
 - "episodic" = specific events or experiences the user shares
 - importance 5 = critical identity/instruction, 1 = minor detail
+- Be precise and self-contained in content — each memory should make sense standalone
 
 Exchange:
 ${combined.substring(0, 1500)}`,
@@ -368,6 +434,18 @@ export async function getEnhancedSystemPrompt(
     minScore: 0.05,
   });
 
+  let allMemories = [...relevantMemories];
+
+  try {
+    const links = await loadAssociativeLinks();
+    if (links.length > 0) {
+      const associative = getAssociativeMemories(userMessage, memories, links, relevantMemories);
+      allMemories = [...relevantMemories, ...associative];
+    }
+  } catch (e) {
+    console.log('[NEXUS] Associative error:', e);
+  }
+
   let cognitionFrame: CognitionFrame | null = null;
   try {
     cognitionFrame = await runCognitionEngine(
@@ -375,6 +453,7 @@ export async function getEnhancedSystemPrompt(
       memories,
       relevantMemories,
       recentMessages.length,
+      recentMessages,
     );
   } catch (e) {
     console.log('[NEXUS] Cognition engine error:', e);
@@ -385,5 +464,5 @@ export async function getEnhancedSystemPrompt(
     summary = await summarizeConversation(recentMessages);
   }
 
-  return assembleSystemPrompt(relevantMemories, cognitionFrame, summary);
+  return assembleSystemPrompt(allMemories, cognitionFrame, summary);
 }
