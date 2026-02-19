@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
+import React, { useRef, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, Animated, Image } from 'react-native';
 import {
   Globe,
   Brain,
@@ -92,9 +92,30 @@ export default React.memo(function ToolCard({ toolName, state, input, output }: 
     return null;
   };
 
+  const parsedImageOutput = useMemo(() => {
+    if (toolName !== 'generateImage' || !output) return null;
+    try {
+      const parsed = typeof output === 'string' ? JSON.parse(output) : output;
+      if (parsed?.success && parsed?.imageUri) return parsed;
+      return null;
+    } catch {
+      return null;
+    }
+  }, [toolName, output]);
+
   const getOutputPreview = () => {
     if (!output) return null;
-    if (typeof output === 'string') return output.length > 140 ? output.slice(0, 140) + '…' : output;
+    if (toolName === 'generateImage' && parsedImageOutput?.success) {
+      return parsedImageOutput.prompt ?? 'Image generated';
+    }
+    if (typeof output === 'string') {
+      try {
+        const parsed = JSON.parse(output);
+        if (parsed?.error) return parsed.message ?? 'Error occurred';
+        if (parsed?.success) return parsed.prompt ?? 'Success';
+      } catch { /* not json */ }
+      return output.length > 140 ? output.slice(0, 140) + '…' : output;
+    }
     if (typeof output === 'object' && output !== null) {
       const str = JSON.stringify(output);
       return str.length > 140 ? str.slice(0, 140) + '…' : str;
@@ -178,6 +199,15 @@ export default React.memo(function ToolCard({ toolName, state, input, output }: 
           <Text style={styles.previewText} numberOfLines={3}>{outputPreview}</Text>
         </View>
       )}
+      {isComplete && parsedImageOutput?.imageUri && (
+        <View style={styles.imageWrap}>
+          <Image
+            source={{ uri: parsedImageOutput.imageUri }}
+            style={styles.generatedImage}
+            resizeMode="cover"
+          />
+        </View>
+      )}
     </Animated.View>
   );
 });
@@ -254,5 +284,16 @@ const styles = StyleSheet.create({
     color: Colors.dark.textSecondary,
     fontSize: 12,
     lineHeight: 17,
+  },
+  imageWrap: {
+    marginTop: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  generatedImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 8,
+    backgroundColor: Colors.dark.surface,
   },
 });
