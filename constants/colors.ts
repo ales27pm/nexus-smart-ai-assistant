@@ -40,6 +40,8 @@ const Colors = {
     toolTaskPlan: '#818CF8',
     toolSummarize: '#F472B6',
     toolCodeEval: '#2DD4BF',
+    toolCognition: '#E879F9',
+    toolEmotion: '#FB923C',
   },
 };
 
