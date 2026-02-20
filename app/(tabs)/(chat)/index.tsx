@@ -326,14 +326,42 @@ export default function ChatScreen() {
 
   const [dismissed, setDismissed] = useState(false);
   const [voiceModeVisible, setVoiceModeVisible] = useState(false);
+  const [isAgentResponding, setIsAgentResponding] = useState(false);
+  const lastAssistantLenRef = useRef(0);
+  const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
   });
 
   useEffect(() => {
-    if (error) setDismissed(false);
+    if (error) {
+      setDismissed(false);
+      setIsAgentResponding(false);
+    }
   }, [error]);
+
+  useEffect(() => {
+    if (!isAgentResponding) return;
+    if (messages.length === 0) return;
+    const last = messages[messages.length - 1] as any;
+    if (last.role !== 'assistant') return;
+    const hasActiveTool = last.parts?.some((p: any) => p.type === 'tool' && (p.state === 'input-streaming' || p.state === 'input-available'));
+    if (hasActiveTool) {
+      if (respondingTimerRef.current) clearTimeout(respondingTimerRef.current);
+      return;
+    }
+    const textLen = last.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text ?? '').join('').length ?? 0;
+    if (textLen !== lastAssistantLenRef.current) {
+      lastAssistantLenRef.current = textLen;
+      if (respondingTimerRef.current) clearTimeout(respondingTimerRef.current);
+      respondingTimerRef.current = setTimeout(() => {
+        console.log('[NEXUS] Agent response stabilized, marking done');
+        setIsAgentResponding(false);
+        lastAssistantLenRef.current = 0;
+      }, 1200);
+    }
+  }, [messages, isAgentResponding]);
 
   useEffect(() => {
     if (activeId && activeId !== convIdRef.current) {
@@ -410,6 +438,9 @@ export default function ChatScreen() {
     if (!text.trim() && (!files || files.length === 0)) return;
     console.log('[NEXUS] Sending:', text.substring(0, 50), files ? `with ${files.length} file(s)` : '');
     hasLoadedRef.current = true;
+    setIsAgentResponding(true);
+    lastAssistantLenRef.current = 0;
+    if (respondingTimerRef.current) clearTimeout(respondingTimerRef.current);
     const memories = await loadMemories();
     const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages);
     const messagePayload: any = { text: text.trim(), systemPrompt };
@@ -442,11 +473,12 @@ export default function ChatScreen() {
   const keyExtractor = useCallback((item: any) => item.id, []);
 
   const isStreaming = useMemo(() => {
+    if (isAgentResponding) return true;
     if (messages.length === 0) return false;
     const last = messages[messages.length - 1] as any;
     if (last.role === 'user') return true;
     return last.parts.some((p: any) => p.type === 'tool' && (p.state === 'input-streaming' || p.state === 'input-available'));
-  }, [messages]);
+  }, [messages, isAgentResponding]);
 
   const streamingAssistantText = useMemo(() => {
     if (messages.length === 0) return '';
