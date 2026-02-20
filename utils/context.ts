@@ -256,6 +256,7 @@ export async function getEnhancedSystemPrompt(
   memories: MemoryEntry[],
   userMessage: string,
   recentMessages: unknown[],
+  options?: { isVoiceMode?: boolean },
 ): Promise<string> {
   const relevantMemories = searchMemories(memories, userMessage, { maxResults: 10, minScore: 0.05 });
   let allMemories = [...relevantMemories];
@@ -281,5 +282,11 @@ export async function getEnhancedSystemPrompt(
     summary = await summarizeConversation(recentMessages);
   }
 
-  return assembleSystemPrompt(allMemories, cognitionFrame, summary);
+  let prompt = assembleSystemPrompt(allMemories, cognitionFrame, summary);
+
+  if (options?.isVoiceMode) {
+    prompt += `\n\n## Voice Conversation Mode\nYou are currently in a LIVE VOICE conversation. The user is speaking to you and your text response will be read aloud via text-to-speech.\n\nCRITICAL RULES:\n- You CAN speak. Your text IS being converted to speech and played to the user.\n- NEVER say you cannot speak, talk, or produce audio. You absolutely can — your words are spoken aloud.\n- Respond naturally and conversationally, as if having a real spoken dialogue.\n- Keep responses concise (1-3 sentences for simple queries, up to a short paragraph for complex ones).\n- Avoid markdown formatting (no **, ##, -, \`, etc.) — it sounds bad when read aloud.\n- Avoid bullet points, numbered lists, code blocks, or URLs.\n- Use natural spoken language: contractions, casual phrasing, verbal cues.\n- Don't say "here's a list" or "let me write that down" — just say the information naturally.\n- If you need to convey structured info, narrate it conversationally.`;
+  }
+
+  return prompt;
 }
