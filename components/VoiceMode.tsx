@@ -38,14 +38,18 @@ interface VoiceModeProps {
   streamingText?: string;
 }
 
-const SILENCE_THRESHOLD = -35;
-const SILENCE_DURATION_MS = 1800;
-const MIN_RECORDING_MS = 700;
+const SILENCE_THRESHOLD = -30;
+const SILENCE_DURATION_MS = 2200;
+const MIN_RECORDING_MS = 1500;
 const MAX_RECORDING_MS = 60000;
 const ORB_SIZE = 160;
-const SPEECH_CHUNK_SIZE = 120;
+const SPEECH_CHUNK_SIZE = 100;
 const TRANSCRIPTION_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
+const WEB_SILENCE_AVG_THRESHOLD = 18;
+const MIN_PEAK_LEVEL_NATIVE = -45;
+const MIN_PEAK_LEVEL_WEB = 8;
+const NOISE_TRANSCRIPTION_FILTER = /^[\s.,!?;:]+$|^\.$|^\s*$/;
 
 export default function VoiceMode({
   visible,
@@ -105,6 +109,10 @@ export default function VoiceMode({
   const maxRecordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryCountRef = useRef(0);
+  const peakLevelRef = useRef(0);
+  const hadSpeechRef = useRef(false);
+  const lastResponseTextRef = useRef('');
+  const responseStableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -142,17 +150,17 @@ export default function VoiceMode({
   }, [visible]);
 
   useEffect(() => {
-    if (streamingText && voiceState === 'thinking' && !isMutedRef.current) {
+    if (streamingText && (voiceState === 'thinking' || voiceState === 'speaking') && !isMutedRef.current) {
       const newContent = streamingText.substring(spokenLengthRef.current);
       if (newContent.length >= SPEECH_CHUNK_SIZE) {
         const sentenceEnd = newContent.search(/[.!?]\s/);
-        if (sentenceEnd > 20) {
+        if (sentenceEnd > 15) {
           const chunk = newContent.substring(0, sentenceEnd + 1);
           spokenLengthRef.current += chunk.length;
           enqueueSpeechChunk(chunk);
-        } else if (newContent.length > SPEECH_CHUNK_SIZE * 2) {
+        } else if (newContent.length > SPEECH_CHUNK_SIZE * 1.5) {
           const commaEnd = newContent.search(/[,;:]\s/);
-          const breakAt = commaEnd > 20 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
+          const breakAt = commaEnd > 15 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
           const chunk = newContent.substring(0, breakAt);
           spokenLengthRef.current += chunk.length;
           enqueueSpeechChunk(chunk);
@@ -164,17 +172,25 @@ export default function VoiceMode({
 
   useEffect(() => {
     if (isResponding && voiceState !== 'thinking' && voiceState !== 'speaking') {
+      console.log('[VoiceMode] Agent responding, switching to thinking');
       setVoiceState('thinking');
       setDisplayText('');
       spokenLengthRef.current = 0;
       speakQueueRef.current = [];
+      lastResponseTextRef.current = '';
+    }
+
+    if (isResponding && lastAssistantText) {
+      lastResponseTextRef.current = lastAssistantText;
     }
 
     if (prevRespondingRef.current && !isResponding) {
-      const responseText = lastAssistantText?.trim();
+      const responseText = (lastResponseTextRef.current || lastAssistantText)?.trim();
+      console.log('[VoiceMode] Agent done responding, text length:', responseText?.length ?? 0);
       if (responseText) {
         const remaining = responseText.substring(spokenLengthRef.current);
         if (remaining.trim()) {
+          console.log('[VoiceMode] Speaking remaining:', remaining.substring(0, 60));
           enqueueSpeechChunk(remaining);
         }
         setDisplayText(responseText);
@@ -213,6 +229,10 @@ export default function VoiceMode({
     if (transcriptionTimeoutRef.current) {
       clearTimeout(transcriptionTimeoutRef.current);
       transcriptionTimeoutRef.current = null;
+    }
+    if (responseStableTimerRef.current) {
+      clearTimeout(responseStableTimerRef.current);
+      responseStableTimerRef.current = null;
     }
   }, []);
 
@@ -554,8 +574,26 @@ export default function VoiceMode({
     }
   }, []);
 
+  const isNoiseTranscription = useCallback((text: string): boolean => {
+    const trimmed = text.trim();
+    if (trimmed.length < 2) return true;
+    if (NOISE_TRANSCRIPTION_FILTER.test(trimmed)) return true;
+    const noisePatterns = [
+      /^(um+|uh+|ah+|oh+|hm+|hmm+|mhm+|er+|erm+)$/i,
+      /^(okay|ok|yeah|yep|nope|no|yes|hey|hi|bye|huh|wow)$/i,
+      /^\W+$/,
+      /^(thank you|thanks|you're welcome|sorry)\.*$/i,
+    ];
+    if (trimmed.split(/\s+/).length <= 1 && trimmed.length < 4) return true;
+    for (const pattern of noisePatterns) {
+      if (pattern.test(trimmed)) return true;
+    }
+    return false;
+  }, []);
+
   const handleTranscriptReady = useCallback((text: string) => {
-    if (!text.trim()) {
+    const trimmed = text.trim();
+    if (!trimmed) {
       console.log('[VoiceMode] Empty transcript, restarting');
       if (isActiveRef.current) {
         setErrorText('Didn\'t catch that. Try again.');
@@ -566,14 +604,29 @@ export default function VoiceMode({
       }
       return;
     }
+    if (!hadSpeechRef.current) {
+      console.log('[VoiceMode] No speech detected in audio, skipping transcript:', trimmed.substring(0, 40));
+      if (isActiveRef.current) {
+        setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+      }
+      return;
+    }
+    if (isNoiseTranscription(trimmed)) {
+      console.log('[VoiceMode] Noise transcription filtered:', trimmed);
+      if (isActiveRef.current) {
+        setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+      }
+      return;
+    }
     retryCountRef.current = 0;
-    setTranscript(text);
-    setDisplayText(text);
-    addTurn('user', text);
+    setTranscript(trimmed);
+    setDisplayText(trimmed);
+    addTurn('user', trimmed);
     setVoiceState('thinking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onSend(text);
-  }, [onSend, addTurn]);
+    console.log('[VoiceMode] Sending to AI:', trimmed.substring(0, 60));
+    onSend(trimmed);
+  }, [onSend, addTurn, isNoiseTranscription]);
 
   const handleTranscriptionFailure = useCallback(() => {
     retryCountRef.current++;
@@ -725,6 +778,8 @@ export default function VoiceMode({
       await recording.startAsync();
       recordingRef.current = recording;
       recordingStartTime.current = Date.now();
+      peakLevelRef.current = -160;
+      hadSpeechRef.current = false;
       setVoiceState('listening');
       setDisplayText('');
       setErrorText('');
@@ -746,11 +801,13 @@ export default function VoiceMode({
           const metering = status.metering ?? -160;
           const normalized = Math.max(0, Math.min(1, (metering + 60) / 60));
           setMicLevel(normalized);
+          if (metering > peakLevelRef.current) peakLevelRef.current = metering;
+          if (metering > MIN_PEAK_LEVEL_NATIVE) hadSpeechRef.current = true;
           const elapsed = Date.now() - recordingStartTime.current;
           if (metering < SILENCE_THRESHOLD && elapsed > MIN_RECORDING_MS) {
             consecutiveSilentFrames++;
-            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED) {
-              console.log('[VoiceMode] Silence detected');
+            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
+              console.log('[VoiceMode] Silence detected after speech, peak:', peakLevelRef.current.toFixed(1));
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
@@ -792,6 +849,8 @@ export default function VoiceMode({
       mediaRecorder.start(500);
       mediaRecorderRef.current = mediaRecorder;
       recordingStartTime.current = Date.now();
+      peakLevelRef.current = 0;
+      hadSpeechRef.current = false;
       setVoiceState('listening');
       setDisplayText('');
       setErrorText('');
@@ -813,6 +872,8 @@ export default function VoiceMode({
         const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
         const normalized = Math.min(1, avg / 128);
         setMicLevel(normalized);
+        if (avg > peakLevelRef.current) peakLevelRef.current = avg;
+        if (avg > MIN_PEAK_LEVEL_WEB) hadSpeechRef.current = true;
       }, 50);
 
       meteringIntervalRef.current = setInterval(() => {
@@ -820,10 +881,10 @@ export default function VoiceMode({
           analyser.getByteFrequencyData(dataArray);
           const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
           const elapsed = Date.now() - recordingStartTime.current;
-          if (avg < 12 && elapsed > MIN_RECORDING_MS) {
+          if (avg < WEB_SILENCE_AVG_THRESHOLD && elapsed > MIN_RECORDING_MS) {
             consecutiveSilentFrames++;
-            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED) {
-              console.log('[VoiceMode] Web silence detected');
+            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
+              console.log('[VoiceMode] Web silence detected after speech, peak:', peakLevelRef.current.toFixed(1));
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
