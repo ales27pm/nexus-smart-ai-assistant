@@ -660,7 +660,12 @@ export default function VoiceMode({
       setMicLevel(0);
 
       await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
       const uri = recording.getURI();
       recordingRef.current = null;
 

@@ -434,15 +434,15 @@ export default function ChatScreen() {
     }
   }, [messages]);
 
-  const handleSend = useCallback(async (text: string, files?: ChatFile[]) => {
+  const handleSend = useCallback(async (text: string, files?: ChatFile[], options?: { isVoiceMode?: boolean }) => {
     if (!text.trim() && (!files || files.length === 0)) return;
-    console.log('[NEXUS] Sending:', text.substring(0, 50), files ? `with ${files.length} file(s)` : '');
+    console.log('[NEXUS] Sending:', text.substring(0, 50), files ? `with ${files.length} file(s)` : '', options?.isVoiceMode ? '(voice)' : '');
     hasLoadedRef.current = true;
     setIsAgentResponding(true);
     lastAssistantLenRef.current = 0;
     if (respondingTimerRef.current) clearTimeout(respondingTimerRef.current);
     const memories = await loadMemories();
-    const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages);
+    const systemPrompt = await getEnhancedSystemPrompt(memories, text, messages, { isVoiceMode: options?.isVoiceMode });
     const messagePayload: any = { text: text.trim(), systemPrompt };
     if (files && files.length > 0) {
       messagePayload.files = files;
@@ -539,7 +539,7 @@ export default function ChatScreen() {
         visible={voiceModeVisible}
         onClose={() => setVoiceModeVisible(false)}
         onSend={(text) => {
-          handleSend(text);
+          handleSend(text, undefined, { isVoiceMode: true });
         }}
         isResponding={isStreaming}
         lastAssistantText={
