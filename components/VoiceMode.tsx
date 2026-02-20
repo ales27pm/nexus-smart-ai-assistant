@@ -38,18 +38,57 @@ interface VoiceModeProps {
   streamingText?: string;
 }
 
-const SILENCE_THRESHOLD = -30;
-const SILENCE_DURATION_MS = 2200;
-const MIN_RECORDING_MS = 1500;
+const SILENCE_THRESHOLD_NATIVE = -35;
+const SILENCE_DURATION_MS = 2000;
+const MIN_RECORDING_MS = 1200;
 const MAX_RECORDING_MS = 60000;
 const ORB_SIZE = 160;
-const SPEECH_CHUNK_SIZE = 100;
+const SPEECH_CHUNK_SIZE = 120;
 const TRANSCRIPTION_TIMEOUT_MS = 15000;
 const MAX_RETRIES = 2;
-const WEB_SILENCE_AVG_THRESHOLD = 18;
-const MIN_PEAK_LEVEL_NATIVE = -45;
-const MIN_PEAK_LEVEL_WEB = 8;
-const NOISE_TRANSCRIPTION_FILTER = /^[\s.,!?;:]+$|^\.$|^\s*$/;
+const WEB_SILENCE_AVG_THRESHOLD = 12;
+const MIN_PEAK_LEVEL_NATIVE = -40;
+const MIN_PEAK_LEVEL_WEB = 12;
+const METERING_INTERVAL = 150;
+const SPEECH_RATE_IOS = 0.52;
+const SPEECH_RATE_ANDROID = 0.95;
+const SPEECH_RATE_WEB = 1.0;
+const AUTO_LISTEN_DELAY = 700;
+const POST_SPEAK_LISTEN_DELAY = 600;
+
+const NOISE_WORDS = new Set([
+  '', '.', '..', '...', ',', '!', '?', 'you', 'the', 'a', 'an',
+  'um', 'uh', 'ah', 'oh', 'hm', 'hmm', 'mhm', 'er', 'erm',
+  'bye', 'bye.', 'thanks.', 'thank you.',
+]);
+
+function getSpeechRate(): number {
+  if (Platform.OS === 'ios') return SPEECH_RATE_IOS;
+  if (Platform.OS === 'android') return SPEECH_RATE_ANDROID;
+  return SPEECH_RATE_WEB;
+}
+
+async function configureAudioForRecording(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  console.log('[VoiceMode] Configuring audio for RECORDING');
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: true,
+    playsInSilentModeIOS: true,
+    shouldDuckAndroid: true,
+    playThroughEarpieceAndroid: false,
+  });
+}
+
+async function configureAudioForPlayback(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  console.log('[VoiceMode] Configuring audio for PLAYBACK');
+  await Audio.setAudioModeAsync({
+    allowsRecordingIOS: false,
+    playsInSilentModeIOS: true,
+    shouldDuckAndroid: true,
+    playThroughEarpieceAndroid: false,
+  });
+}
 
 export default function VoiceMode({
   visible,
@@ -113,6 +152,7 @@ export default function VoiceMode({
   const hadSpeechRef = useRef(false);
   const lastResponseTextRef = useRef('');
   const responseStableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speechCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
@@ -130,7 +170,10 @@ export default function VoiceMode({
       spokenLengthRef.current = 0;
       speakQueueRef.current = [];
       isSpeakingChunkRef.current = false;
+      isSpeakingRef.current = false;
       retryCountRef.current = 0;
+      peakLevelRef.current = Platform.OS === 'web' ? 0 : -160;
+      hadSpeechRef.current = false;
       orbScale.setValue(1);
       orbOpacity.setValue(0.6);
       fadeAnim.setValue(0);
@@ -140,7 +183,7 @@ export default function VoiceMode({
           console.log('[VoiceMode] Auto-starting listening');
           startListening();
         }
-      }, 600);
+      }, AUTO_LISTEN_DELAY);
     } else {
       isActiveRef.current = false;
       clearAllTimers();
@@ -150,28 +193,29 @@ export default function VoiceMode({
   }, [visible]);
 
   useEffect(() => {
-    if (streamingText && (voiceState === 'thinking' || voiceState === 'speaking') && !isMutedRef.current) {
-      const newContent = streamingText.substring(spokenLengthRef.current);
-      if (newContent.length >= SPEECH_CHUNK_SIZE) {
-        const sentenceEnd = newContent.search(/[.!?]\s/);
-        if (sentenceEnd > 15) {
-          const chunk = newContent.substring(0, sentenceEnd + 1);
-          spokenLengthRef.current += chunk.length;
-          enqueueSpeechChunk(chunk);
-        } else if (newContent.length > SPEECH_CHUNK_SIZE * 1.5) {
-          const commaEnd = newContent.search(/[,;:]\s/);
-          const breakAt = commaEnd > 15 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
-          const chunk = newContent.substring(0, breakAt);
-          spokenLengthRef.current += chunk.length;
-          enqueueSpeechChunk(chunk);
-        }
-      }
-      setDisplayText(streamingText);
+    if (!streamingText || isMutedRef.current) return;
+    if (voiceStateRef.current !== 'thinking' && voiceStateRef.current !== 'speaking') return;
+
+    const newContent = streamingText.substring(spokenLengthRef.current);
+    if (newContent.length < SPEECH_CHUNK_SIZE) return;
+
+    const sentenceEnd = newContent.search(/[.!?]\s/);
+    if (sentenceEnd > 20) {
+      const chunk = newContent.substring(0, sentenceEnd + 1);
+      spokenLengthRef.current += chunk.length;
+      enqueueSpeechChunk(chunk);
+    } else if (newContent.length > SPEECH_CHUNK_SIZE * 2) {
+      const commaEnd = newContent.search(/[,;:]\s/);
+      const breakAt = commaEnd > 20 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
+      const chunk = newContent.substring(0, breakAt);
+      spokenLengthRef.current += chunk.length;
+      enqueueSpeechChunk(chunk);
     }
-  }, [streamingText, voiceState]);
+    setDisplayText(streamingText);
+  }, [streamingText]);
 
   useEffect(() => {
-    if (isResponding && voiceState !== 'thinking' && voiceState !== 'speaking') {
+    if (isResponding && voiceStateRef.current !== 'thinking' && voiceStateRef.current !== 'speaking') {
       console.log('[VoiceMode] Agent responding, switching to thinking');
       setVoiceState('thinking');
       setDisplayText('');
@@ -190,7 +234,7 @@ export default function VoiceMode({
       if (responseText) {
         const remaining = responseText.substring(spokenLengthRef.current);
         if (remaining.trim()) {
-          console.log('[VoiceMode] Speaking remaining:', remaining.substring(0, 60));
+          console.log('[VoiceMode] Speaking remaining:', remaining.substring(0, 80));
           enqueueSpeechChunk(remaining);
         }
         setDisplayText(responseText);
@@ -218,22 +262,12 @@ export default function VoiceMode({
   }, [voiceState]);
 
   const clearAllTimers = useCallback(() => {
-    if (autoStartTimerRef.current) {
-      clearTimeout(autoStartTimerRef.current);
-      autoStartTimerRef.current = null;
-    }
-    if (maxRecordingTimerRef.current) {
-      clearTimeout(maxRecordingTimerRef.current);
-      maxRecordingTimerRef.current = null;
-    }
-    if (transcriptionTimeoutRef.current) {
-      clearTimeout(transcriptionTimeoutRef.current);
-      transcriptionTimeoutRef.current = null;
-    }
-    if (responseStableTimerRef.current) {
-      clearTimeout(responseStableTimerRef.current);
-      responseStableTimerRef.current = null;
-    }
+    [autoStartTimerRef, maxRecordingTimerRef, transcriptionTimeoutRef, responseStableTimerRef, speechCheckTimerRef].forEach(ref => {
+      if (ref.current) {
+        clearTimeout(ref.current as ReturnType<typeof setTimeout>);
+        ref.current = null;
+      }
+    });
   }, []);
 
   const stopAllAnims = useCallback(() => {
@@ -394,7 +428,7 @@ export default function VoiceMode({
     });
   }, []);
 
-  const cleanupAll = useCallback(() => {
+  const cleanupRecording = useCallback(() => {
     if (meteringIntervalRef.current) {
       clearInterval(meteringIntervalRef.current);
       meteringIntervalRef.current = null;
@@ -403,7 +437,6 @@ export default function VoiceMode({
       clearInterval(webLevelIntervalRef.current);
       webLevelIntervalRef.current = null;
     }
-    stopAllAnims();
     if (recordingRef.current) {
       try { recordingRef.current.stopAndUnloadAsync().catch(() => {}); } catch (_e) {}
       recordingRef.current = null;
@@ -422,7 +455,12 @@ export default function VoiceMode({
       streamRef.current = null;
     }
     setMicLevel(0);
-  }, [stopAllAnims]);
+  }, []);
+
+  const cleanupAll = useCallback(() => {
+    stopAllAnims();
+    cleanupRecording();
+  }, [stopAllAnims, cleanupRecording]);
 
   const stopSpeaking = useCallback(() => {
     try {
@@ -430,6 +468,10 @@ export default function VoiceMode({
       isSpeakingRef.current = false;
       isSpeakingChunkRef.current = false;
       speakQueueRef.current = [];
+      if (speechCheckTimerRef.current) {
+        clearTimeout(speechCheckTimerRef.current);
+        speechCheckTimerRef.current = null;
+      }
     } catch (e) {
       console.log('[VoiceMode] Stop speech error:', e);
     }
@@ -459,8 +501,59 @@ export default function VoiceMode({
       .trim();
   }, []);
 
-  const processNextChunk = useCallback(() => {
+  const speakText = useCallback(async (cleaned: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      if (!cleaned || !isActiveRef.current) {
+        resolve();
+        return;
+      }
+
+      isSpeakingChunkRef.current = true;
+      if (voiceStateRef.current !== 'speaking') {
+        setVoiceState('speaking');
+      }
+
+      console.log('[VoiceMode] TTS speaking:', cleaned.substring(0, 80));
+
+      let resolved = false;
+      const finish = () => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      };
+
+      const safetyTimeout = setTimeout(() => {
+        console.log('[VoiceMode] TTS safety timeout fired');
+        finish();
+      }, Math.max(15000, cleaned.length * 120));
+
+      Speech.speak(cleaned, {
+        language: 'en-US',
+        pitch: 1.0,
+        rate: getSpeechRate(),
+        onDone: () => {
+          clearTimeout(safetyTimeout);
+          console.log('[VoiceMode] TTS chunk done');
+          finish();
+        },
+        onError: (err) => {
+          clearTimeout(safetyTimeout);
+          console.log('[VoiceMode] TTS chunk error:', err);
+          finish();
+        },
+        onStopped: () => {
+          clearTimeout(safetyTimeout);
+          console.log('[VoiceMode] TTS chunk stopped');
+          finish();
+        },
+      });
+    });
+  }, []);
+
+  const processNextChunk = useCallback(async () => {
     if (!isActiveRef.current) return;
+
     if (speakQueueRef.current.length === 0) {
       isSpeakingChunkRef.current = false;
       if (!prevRespondingRef.current) {
@@ -468,6 +561,7 @@ export default function VoiceMode({
       }
       return;
     }
+
     const chunk = speakQueueRef.current.shift()!;
     const cleaned = cleanTextForSpeech(chunk);
     if (!cleaned) {
@@ -475,36 +569,19 @@ export default function VoiceMode({
       return;
     }
 
-    isSpeakingChunkRef.current = true;
-    if (voiceStateRef.current !== 'speaking') {
-      setVoiceState('speaking');
-    }
+    await configureAudioForPlayback();
+    await new Promise(r => setTimeout(r, 80));
 
-    console.log('[VoiceMode] Speaking chunk:', cleaned.substring(0, 60));
-    Speech.speak(cleaned, {
-      language: 'en-US',
-      pitch: 1.0,
-      rate: Platform.OS === 'web' ? 1.0 : 0.95,
-      onDone: () => {
-        console.log('[VoiceMode] Chunk done, queue:', speakQueueRef.current.length);
-        if (isActiveRef.current) processNextChunk();
-      },
-      onError: (err) => {
-        console.log('[VoiceMode] Chunk speech error:', err);
-        isSpeakingChunkRef.current = false;
-        if (isActiveRef.current) {
-          if (speakQueueRef.current.length > 0) {
-            processNextChunk();
-          } else {
-            finishSpeakingCycle();
-          }
-        }
-      },
-      onStopped: () => {
-        isSpeakingChunkRef.current = false;
-      },
-    });
-  }, [cleanTextForSpeech]);
+    await speakText(cleaned);
+
+    if (isActiveRef.current) {
+      if (speakQueueRef.current.length > 0) {
+        processNextChunk();
+      } else if (!prevRespondingRef.current) {
+        finishSpeakingCycle();
+      }
+    }
+  }, [cleanTextForSpeech, speakText]);
 
   const enqueueSpeechChunk = useCallback((chunk: string) => {
     if (isMutedRef.current) return;
@@ -525,7 +602,7 @@ export default function VoiceMode({
       setDisplayText('');
       setTimeout(() => {
         if (isActiveRef.current) startListening();
-      }, 500);
+      }, POST_SPEAK_LISTEN_DELAY);
     }
   }, []);
 
@@ -552,13 +629,12 @@ export default function VoiceMode({
       if (!response.ok) {
         console.log('[VoiceMode] STT error:', response.status);
         if (attempt < MAX_RETRIES) {
-          console.log('[VoiceMode] Retrying transcription...');
           return transcribeAudio(formData, attempt + 1);
         }
         return null;
       }
       const data = await response.json();
-      console.log('[VoiceMode] Transcribed:', data.text?.substring(0, 80));
+      console.log('[VoiceMode] Transcribed:', data.text?.substring(0, 100));
       return data.text || null;
     } catch (e: unknown) {
       if (transcriptionTimeoutRef.current) {
@@ -575,16 +651,16 @@ export default function VoiceMode({
   }, []);
 
   const isNoiseTranscription = useCallback((text: string): boolean => {
-    const trimmed = text.trim();
+    const trimmed = text.trim().toLowerCase().replace(/[.!?,;:]+$/, '').trim();
     if (trimmed.length < 2) return true;
-    if (NOISE_TRANSCRIPTION_FILTER.test(trimmed)) return true;
+    if (NOISE_WORDS.has(trimmed)) return true;
+    if (/^[\s.,!?;:]+$/.test(trimmed)) return true;
+    if (/^\W+$/.test(trimmed)) return true;
+    if (trimmed.split(/\s+/).length <= 1 && trimmed.length < 4) return true;
     const noisePatterns = [
       /^(um+|uh+|ah+|oh+|hm+|hmm+|mhm+|er+|erm+)$/i,
-      /^(okay|ok|yeah|yep|nope|no|yes|hey|hi|bye|huh|wow)$/i,
-      /^\W+$/,
-      /^(thank you|thanks|you're welcome|sorry)\.*$/i,
+      /^(okay|ok|yeah|yep|nope|hey|hi|huh|wow)$/i,
     ];
-    if (trimmed.split(/\s+/).length <= 1 && trimmed.length < 4) return true;
     for (const pattern of noisePatterns) {
       if (pattern.test(trimmed)) return true;
     }
@@ -596,7 +672,7 @@ export default function VoiceMode({
     if (!trimmed) {
       console.log('[VoiceMode] Empty transcript, restarting');
       if (isActiveRef.current) {
-        setErrorText('Didn\'t catch that. Try again.');
+        setErrorText("Didn't catch that. Try again.");
         setTimeout(() => {
           setErrorText('');
           if (isActiveRef.current) startListening();
@@ -605,7 +681,7 @@ export default function VoiceMode({
       return;
     }
     if (!hadSpeechRef.current) {
-      console.log('[VoiceMode] No speech detected in audio, skipping transcript:', trimmed.substring(0, 40));
+      console.log('[VoiceMode] No speech detected in audio, skipping:', trimmed.substring(0, 50));
       if (isActiveRef.current) {
         setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
       }
@@ -624,7 +700,7 @@ export default function VoiceMode({
     addTurn('user', trimmed);
     setVoiceState('thinking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('[VoiceMode] Sending to AI:', trimmed.substring(0, 60));
+    console.log('[VoiceMode] Sending to AI:', trimmed.substring(0, 80));
     onSend(trimmed);
   }, [onSend, addTurn, isNoiseTranscription]);
 
@@ -659,20 +735,32 @@ export default function VoiceMode({
       setDisplayText('');
       setMicLevel(0);
 
+      console.log('[VoiceMode] Stopping native recording, peak:', peakLevelRef.current.toFixed(1), 'hadSpeech:', hadSpeechRef.current);
+
       await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-      });
-      const uri = recording.getURI();
       recordingRef.current = null;
 
+      await configureAudioForPlayback();
+
+      const uri = recording.getURI();
       if (!uri) {
-        if (isActiveRef.current) startListening();
+        console.log('[VoiceMode] No URI from recording');
+        if (isActiveRef.current) {
+          setVoiceState('idle');
+          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+        }
         return;
       }
+
+      if (!hadSpeechRef.current) {
+        console.log('[VoiceMode] No speech detected (peak:', peakLevelRef.current.toFixed(1), '), skipping transcription');
+        if (isActiveRef.current) {
+          setVoiceState('idle');
+          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+        }
+        return;
+      }
+
       const uriParts = uri.split('.');
       const fileType = uriParts[uriParts.length - 1];
       const formData = new FormData();
@@ -703,9 +791,35 @@ export default function VoiceMode({
         clearInterval(webLevelIntervalRef.current);
         webLevelIntervalRef.current = null;
       }
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
       if (maxRecordingTimerRef.current) {
         clearTimeout(maxRecordingTimerRef.current);
         maxRecordingTimerRef.current = null;
+      }
+
+      console.log('[VoiceMode] Stopping web recording, peak:', peakLevelRef.current.toFixed(1), 'hadSpeech:', hadSpeechRef.current);
+
+      if (!hadSpeechRef.current) {
+        console.log('[VoiceMode] No speech detected on web, skipping transcription');
+        if (audioContextRef.current) {
+          try { audioContextRef.current.close(); } catch (_e) {}
+          audioContextRef.current = null;
+          analyserRef.current = null;
+        }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        try { mediaRecorder.stop(); } catch (_e) {}
+        mediaRecorderRef.current = null;
+        if (isActiveRef.current) {
+          setVoiceState('idle');
+          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+        }
+        return;
       }
 
       return new Promise<void>((resolve) => {
@@ -761,7 +875,9 @@ export default function VoiceMode({
         setTimeout(() => setErrorText(''), 3000);
         return;
       }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+      await configureAudioForRecording();
+
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         isMeteringEnabled: true,
@@ -769,14 +885,20 @@ export default function VoiceMode({
           extension: '.m4a',
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
           audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100, numberOfChannels: 1, bitRate: 128000,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
         },
         ios: {
           extension: '.wav',
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,
           audioQuality: Audio.IOSAudioQuality.HIGH,
-          sampleRate: 44100, numberOfChannels: 1, bitRate: 128000,
-          linearPCMBitDepth: 16, linearPCMIsBigEndian: false, linearPCMIsFloat: false,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
+          linearPCMBitDepth: 16,
+          linearPCMIsBigEndian: false,
+          linearPCMIsFloat: false,
         },
         web: {},
       });
@@ -796,7 +918,7 @@ export default function VoiceMode({
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / 200);
+      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / METERING_INTERVAL);
 
       meteringIntervalRef.current = setInterval(async () => {
         try {
@@ -806,13 +928,15 @@ export default function VoiceMode({
           const metering = status.metering ?? -160;
           const normalized = Math.max(0, Math.min(1, (metering + 60) / 60));
           setMicLevel(normalized);
+
           if (metering > peakLevelRef.current) peakLevelRef.current = metering;
           if (metering > MIN_PEAK_LEVEL_NATIVE) hadSpeechRef.current = true;
+
           const elapsed = Date.now() - recordingStartTime.current;
-          if (metering < SILENCE_THRESHOLD && elapsed > MIN_RECORDING_MS) {
+          if (metering < SILENCE_THRESHOLD_NATIVE && elapsed > MIN_RECORDING_MS) {
             consecutiveSilentFrames++;
             if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
-              console.log('[VoiceMode] Silence detected after speech, peak:', peakLevelRef.current.toFixed(1));
+              console.log('[VoiceMode] Silence after speech, peak:', peakLevelRef.current.toFixed(1));
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
@@ -823,7 +947,7 @@ export default function VoiceMode({
             consecutiveSilentFrames = 0;
           }
         } catch (_e) {}
-      }, 200);
+      }, METERING_INTERVAL);
       console.log('[VoiceMode] Native recording started');
     } catch (e) {
       console.log('[VoiceMode] Native start error:', e);
@@ -835,7 +959,13 @@ export default function VoiceMode({
 
   const startListeningWeb = useCallback(async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       streamRef.current = stream;
       chunksRef.current = [];
       const audioContext = new AudioContext();
@@ -843,6 +973,7 @@ export default function VoiceMode({
       const source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
       source.connect(analyser);
       analyserRef.current = analyser;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
@@ -869,7 +1000,7 @@ export default function VoiceMode({
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / 200);
+      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / METERING_INTERVAL);
 
       webLevelIntervalRef.current = setInterval(() => {
         if (!analyserRef.current) return;
@@ -883,13 +1014,14 @@ export default function VoiceMode({
 
       meteringIntervalRef.current = setInterval(() => {
         try {
-          analyser.getByteFrequencyData(dataArray);
+          if (!analyserRef.current) return;
+          analyserRef.current.getByteFrequencyData(dataArray);
           const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
           const elapsed = Date.now() - recordingStartTime.current;
           if (avg < WEB_SILENCE_AVG_THRESHOLD && elapsed > MIN_RECORDING_MS) {
             consecutiveSilentFrames++;
             if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
-              console.log('[VoiceMode] Web silence detected after speech, peak:', peakLevelRef.current.toFixed(1));
+              console.log('[VoiceMode] Web silence after speech, peak:', peakLevelRef.current.toFixed(1));
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
@@ -900,7 +1032,7 @@ export default function VoiceMode({
             consecutiveSilentFrames = 0;
           }
         } catch (_e) {}
-      }, 200);
+      }, METERING_INTERVAL);
       console.log('[VoiceMode] Web recording started');
     } catch (e) {
       console.log('[VoiceMode] Web start error:', e);
@@ -926,6 +1058,9 @@ export default function VoiceMode({
       setTimeout(() => { if (isActiveRef.current) startListening(); }, 300);
       return;
     }
+    if (voiceState === 'thinking') {
+      return;
+    }
     if (voiceState === 'idle') {
       startListening();
     } else if (voiceState === 'listening') {
@@ -945,6 +1080,7 @@ export default function VoiceMode({
       stopSpeaking();
       clearAllTimers();
       cleanupAll();
+      configureAudioForPlayback().catch(() => {});
       onClose();
     });
   }, [cleanupAll, stopSpeaking, clearAllTimers, onClose, fadeAnim]);
@@ -1126,7 +1262,7 @@ export default function VoiceMode({
             <Text style={styles.bottomHint}>Tap orb to interrupt</Text>
           )}
           {voiceState === 'thinking' && (
-            <Text style={styles.bottomHint}>Tap orb to skip to listening</Text>
+            <Text style={styles.bottomHint}>Thinking...</Text>
           )}
           {voiceState === 'idle' && (
             <Text style={styles.bottomHint}>Conversation flows automatically</Text>
@@ -1135,7 +1271,7 @@ export default function VoiceMode({
             <TouchableOpacity
               style={styles.endBtn}
               onPress={() => {
-                cleanupAll();
+                cleanupRecording();
                 clearAllTimers();
                 setVoiceState('idle');
                 setTranscript('');
