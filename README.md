@@ -82,7 +82,7 @@ Run `bun start-web` to test in a web browser. Note: The browser preview is great
 
 This project is configured to use **Expo Development Builds** instead of Expo Go so native modules and config plugins always match your runtime.
 
-If you have XCode (iOS) or Android Studio installed:
+If you have Xcode (iOS) or Android Studio installed:
 
 ```bash
 # iOS Simulator
@@ -96,27 +96,21 @@ bun run start -- --android
 
 ### **Publish to App Store (iOS)**
 
-1. **Install EAS CLI**:
+1. **Configure your project**:
 
    ```bash
-   bun i -g @expo/eas-cli
+   npx eas build:configure
    ```
 
-2. **Configure your project**:
+2. **Build for iOS**:
 
    ```bash
-   eas build:configure
+   npx eas build --platform ios
    ```
 
-3. **Build for iOS**:
-
+3. **Submit to App Store**:
    ```bash
-   eas build --platform ios
-   ```
-
-4. **Submit to App Store**:
-   ```bash
-   eas submit --platform ios
+   npx eas submit --platform ios
    ```
 
 For detailed instructions, visit [Expo's App Store deployment guide](https://docs.expo.dev/submit/ios/).
@@ -126,12 +120,12 @@ For detailed instructions, visit [Expo's App Store deployment guide](https://doc
 1. **Build for Android**:
 
    ```bash
-   eas build --platform android
+   npx eas build --platform android
    ```
 
 2. **Submit to Google Play**:
    ```bash
-   eas submit --platform android
+   npx eas submit --platform android
    ```
 
 For detailed instructions, visit [Expo's Google Play deployment guide](https://docs.expo.dev/submit/android/).
@@ -143,13 +137,13 @@ Your React Native app can also run on the web:
 1. **Build for web**:
 
    ```bash
-   eas build --platform web
+   npx eas build --platform web
    ```
 
 2. **Deploy with EAS Hosting**:
    ```bash
-   eas hosting:configure
-   eas hosting:deploy
+   npx eas hosting:configure
+   npx eas hosting:deploy
    ```
 
 Alternative web deployment options:
@@ -201,9 +195,6 @@ This repository is set up for Custom Development Builds as the default developme
 ### **Creating a Custom Development Build**
 
 ```bash
-# Install EAS CLI
-bun i -g @expo/eas-cli
-
 # iOS development client
 bun run build:dev:ios
 
@@ -291,7 +282,7 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 
 ### **Build failing?**
 
-1. Clear your cache: `bunx expo start --clear`
+1. Clear your cache: `npx expo start --clear`
 2. Delete `node_modules` and reinstall: `rm -rf node_modules && bun install`
 3. Check [Expo's troubleshooting guide](https://docs.expo.dev/troubleshooting/build-errors/)
 
