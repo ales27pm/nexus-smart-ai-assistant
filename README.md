@@ -68,11 +68,11 @@ This project is built with the most popular native mobile cross-platform technic
 
 ## How can I test my app?
 
-### **On your phone (Recommended)**
+### **On your phone (Development Build)**
 
-1. **iOS**: Download the [Rork app from the App Store](https://apps.apple.com/app/rork) or [Expo Go](https://apps.apple.com/app/expo-go/id982107779)
-2. **Android**: Download the [Expo Go app from Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-3. Run `bun run start` and scan the QR code from your development server
+1. Build and install a development client on your device (see **Creating a Custom Development Build** below).
+2. Start Metro in dev-client mode with `bun run start` (or `bun run start-tunnel` for remote devices).
+3. Open the installed development build and connect to the running project.
 
 ### **In your browser**
 
@@ -80,16 +80,7 @@ Run `bun start-web` to test in a web browser. Note: The browser preview is great
 
 ### **iOS Simulator / Android Emulator**
 
-You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Android Studio for most features.
-
-**When do you need Custom Development Builds?**
-
-- Native authentication (Face ID, Touch ID, Apple Sign In)
-- In-app purchases and subscriptions
-- Push notifications
-- Custom native modules
-
-Learn more: [Expo Custom Development Builds Guide](https://docs.expo.dev/develop/development-builds/introduction/)
+This project is configured to use **Expo Development Builds** instead of Expo Go so native modules and config plugins always match your runtime.
 
 If you have XCode (iOS) or Android Studio installed:
 
@@ -198,7 +189,7 @@ This template includes:
 
 ## Custom Development Builds
 
-For advanced native features, you'll need to create a Custom Development Build instead of using Expo Go.
+This repository is set up for Custom Development Builds as the default development workflow.
 
 ### **When do you need a Custom Development Build?**
 
@@ -213,15 +204,14 @@ For advanced native features, you'll need to create a Custom Development Build i
 # Install EAS CLI
 bun i -g @expo/eas-cli
 
-# Configure your project for development builds
-eas build:configure
+# iOS development client
+bun run build:dev:ios
 
-# Create a development build for your device
-eas build --profile development --platform ios
-eas build --profile development --platform android
+# Android development client
+bun run build:dev:android
 
-# Install the development build on your device and start developing
-bun start --dev-client
+# Start Metro for development build
+bun run start
 ```
 
 **Learn more:**
@@ -244,7 +234,7 @@ Integrate with backend services:
 
 Implement user authentication:
 
-**Basic Authentication (works in Expo Go):**
+**Basic Authentication (works in development builds and web):**
 
 - **Expo AuthSession** - OAuth providers (Google, Facebook, Apple) - [Guide](https://docs.expo.dev/guides/authentication/)
 - **Supabase Auth** - Email/password and social login - [Integration Guide](https://supabase.com/docs/guides/getting-started/tutorials/with-expo-react-native)
@@ -266,7 +256,7 @@ Send notifications to your users:
 
 Monetize your app:
 
-**Web & Credit Card Payments (works in Expo Go):**
+**Web & Credit Card Payments (works in development builds and web):**
 
 - **Stripe** - Credit card payments and subscriptions - [Expo + Stripe Guide](https://docs.expo.dev/guides/using-stripe/)
 - **PayPal** - PayPal payments integration - [Setup Guide](https://developer.paypal.com/docs/checkout/mobile/react-native/)
@@ -296,7 +286,7 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 ### **App not loading on device?**
 
 1. Make sure your phone and computer are on the same WiFi network
-2. Try using tunnel mode: `bun start -- --tunnel`
+2. Try using tunnel mode: `bun run start-tunnel`
 3. Check if your firewall is blocking the connection
 
 ### **Build failing?**
