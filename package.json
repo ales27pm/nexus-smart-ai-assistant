@@ -15,7 +15,8 @@
     "build:dev:android": "npx eas build --profile development --platform android",
     "test": "jest",
     "build:prod:ios:local": "env NPM_CONFIG_CACHE=.npm-cache npx eas build --profile production --platform ios --local",
-    "build:prod:ios:local:clean": "rm -rf .npm-cache && env NPM_CONFIG_CACHE=.npm-cache npx eas build --profile production --platform ios --local"
+    "build:prod:ios:local:clean": "rm -rf .npm-cache && env NPM_CONFIG_CACHE=.npm-cache npx eas build --profile production --platform ios --local",
+    "build:prod:ios:local:repair": "rm -rf .npm-cache ~/.npm/_cacache && npm cache verify && env NPM_CONFIG_CACHE=.npm-cache npx eas build --profile production --platform ios --local"
   },
   "dependencies": {
     "@nkzw/create-context-hook": "^1.1.0",
