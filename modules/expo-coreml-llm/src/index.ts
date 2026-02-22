@@ -1,4 +1,11 @@
-import { requireNativeModule } from "expo-modules-core";
+import { Platform } from "react-native";
+
+let requireNativeModule: (name: string) => unknown;
+try {
+  requireNativeModule = require("expo-modules-core").requireNativeModule;
+} catch {
+  requireNativeModule = () => null;
+}
 
 export type CoreMLComputeUnits =
   | "all"

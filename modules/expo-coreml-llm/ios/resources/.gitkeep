@@ -1,5 +1,0 @@
-# Put tokenizer files and compiled .mlmodelc directories under this folder.
-# Example:
-# ios/resources/tokenizers/gpt2/vocab.json
-# ios/resources/tokenizers/gpt2/merges.txt
-# ios/resources/models/MyLLM.mlmodelc/...

@@ -208,10 +208,10 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
-  const [coreMLVocabPath, setCoreMLVocabPath] = useState(
+  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
     DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath,
   );
-  const [coreMLMergesPath, setCoreMLMergesPath] = useState(
+  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
     DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath,
   );
 
