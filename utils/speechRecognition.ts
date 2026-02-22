@@ -62,10 +62,14 @@ export function recognizeOnce(
   );
 
   const endSub = module.addListener("end", () => {
-    if (transcript && !settled) {
+    if (!settled) {
       settled = true;
       cleanUp();
-      resolveFn(transcript);
+      if (transcript) {
+        resolveFn(transcript);
+      } else {
+        rejectFn(new Error("No speech detected"));
+      }
     }
   });
 
@@ -81,5 +85,13 @@ export function recognizeOnce(
     }
   }
 
-  return { promise, cancel: cleanUp };
+  function cancel() {
+    if (!settled) {
+      settled = true;
+      cleanUp();
+      rejectFn(new Error("Speech recognition cancelled"));
+    }
+  }
+
+  return { promise, cancel };
 }

@@ -26,9 +26,9 @@ function toMessage(error: unknown): string {
 }
 
 export function resolveStatusColor(status: DiagnosticItemStatus): string {
-  if (status === "supported") return "supported";
-  if (status === "limited") return "limited";
-  return "error";
+  if (status === "supported") return "#22C55E";
+  if (status === "limited") return "#F59E0B";
+  return "#EF4444";
 }
 
 export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
@@ -107,6 +107,9 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
           ? "Read/write succeeded"
           : "Unexpected readback result",
       status: stored === probeValue ? "supported" : "limited",
+    });
+    await SecureStore.deleteItemAsync(SECURE_STORE_KEY).catch(() => {
+      // best-effort cleanup
     });
   } catch (error) {
     diagnostics.push({
