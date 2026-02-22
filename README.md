@@ -80,7 +80,7 @@ Run `bun start-web` to test in a web browser. Note: The browser preview is great
 
 ### **iOS Simulator / Android Emulator**
 
-This project is configured to use **Expo Development Builds** instead of Expo Go so native modules and config plugins always match your runtime.
+This project is configured to use **Expo Development Builds** instead of Expo Go, so native modules and config plugins always match your runtime.
 
 If you have XCode (iOS) or Android Studio installed:
 
