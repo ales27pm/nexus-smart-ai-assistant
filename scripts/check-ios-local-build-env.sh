@@ -28,3 +28,4 @@ fi
 
 echo "✅ fastlane found: $(command -v fastlane)"
 echo "✅ credentials.json found"
+node ./scripts/validate-ios-local-credentials.mjs
