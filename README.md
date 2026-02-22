@@ -80,9 +80,9 @@ Run `bun start-web` to test in a web browser. Note: The browser preview is great
 
 ### **iOS Simulator / Android Emulator**
 
-This project is configured to use **Expo Development Builds** instead of Expo Go so native modules and config plugins always match your runtime.
+This project is configured to use **Expo Development Builds** instead of Expo Go, so native modules and config plugins always match your runtime.
 
-If you have Xcode (iOS) or Android Studio installed:
+If you have XCode (iOS) or Android Studio installed:
 
 ```bash
 # iOS Simulator
@@ -189,12 +189,15 @@ This repository is set up for Custom Development Builds as the default developme
 
 - **Native Authentication**: Face ID, Touch ID, Apple Sign In, Google Sign In
 - **In-App Purchases**: App Store and Google Play subscriptions
-- **Advanced Native Features**: Third-party SDKs, platform-specifc features (e.g. Widgets on iOS)
+- **Advanced Native Features**: Third-party SDKs, platform-specific features (e.g. Widgets on iOS)
 - **Background Processing**: Background tasks, location tracking
 
 ### **Creating a Custom Development Build**
 
 ```bash
+# Install EAS CLI
+bun i -g @expo/eas-cli
+
 # iOS development client
 bun run build:dev:ios
 
