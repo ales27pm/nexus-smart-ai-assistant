@@ -209,10 +209,10 @@ export default function DeviceNativeHubScreen() {
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath,
+    DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath as string,
   );
   const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath,
+    DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath as string,
   );
 
   const runSafely = useSafeAction(setStatus);
