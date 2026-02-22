@@ -5,12 +5,15 @@ import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
 import * as Speech from "expo-speech";
+import { setAudioModeAsync } from "expo-audio";
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import { Linking, Platform } from "react-native";
 import { recognizeOnce } from "@/utils/speechRecognition";
 import { computeEmbedding, cosineSimilarity } from "@/utils/vectorUtils";
 
 const VECTOR_DB_NAME = "native_vectors.db";
 const STORAGE_KEY = "native_lab_last_note";
+let cachedDb: SQLite.SQLiteDatabase | null = null;
 
 export { computeEmbedding, cosineSimilarity };
 
@@ -46,8 +49,12 @@ export function buildRviCaptureCommands(udid: string): string[] {
 }
 
 async function getDb() {
-  const db = await SQLite.openDatabaseAsync(VECTOR_DB_NAME);
-  await db.execAsync(`
+  if (cachedDb) {
+    return cachedDb;
+  }
+
+  cachedDb = await SQLite.openDatabaseAsync(VECTOR_DB_NAME);
+  await cachedDb.execAsync(`
     CREATE TABLE IF NOT EXISTS vector_docs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       content TEXT NOT NULL,
@@ -55,7 +62,8 @@ async function getDb() {
       created_at INTEGER NOT NULL
     );
   `);
-  return db;
+
+  return cachedDb;
 }
 
 export async function upsertVectorDocument(content: string): Promise<void> {
@@ -136,7 +144,17 @@ export async function createCalendarEvent(): Promise<string> {
     throw new Error("Calendar permission denied");
   }
 
-  const defaultCalendar = await Calendar.getDefaultCalendarAsync();
+  const defaultCalendar =
+    Platform.OS === "ios"
+      ? await Calendar.getDefaultCalendarAsync()
+      : (await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)).find(
+          (calendar) => calendar.allowsModifications,
+        );
+
+  if (!defaultCalendar) {
+    throw new Error("No writable calendar available on this device");
+  }
+
   const start = new Date(Date.now() + 60 * 60 * 1000);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -168,8 +186,7 @@ export async function getPrimaryContactSummary(): Promise<string> {
 }
 
 export async function speakText(text: string): Promise<void> {
-  const audio = await import("expo-audio");
-  await audio.setAudioModeAsync({
+  await setAudioModeAsync({
     allowsRecording: false,
     playsInSilentMode: true,
   });
@@ -184,8 +201,7 @@ export async function speakText(text: string): Promise<void> {
 }
 
 export async function transcribeSpeechOnce(): Promise<string> {
-  const speech = await import("expo-speech-recognition");
-  const module = speech.ExpoSpeechRecognitionModule;
+  const module = ExpoSpeechRecognitionModule;
 
   if (!module.isRecognitionAvailable()) {
     throw new Error("Speech recognition service unavailable");
@@ -196,14 +212,19 @@ export async function transcribeSpeechOnce(): Promise<string> {
     throw new Error("Speech permission was denied");
   }
 
-  const { promise } = recognizeOnce(module, 8000);
+  const { promise, cancel } = recognizeOnce(module, 8000);
 
-  module.start({
-    lang: "en-US",
-    interimResults: true,
-    requiresOnDeviceRecognition: false,
-    addsPunctuation: true,
-  });
+  try {
+    module.start({
+      lang: "en-US",
+      interimResults: true,
+      requiresOnDeviceRecognition: false,
+      addsPunctuation: true,
+    });
+  } catch (error) {
+    cancel();
+    throw error;
+  }
 
   return promise;
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Platform,
@@ -79,6 +79,10 @@ function DeviceNativeHubNetworkSection({
 
   const copyCaptureCommands = useCallback(async () => {
     await runSafely("Copy capture commands", async () => {
+      if (!captureUdid.trim()) {
+        throw new Error("Enter a device UDID before copying capture commands");
+      }
+
       const commands = buildRviCaptureCommands(captureUdid);
       await Clipboard.setStringAsync(commands.join("\n"));
       setStatus("rvictl/tcpdump commands copied to clipboard");
@@ -162,9 +166,13 @@ function DeviceNativeHubLocationSection({
             region={mapRegion}
           />
         </View>
-      ) : (
+      ) : !MapViewNative ? (
         <Text style={styles.result}>
           Map preview available in native runtime.
+        </Text>
+      ) : (
+        <Text style={styles.result}>
+          Press {'"'}Get current location{'"'} to show the map.
         </Text>
       )}
     </View>
@@ -185,17 +193,17 @@ export default function DeviceNativeHubScreen() {
 
   const runSafely = useSafeAction(setStatus);
 
-  React.useEffect(() => {
-    loadLocalNote()
-      .then(setNote)
-      .catch((error) => console.error("loadLocalNote failed", error));
+  useEffect(() => {
+    void runSafely("Load note", async () => {
+      setNote(await loadLocalNote());
+    });
 
     if (Platform.OS !== "web") {
       import("react-native-maps")
         .then((module) => setMapViewNative(() => module.default))
         .catch((error) => console.warn("react-native-maps unavailable", error));
     }
-  }, []);
+  }, [runSafely]);
 
   const runSttCapture = useCallback(async () => {
     await runSafely("Speech-to-text", async () => {

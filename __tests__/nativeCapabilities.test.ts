@@ -1,3 +1,9 @@
+jest.mock("expo-audio", () => ({ setAudioModeAsync: jest.fn() }));
+
+jest.mock("expo-speech-recognition", () => ({
+  ExpoSpeechRecognitionModule: {},
+}));
+
 import { buildRviCaptureCommands } from "../utils/nativeCapabilities";
 import { computeEmbedding, cosineSimilarity } from "../utils/vectorUtils";
 
