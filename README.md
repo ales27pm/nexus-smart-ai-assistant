@@ -300,3 +300,81 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 Rork builds fully native mobile apps using React Native and Expo - the same technology stack used by Discord, Shopify, Coinbase, Instagram, and nearly 30% of the top 100 apps on the App Store.
 
 Your Rork app is production-ready and can be published to both the App Store and Google Play Store. You can also export your app to run on the web, making it truly cross-platform.
+
+## Native Development Build Diagnostics (iOS + Android)
+
+A new **Device** tab runs native readiness checks that only work in Expo development builds:
+
+- Build/runtime metadata (`expo-application`)
+- Device identity (`expo-device`)
+- Reachability + transport type (`expo-network`)
+- Biometric hardware/enrollment (`expo-local-authentication`)
+- Encrypted keychain/keystore probe (`expo-secure-store`)
+- Clipboard export for bug reports (`expo-clipboard`)
+
+### iOS development build (Xcode)
+
+1. Install dependencies: `npm install`
+2. Generate native ios project: `npx expo prebuild --platform ios`
+3. Open `ios/*.xcworkspace` in Xcode and set a Team in Signing & Capabilities.
+4. Build and run to device.
+
+### iOS ad-hoc sideloading path (AltStore / manual IPA)
+
+1. Build a device binary with EAS development profile: `npx eas build --platform ios --profile development`
+2. Download the produced `.ipa` from EAS build artifacts.
+3. Install with AltStore (or Apple Configurator / Xcode Devices).
+4. Launch and use the **Device** tab to verify on-device native capability availability.
+
+### Tethered packet capture workflow (Apple-supported)
+
+Use this for diagnostics research when on-device low-level capture APIs are unavailable:
+
+```bash
+rvictl -s <UDID>
+tcpdump -i rvi0 -w capture.pcap
+```
+
+Then import/export `pcap` files for analysis in Wireshark or backend tooling.
+
+## Native Capability Hub (iOS + Android Dev Builds)
+
+The **Device** tab now includes a full native capability hub for on-device testing:
+
+- Local vector database with semantic lookup (`expo-sqlite`)
+- Encrypted local storage (`expo-secure-store`)
+- Audio permissions and native TTS (`expo-audio` + `expo-speech`)
+- Native STT capture (`expo-speech-recognition`)
+- GPS retrieval (`expo-location`) with native map rendering (`react-native-maps`)
+- Calendar event creation (`expo-calendar`)
+- Contacts read probe (`expo-contacts`)
+- Phone and SMS launch (`tel:` and `sms:` deep links)
+
+### iOS Xcode setup for full native runtime
+
+```bash
+npm install
+npx expo prebuild --platform ios
+npx expo run:ios --device
+```
+
+Make sure your Apple Team is configured in Xcode Signing & Capabilities.
+
+### AltStore / ad-hoc sideload workflow
+
+```bash
+npx eas build --platform ios --profile development
+```
+
+Install the `.ipa` using AltStore or Apple Configurator and run diagnostics on a physical device.
+
+### Apple-supported packet capture workflow from the app
+
+The Device tab now helps generate copy-ready tethered capture commands:
+
+1. Connect iPhone to Mac and obtain device UDID (`xcrun devicectl list devices`).
+2. Paste UDID into the app and tap **Copy rvictl + tcpdump commands**.
+3. Run copied commands in Terminal to capture traffic to `capture.pcap`.
+4. Analyze with Wireshark, Zeek, or custom tooling.
+
+This keeps low-level capture in Apple-supported tethered tooling while the app handles metadata, local indexing, and reporting.
