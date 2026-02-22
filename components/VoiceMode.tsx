@@ -51,7 +51,6 @@ const MIN_PEAK_LEVEL_NATIVE = -40;
 const MIN_PEAK_LEVEL_WEB = 12;
 const METERING_INTERVAL = 150;
 const SPEECH_RATE_IOS = 0.52;
-const SPEECH_RATE_ANDROID = 0.95;
 const SPEECH_RATE_WEB = 1.0;
 const AUTO_LISTEN_DELAY = 700;
 const POST_SPEAK_LISTEN_DELAY = 600;
@@ -85,7 +84,6 @@ const NOISE_WORDS = new Set([
 
 function getSpeechRate(): number {
   if (Platform.OS === "ios") return SPEECH_RATE_IOS;
-  if (Platform.OS === "android") return SPEECH_RATE_ANDROID;
   return SPEECH_RATE_WEB;
 }
 
@@ -95,8 +93,6 @@ async function configureAudioForRecording(): Promise<void> {
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: true,
     playsInSilentModeIOS: true,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
   });
 }
 
@@ -106,8 +102,6 @@ async function configureAudioForPlayback(): Promise<void> {
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: false,
     playsInSilentModeIOS: true,
-    shouldDuckAndroid: true,
-    playThroughEarpieceAndroid: false,
   });
 }
 
@@ -1286,14 +1280,6 @@ export default function VoiceMode({
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         isMeteringEnabled: true,
-        android: {
-          extension: ".m4a",
-          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
-          audioEncoder: Audio.AndroidAudioEncoder.AAC,
-          sampleRate: 44100,
-          numberOfChannels: 1,
-          bitRate: 128000,
-        },
         ios: {
           extension: ".wav",
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,

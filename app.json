@@ -26,13 +26,6 @@
         "NSContactsUsageDescription": "Allow Smart AI Assistant to access contacts for native feature validation."
       }
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "app.rork.smart_ai_assistant_slxh0fb"
-    },
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
