@@ -96,6 +96,27 @@ bun run start -- --android
 
 ### **Publish to App Store (iOS)**
 
+### **Local iOS production builds (`--local`)**
+
+`eas build --platform ios --local` requires **fastlane** to be installed on your machine and available in `PATH`.
+
+```bash
+# RubyGem option
+sudo gem install fastlane
+
+# Homebrew option
+brew install fastlane
+```
+
+If you hit npm cache permission errors after using `sudo npm`, avoid writing to `~/.npm` by using the repo-local cache scripts:
+
+```bash
+npm run build:prod:ios:local:clean
+npm run build:prod:ios:local:repair
+```
+
+The repair script only touches `.npm-cache` in this project, so it won't require changing ownership of your home npm cache.
+
 1. **Configure your project**:
 
    ```bash
