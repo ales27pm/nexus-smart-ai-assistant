@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
-  Platform,
   Switch,
 } from "react-native";
 import { RefreshCw, X } from "lucide-react-native";
@@ -41,6 +40,7 @@ import {
   extractMemoryCandidates,
   getEnhancedSystemPrompt,
 } from "@/utils/context";
+import { appendUserAndAssistantPlaceholder } from "@/utils/chatMessages";
 import {
   analyzeEmotion,
   assessMetacognition,
@@ -48,6 +48,7 @@ import {
   detectCuriosity,
   buildEmotionalMimicry,
 } from "@/utils/cognition";
+import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { MemoryEntry, MemoryCategory } from "@/types";
 
 function TypingIndicator() {
@@ -533,24 +534,10 @@ export default function ChatScreen() {
   const [voiceModeVisible, setVoiceModeVisible] = useState(false);
   const [isAgentResponding, setIsAgentResponding] = useState(false);
   const [useLocalLLM, setUseLocalLLM] = useState(false);
-  const [coreML, setCoreML] = useState<null | {
-    loadModel: (opts: any) => Promise<any>;
-    isLoaded: () => Promise<boolean>;
-    generate: (prompt: string, opts?: any) => Promise<string>;
-  }>(null);
   const lastAssistantLenRef = useRef(0);
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (Platform.OS !== "ios") return;
-    import("@/modules/expo-coreml-llm")
-      .then((mod: any) => {
-        if (mod?.CoreMLLLM) setCoreML(mod.CoreMLLLM);
-      })
-      .catch(() => {
-        setCoreML(null);
-      });
-  }, []);
+  const { isAvailable: isCoreMLAvailable, generate: generateCoreML } =
+    useCoreMLChat();
 
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
@@ -734,76 +721,47 @@ export default function ChatScreen() {
       );
       const userText = text.trim();
 
-      if (useLocalLLM && Platform.OS === "ios") {
-        const userMsg: any = {
-          id: generateId(),
-          role: "user",
-          parts: [{ type: "text", text: userText }],
-        };
+      if (useLocalLLM && isCoreMLAvailable) {
         const base = Array.isArray(messages) ? (messages as any[]) : [];
-        if (!coreML) {
+
+        try {
+          const { thread, assistantId } = appendUserAndAssistantPlaceholder(
+            base,
+            userText,
+          );
+          setMessages(thread as any);
+          const finalText = await generateCoreML(systemPrompt, userText);
+
+          const updated = thread.map((message: any) =>
+            message.id === assistantId
+              ? {
+                  ...message,
+                  parts: [{ type: "text", text: finalText }],
+                }
+              : message,
+          );
+          setMessages(updated as any);
+        } catch (error: unknown) {
+          const userMessage = {
+            id: generateId(),
+            role: "user",
+            parts: [{ type: "text", text: userText }],
+          };
           const assistantErr: any = {
             id: generateId(),
             role: "assistant",
             parts: [
               {
                 type: "text",
-                text: "CoreML module not linked. Do: npx expo prebuild --clean, then build/run a dev client on iOS.",
+                text:
+                  error instanceof Error
+                    ? error.message
+                    : "CoreML generation failed.",
               },
             ],
           };
-          setMessages([...base, userMsg, assistantErr] as any);
-          setIsAgentResponding(false);
-          return;
+          setMessages([...base, userMessage, assistantErr] as any);
         }
-
-        const assistantMsgId = generateId();
-        const assistantPlaceholder: any = {
-          id: assistantMsgId,
-          role: "assistant",
-          parts: [{ type: "text", text: "" }],
-        };
-        const localThread = [...base, userMsg, assistantPlaceholder];
-        setMessages(localThread as any);
-
-        const loaded = await coreML.isLoaded();
-        if (!loaded) {
-          await coreML.loadModel({
-            modelName: "MyLLM",
-            inputIdsName: "input_ids",
-            attentionMaskName: "attention_mask",
-            logitsName: "logits",
-            computeUnits: "all",
-            eosTokenId: 50256,
-          });
-        }
-
-        const prompt = `${systemPrompt}\n\nUser: ${userText}\nAssistant:`;
-        const raw = await coreML.generate(prompt, {
-          maxNewTokens: 220,
-          temperature: 0.8,
-          topK: 40,
-          topP: 0.95,
-          repetitionPenalty: 1.05,
-          tokenizer: {
-            vocabJsonAssetPath: "module:tokenizers/gpt2/vocab.json",
-            mergesTxtAssetPath: "module:tokenizers/gpt2/merges.txt",
-            eosTokenId: 50256,
-          },
-        });
-
-        const cleaned = raw.startsWith(prompt) ? raw.slice(prompt.length) : raw;
-        const finalText = cleaned.replace(/^\s+/, "").trimEnd();
-        const updated = localThread.map((m: any) =>
-          m.id === assistantMsgId
-            ? {
-                ...m,
-                parts: [{ type: "text", text: finalText || "(no output)" }],
-              }
-            : m,
-        );
-        setMessages(updated as any);
-
         setIsAgentResponding(false);
         return;
       }
@@ -814,7 +772,14 @@ export default function ChatScreen() {
       }
       sendMessage(messagePayload);
     },
-    [sendMessage, messages, useLocalLLM, coreML, setMessages],
+    [
+      sendMessage,
+      messages,
+      useLocalLLM,
+      isCoreMLAvailable,
+      setMessages,
+      generateCoreML,
+    ],
   );
 
   const handleSuggestion = useCallback(
@@ -938,7 +903,7 @@ export default function ChatScreen() {
         <Switch
           value={useLocalLLM}
           onValueChange={(v) => setUseLocalLLM(v)}
-          disabled={Platform.OS !== "ios" || !coreML}
+          disabled={!isCoreMLAvailable}
         />
       </View>
       <ChatInput
