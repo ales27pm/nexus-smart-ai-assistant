@@ -20,13 +20,19 @@ describe("nativeCapabilities embeddings", () => {
 
 describe("buildRviCaptureCommands", () => {
   it("returns supported Apple tethered capture commands", () => {
-    const commands = buildRviCaptureCommands("abc-123");
-    expect(commands[0]).toBe("rvictl -s abc-123");
+    const commands = buildRviCaptureCommands("00008110-001C195A0E91001E");
+    expect(commands[0]).toBe("rvictl -s 00008110-001C195A0E91001E");
     expect(commands[1]).toContain("tcpdump -i rvi0");
-    expect(commands[2]).toBe("rvictl -x abc-123");
+    expect(commands[2]).toBe("rvictl -x 00008110-001C195A0E91001E");
   });
 
   it("throws when udid is missing", () => {
     expect(() => buildRviCaptureCommands(" ")).toThrow(/UDID is required/);
+  });
+
+  it("throws when udid has unsafe characters", () => {
+    expect(() => buildRviCaptureCommands("foo; rm -rf /")).toThrow(
+      /hexadecimal characters and dashes/,
+    );
   });
 });

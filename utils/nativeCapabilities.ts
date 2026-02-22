@@ -28,14 +28,20 @@ export type NetworkSnapshot = {
 };
 
 export function buildRviCaptureCommands(udid: string): string[] {
-  if (!udid.trim()) {
+  const normalizedUdid = udid.trim();
+
+  if (!normalizedUdid) {
     throw new Error("UDID is required for rvictl capture instructions");
   }
 
+  if (!/^[a-fA-F0-9-]+$/.test(normalizedUdid)) {
+    throw new Error("UDID must contain only hexadecimal characters and dashes");
+  }
+
   return [
-    `rvictl -s ${udid}`,
+    `rvictl -s ${normalizedUdid}`,
     "tcpdump -i rvi0 -n -s 0 -w capture.pcap",
-    `rvictl -x ${udid}`,
+    `rvictl -x ${normalizedUdid}`,
   ];
 }
 
@@ -133,13 +139,14 @@ export async function createCalendarEvent(): Promise<string> {
   const defaultCalendar = await Calendar.getDefaultCalendarAsync();
   const start = new Date(Date.now() + 60 * 60 * 1000);
   const end = new Date(start.getTime() + 30 * 60 * 1000);
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
     title: "Native Lab validation event",
     notes: "Created from Smart AI Assistant native capability hub.",
     startDate: start,
     endDate: end,
-    timeZone: "UTC",
+    timeZone,
   });
 
   return eventId;
