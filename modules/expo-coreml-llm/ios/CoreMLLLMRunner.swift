@@ -19,6 +19,9 @@ public final class CoreMLLLMRunner {
   private init() {}
 
   public func loadModel(options: [String: Any]) throws {
+    generationLock.lock()
+    defer { generationLock.unlock() }
+
     let compute = (options["computeUnits"] as? String) ?? "all"
     self.computeUnits = compute
 
@@ -28,10 +31,7 @@ public final class CoreMLLLMRunner {
     self.inputIdsName = (options["inputIdsName"] as? String) ?? "input_ids"
     self.attentionMaskName = (options["attentionMaskName"] as? String) ?? "attention_mask"
     self.logitsName = (options["logitsName"] as? String) ?? "logits"
-
-    if let eos = options["eosTokenId"] as? Int {
-      self.eosTokenId = eos
-    }
+    self.eosTokenId = options["eosTokenId"] as? Int
 
     if let modelName = options["modelName"] as? String, !modelName.isEmpty {
       if let url = Self.resolveBundleModelURL(modelName: modelName, ext: "mlmodelc") {
@@ -60,6 +60,9 @@ public final class CoreMLLLMRunner {
   }
 
   public func unloadModel() {
+    generationLock.lock()
+    defer { generationLock.unlock() }
+
     self.model = nil
     self.isLoaded = false
   }
@@ -76,13 +79,17 @@ public final class CoreMLLLMRunner {
   }
 
   public func generate(from inputTokenIds: [Int], options: [String: Any]) async throws -> [Int] {
-    guard let model else { throw CoreMLLLMError("Model not loaded") }
+    guard !inputTokenIds.isEmpty else {
+      throw CoreMLLLMError("generate requires at least one input token")
+    }
 
     return try await Task.detached(priority: .userInitiated) { [weak self] in
       guard let self else { throw CoreMLLLMError("Runner deallocated") }
 
       self.generationLock.lock()
       defer { self.generationLock.unlock() }
+
+      guard let model = self.model else { throw CoreMLLLMError("Model not loaded") }
 
       let maxNewTokens = (options["maxNewTokens"] as? Int) ?? 128
       let temperature = max(0.0, (options["temperature"] as? Double) ?? 0.8)
@@ -103,6 +110,9 @@ public final class CoreMLLLMRunner {
 
       for _ in 0..<maxNewTokens {
         let ctx = Self.cropContext(tokens, maxContext: maxContext)
+        guard !ctx.isEmpty else {
+          throw CoreMLLLMError("generate requires non-empty context")
+        }
 
         let input = try self.makeInputProvider(
           inputIds: ctx,

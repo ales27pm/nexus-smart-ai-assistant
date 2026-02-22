@@ -16,6 +16,13 @@ export type LoadModelOptions = {
   computeUnits?: CoreMLComputeUnits;
 };
 
+type TokenizerConfig = {
+  vocabJsonAssetPath: string;
+  mergesTxtAssetPath: string;
+  bosTokenId?: number;
+  eosTokenId?: number;
+};
+
 export type GenerateOptions = {
   maxNewTokens?: number;
   temperature?: number;
@@ -24,15 +31,11 @@ export type GenerateOptions = {
   repetitionPenalty?: number;
   stopTokenIds?: number[];
   seed?: number;
-  tokenizer?: {
-    vocabJsonAssetPath: string;
-    mergesTxtAssetPath: string;
-    bosTokenId?: number;
-    eosTokenId?: number;
-  };
+  tokenizer: TokenizerConfig;
 };
 
-export type GenerateFromTokensOptions = GenerateOptions & {
+export type GenerateFromTokensOptions = Omit<GenerateOptions, "tokenizer"> & {
+  tokenizer?: TokenizerConfig;
   maxContext?: number;
 };
 
@@ -51,11 +54,11 @@ type NativeModuleShape = {
   isLoadedAsync(): Promise<boolean>;
   tokenizeAsync(
     prompt: string,
-    tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
+    tokenizer: TokenizerConfig,
   ): Promise<number[]>;
   decodeAsync(
     tokenIds: number[],
-    tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
+    tokenizer: TokenizerConfig,
   ): Promise<string>;
   generateAsync(prompt: string, opts: GenerateOptions): Promise<string>;
   generateFromTokensAsync(
@@ -87,13 +90,13 @@ export const CoreMLLLM = {
   isLoaded: () => getNativeModule().isLoadedAsync(),
   tokenize: (
     prompt: string,
-    tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
+    tokenizer: TokenizerConfig,
   ) => getNativeModule().tokenizeAsync(prompt, tokenizer),
   decode: (
     tokenIds: number[],
-    tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
+    tokenizer: TokenizerConfig,
   ) => getNativeModule().decodeAsync(tokenIds, tokenizer),
-  generate: (prompt: string, opts: GenerateOptions = {}) =>
+  generate: (prompt: string, opts: GenerateOptions) =>
     getNativeModule().generateAsync(prompt, opts),
   generateFromTokens: (
     tokenIds: number[],

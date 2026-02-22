@@ -12,7 +12,12 @@ public final class SeededRNG {
 
   public func seedRandom() {
     var s: UInt64 = 0
-    _ = withUnsafeMutableBytes(of: &s) { SecRandomCopyBytes(kSecRandomDefault, MemoryLayout<UInt64>.size, $0.baseAddress!) }
+    let status = withUnsafeMutableBytes(of: &s) {
+      SecRandomCopyBytes(kSecRandomDefault, MemoryLayout<UInt64>.size, $0.baseAddress!)
+    }
+    if status != errSecSuccess {
+      s = UInt64(Date().timeIntervalSince1970.bitPattern) ^ UInt64(ProcessInfo.processInfo.systemUptime.bitPattern)
+    }
     seed(s)
   }
 
