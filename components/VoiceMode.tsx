@@ -1253,7 +1253,7 @@ export default function VoiceMode({
             <Text style={styles.hintLabel}>Tap to speak</Text>
           ) : null}
           {transcript && (voiceState === 'thinking' || voiceState === 'speaking') && (
-            <Text style={styles.transcriptLabel}>You said: "{transcript}"</Text>
+            <Text style={styles.transcriptLabel}>You said: &quot;{transcript}&quot;</Text>
           )}
         </View>
 

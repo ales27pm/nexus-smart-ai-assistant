@@ -1,6 +1,6 @@
-import { Tabs } from 'expo-router';
-import { Sparkles, Clock, Brain } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import { Tabs } from "expo-router";
+import { Sparkles, Clock, Brain, Smartphone } from "lucide-react-native";
+import Colors from "@/constants/colors";
 
 export default function TabLayout() {
   return (
@@ -16,29 +16,40 @@ export default function TabLayout() {
         tabBarInactiveTintColor: Colors.dark.textTertiary,
         tabBarLabelStyle: {
           fontSize: 11,
-          fontWeight: '600' as const,
+          fontWeight: "600" as const,
         },
       }}
     >
       <Tabs.Screen
         name="(chat)"
         options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => <Sparkles size={size} color={color} />,
+          title: "Chat",
+          tabBarIcon: ({ color, size }) => (
+            <Sparkles size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="history"
         options={{
-          title: 'History',
+          title: "History",
           tabBarIcon: ({ color, size }) => <Clock size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="memory"
         options={{
-          title: 'Memory',
+          title: "Memory",
           tabBarIcon: ({ color, size }) => <Brain size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="device"
+        options={{
+          title: "Device",
+          tabBarIcon: ({ color, size }) => (
+            <Smartphone size={size} color={color} />
+          ),
         }}
       />
     </Tabs>
