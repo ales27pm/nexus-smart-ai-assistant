@@ -43,6 +43,12 @@
           "origin": "https://rork.com/"
         }
       ],
+      [
+        "expo-dev-client",
+        {
+          "launchMode": "most-recent"
+        }
+      ],
       "expo-font",
       "expo-web-browser"
     ],

@@ -1,0 +1,95 @@
+name: iOS (Expo prebuild) build & test
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (no lock file)
+        run: npm install --legacy-peer-deps
+      
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "latest"
+
+      - name: Install JS deps
+        run: bun install --frozen-lockfile
+
+      # Generates ios/ (since your repo doesn't include an Xcode project)
+      - name: Expo prebuild (iOS)
+        run: bunx expo prebuild --platform ios --non-interactive --no-install
+
+      - name: Install CocoaPods
+        working-directory: ios
+        run: pod install
+
+      - name: Resolve Xcode scheme + workspace/project
+        run: |
+          set -euo pipefail
+
+          if ls ios/*.xcworkspace >/dev/null 2>&1; then
+            FILETYPE="workspace"
+            XCODE_FILE="$(ls -1 ios/*.xcworkspace | head -n 1)"
+            SCHEME="$(xcodebuild -list -json -workspace "$XCODE_FILE" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["workspace"]["schemes"][0]')"
+          else
+            FILETYPE="project"
+            XCODE_FILE="$(ls -1 ios/*.xcodeproj | head -n 1)"
+            SCHEME="$(xcodebuild -list -json -project "$XCODE_FILE" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["project"]["targets"][0]')"
+          fi
+
+          echo "FILETYPE=$FILETYPE" >> "$GITHUB_ENV"
+          echo "XCODE_FILE=$XCODE_FILE" >> "$GITHUB_ENV"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
+
+          echo "Using $FILETYPE: $XCODE_FILE"
+          echo "Using scheme: $SCHEME"
+
+      - name: Build (for testing) on iPhone Simulator
+        run: |
+          set -euo pipefail
+
+          # xcrun xctrace outputs devices on stderr
+          device="$(xcrun xctrace list devices 2>&1 \
+            | grep -oE 'iPhone.*?[^\(]+' \
+            | head -1 \
+            | awk '{$1=$1;print}' \
+            | sed -e "s/ Simulator$//")"
+
+          xcodebuild build-for-testing \
+            -scheme "$SCHEME" \
+            -"$FILETYPE" "$XCODE_FILE" \
+            -destination "platform=iOS Simulator,name=$device" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Test (without building) on iPhone Simulator
+        run: |
+          set -euo pipefail
+
+          device="$(xcrun xctrace list devices 2>&1 \
+            | grep -oE 'iPhone.*?[^\(]+' \
+            | head -1 \
+            | awk '{$1=$1;print}' \
+            | sed -e "s/ Simulator$//")"
+
+          xcodebuild test-without-building \
+            -scheme "$SCHEME" \
+            -"$FILETYPE" "$XCODE_FILE" \
+            -destination "platform=iOS Simulator,name=$device" \
+            CODE_SIGNING_ALLOWED=NO
