@@ -17,10 +17,21 @@ describe("urlSafety", () => {
     expect(getSafeExternalUrl("not a url")).toBeNull();
   });
 
-  it("returns host for display", () => {
+  it("returns host for display based on validated url", () => {
     expect(getDisplayHost("https://sub.example.com/path")).toBe(
       "sub.example.com",
     );
-    expect(getDisplayHost("invalid")).toBe("invalid");
+    expect(getDisplayHost("http://sub.example.com/path")).toBe("unknown host");
+  });
+
+  it("fails closed when URL constructor is unavailable", () => {
+    const originalUrl = global.URL;
+    // @ts-expect-error test override for runtime capability check
+    global.URL = undefined;
+
+    expect(getSafeExternalUrl("https://example.com")).toBeNull();
+    expect(getDisplayHost("https://example.com")).toBe("unknown host");
+
+    global.URL = originalUrl;
   });
 });
