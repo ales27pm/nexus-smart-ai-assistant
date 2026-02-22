@@ -16,13 +16,13 @@ workflows:
       node: 16.14.2
     triggering:
       events:
-          - push
-          - tag
-          - pull_request
+        - push
+        - tag
+        - pull_request
       branch_patterns:
-          - pattern: develop
-            include: true
-            source: true
+        - pattern: develop
+          include: true
+          source: true
     scripts:
       - name: Install dependencies and Expo CLI, and eject app
         script: |
@@ -34,11 +34,11 @@ workflows:
           mv ./support-files/build.gradle android/app
       - name: Set Android SDK location
         script: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"          
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$CM_BUILD_DIR/android/local.properties"
       - name: Build Android release
         script: |
           LATEST_GOOGLE_PLAY_BUILD_NUMBER=$(google-play get-latest-build-number --package-name "$PACKAGE_NAME")
-          if [ -z LATEST_BUILD_NUMBER ]; then
+          if [ -z "$LATEST_GOOGLE_PLAY_BUILD_NUMBER" ]; then
               # fallback in case no build number was found from google play. Alternatively, you can `exit 1` to fail the build
               UPDATED_BUILD_NUMBER=$BUILD_NUMBER
           else
@@ -49,7 +49,7 @@ workflows:
             -PversionCode=$UPDATED_BUILD_NUMBER \
             -PversionName=1.0.$UPDATED_BUILD_NUMBER
     artifacts:
-        - android/app/build/outputs/**/*.aab
+      - android/app/build/outputs/**/*.aab
     publishing:
       email:
         recipients:
@@ -63,7 +63,6 @@ workflows:
         track: internal
         submit_as_draft: true
 
-
   react-native-ios:
     name: React Native iOS
     max_build_duration: 120
@@ -75,22 +74,22 @@ workflows:
         distribution_type: app_store
         bundle_identifier: io.codemagic.expoapp
       vars:
-          XCODE_WORKSPACE: "ExpoApp.xcworkspace" # <-- Put the name of your Xcode workspace here
-          XCODE_SCHEME: "ExpoApp" # <-- Put the name of your Xcode scheme here
-          BUNDLE_ID: "io.codemagic.expoapp" # <-- Put your Bundle Id here e.g com.domain.myapp
-          APP_ID: 1616629701 # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
+        XCODE_WORKSPACE: "ExpoApp.xcworkspace" # <-- Put the name of your Xcode workspace here
+        XCODE_SCHEME: "ExpoApp" # <-- Put the name of your Xcode scheme here
+        BUNDLE_ID: "io.codemagic.expoapp" # <-- Put your Bundle Id here e.g com.domain.myapp
+        APP_ID: 1616629701 # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
       node: 16.14.2
       xcode: 13.1
       cocoapods: default
     triggering:
-        events:
-            - push
-            - tag
-            - pull_request
-        branch_patterns:
-            - pattern: develop
-              include: true
-              source: true
+      events:
+        - push
+        - tag
+        - pull_request
+      branch_patterns:
+        - pattern: develop
+          include: true
+          source: true
     scripts:
       - name: Install dependencies, Expo CLI and eject app
         script: |
@@ -119,10 +118,10 @@ workflows:
             --workspace "$CM_BUILD_DIR/ios/$XCODE_WORKSPACE" \
             --scheme "$XCODE_SCHEME"
     artifacts:
-        - build/ios/ipa/*.ipa
-        - /tmp/xcodebuild_logs/*.log
-        - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
-        - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
     publishing:
       email:
         recipients:

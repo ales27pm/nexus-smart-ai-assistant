@@ -1,22 +1,47 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Image, Linking, TouchableOpacity, Platform } from 'react-native';
-import { ExternalLink } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import React, { useMemo, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  Linking,
+  Platform,
+  Alert,
+  TouchableOpacity,
+} from "react-native";
+import Colors from "@/constants/colors";
+import { getDisplayHost, getSafeExternalUrl } from "@/utils/urlSafety";
 
 interface ChatBubbleProps {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   text: string;
 }
 
 interface TextSegment {
-  type: 'text' | 'bold' | 'italic' | 'bolditalic' | 'code' | 'link' | 'header' | 'listItem' | 'blockquote';
+  type:
+    | "text"
+    | "bold"
+    | "italic"
+    | "bolditalic"
+    | "code"
+    | "link"
+    | "header"
+    | "listItem"
+    | "blockquote";
   content: string;
   url?: string;
   level?: number;
 }
 
 interface ParsedBlock {
-  type: 'paragraph' | 'code' | 'image' | 'header' | 'listItem' | 'blockquote' | 'divider';
+  type:
+    | "paragraph"
+    | "code"
+    | "image"
+    | "header"
+    | "listItem"
+    | "blockquote"
+    | "divider";
   content: string;
   language?: string;
   level?: number;
@@ -26,21 +51,25 @@ interface ParsedBlock {
 
 function parseBlocks(text: string): ParsedBlock[] {
   const blocks: ParsedBlock[] = [];
-  const lines = text.split('\n');
+  const lines = text.split("\n");
   let i = 0;
 
   while (i < lines.length) {
     const line = lines[i];
 
-    if (line.startsWith('```')) {
+    if (line.startsWith("```")) {
       const lang = line.slice(3).trim();
       const codeLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith('```')) {
+      while (i < lines.length && !lines[i].startsWith("```")) {
         codeLines.push(lines[i]);
         i++;
       }
-      blocks.push({ type: 'code', content: codeLines.join('\n'), language: lang || undefined });
+      blocks.push({
+        type: "code",
+        content: codeLines.join("\n"),
+        language: lang || undefined,
+      });
       i++;
       continue;
     }
@@ -48,7 +77,7 @@ function parseBlocks(text: string): ParsedBlock[] {
     if (/^!\[.*?\]\(.*?\)/.test(line)) {
       const match = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
       if (match) {
-        blocks.push({ type: 'image', content: match[2] });
+        blocks.push({ type: "image", content: match[2] });
         i++;
         continue;
       }
@@ -56,44 +85,53 @@ function parseBlocks(text: string): ParsedBlock[] {
 
     const headerMatch = line.match(/^(#{1,6})\s+(.+)/);
     if (headerMatch) {
-      blocks.push({ type: 'header', content: headerMatch[2], level: headerMatch[1].length });
+      blocks.push({
+        type: "header",
+        content: headerMatch[2],
+        level: headerMatch[1].length,
+      });
       i++;
       continue;
     }
 
     if (/^---+$/.test(line.trim()) || /^\*\*\*+$/.test(line.trim())) {
-      blocks.push({ type: 'divider', content: '' });
+      blocks.push({ type: "divider", content: "" });
       i++;
       continue;
     }
 
     const ulMatch = line.match(/^\s*[-*+]\s+(.+)/);
     if (ulMatch) {
-      blocks.push({ type: 'listItem', content: ulMatch[1], ordered: false });
+      blocks.push({ type: "listItem", content: ulMatch[1], ordered: false });
       i++;
       continue;
     }
 
     const olMatch = line.match(/^\s*(\d+)\.\s+(.+)/);
     if (olMatch) {
-      blocks.push({ type: 'listItem', content: olMatch[2], ordered: true, index: parseInt(olMatch[1], 10) });
+      blocks.push({
+        type: "listItem",
+        content: olMatch[2],
+        ordered: true,
+        index: parseInt(olMatch[1], 10),
+      });
       i++;
       continue;
     }
 
     const bqMatch = line.match(/^>\s*(.*)/);
     if (bqMatch) {
-      blocks.push({ type: 'blockquote', content: bqMatch[1] });
+      blocks.push({ type: "blockquote", content: bqMatch[1] });
       i++;
       continue;
     }
 
-    if (line.trim() === '') {
+    if (line.trim() === "") {
       i++;
       continue;
     }
 
-    blocks.push({ type: 'paragraph', content: line });
+    blocks.push({ type: "paragraph", content: line });
     i++;
   }
 
@@ -102,40 +140,65 @@ function parseBlocks(text: string): ParsedBlock[] {
 
 function parseInline(text: string): TextSegment[] {
   const segments: TextSegment[] = [];
-  const regex = /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
+  const regex =
+    /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) {
-      segments.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+      segments.push({
+        type: "text",
+        content: text.slice(lastIndex, match.index),
+      });
     }
 
     if (match[2]) {
-      segments.push({ type: 'bolditalic', content: match[2] });
+      segments.push({ type: "bolditalic", content: match[2] });
     } else if (match[3]) {
-      segments.push({ type: 'bold', content: match[3] });
+      segments.push({ type: "bold", content: match[3] });
     } else if (match[4]) {
-      segments.push({ type: 'italic', content: match[4] });
+      segments.push({ type: "italic", content: match[4] });
     } else if (match[5]) {
-      segments.push({ type: 'bold', content: match[5] });
+      segments.push({ type: "bold", content: match[5] });
     } else if (match[6]) {
-      segments.push({ type: 'italic', content: match[6] });
+      segments.push({ type: "italic", content: match[6] });
     } else if (match[7]) {
-      segments.push({ type: 'code', content: match[7] });
+      segments.push({ type: "code", content: match[7] });
     } else if (match[8] && match[9]) {
-      segments.push({ type: 'link', content: match[8], url: match[9] });
+      segments.push({ type: "link", content: match[8], url: match[9] });
     }
 
     lastIndex = match.index + match[0].length;
   }
 
   if (lastIndex < text.length) {
-    segments.push({ type: 'text', content: text.slice(lastIndex) });
+    segments.push({ type: "text", content: text.slice(lastIndex) });
   }
 
-  return segments.length === 0 ? [{ type: 'text', content: text }] : segments;
+  return segments.length === 0 ? [{ type: "text", content: text }] : segments;
+}
+
+function openExternalLink(rawUrl: string) {
+  const safeUrl = getSafeExternalUrl(rawUrl);
+
+  if (!safeUrl) {
+    Alert.alert("Blocked link", "Only valid HTTPS links can be opened.");
+    return;
+  }
+
+  Alert.alert("Open external link?", safeUrl, [
+    { text: "Cancel", style: "cancel" },
+    {
+      text: "Open",
+      onPress: () => {
+        Linking.openURL(safeUrl).catch(() => {
+          Alert.alert("Unable to open link", "Please try again later.");
+        });
+      },
+    },
+  ]);
 }
 
 function InlineText({ text, isUser }: { text: string; isUser: boolean }) {
@@ -146,21 +209,39 @@ function InlineText({ text, isUser }: { text: string; isUser: boolean }) {
     <Text style={{ color: baseColor, fontSize: 15, lineHeight: 22 }} selectable>
       {segments.map((seg, i) => {
         switch (seg.type) {
-          case 'bold':
-            return <Text key={i} style={styles.bold}>{seg.content}</Text>;
-          case 'italic':
-            return <Text key={i} style={styles.italic}>{seg.content}</Text>;
-          case 'bolditalic':
-            return <Text key={i} style={styles.boldItalic}>{seg.content}</Text>;
-          case 'code':
-            return <Text key={i} style={styles.inlineCode}>{seg.content}</Text>;
-          case 'link':
+          case "bold":
+            return (
+              <Text key={i} style={styles.bold}>
+                {seg.content}
+              </Text>
+            );
+          case "italic":
+            return (
+              <Text key={i} style={styles.italic}>
+                {seg.content}
+              </Text>
+            );
+          case "bolditalic":
+            return (
+              <Text key={i} style={styles.boldItalic}>
+                {seg.content}
+              </Text>
+            );
+          case "code":
+            return (
+              <Text key={i} style={styles.inlineCode}>
+                {seg.content}
+              </Text>
+            );
+          case "link":
             return (
               <Text
                 key={i}
                 style={styles.link}
                 onPress={() => {
-                  if (seg.url) Linking.openURL(seg.url).catch(() => {});
+                  if (seg.url) {
+                    openExternalLink(seg.url);
+                  }
                 }}
               >
                 {seg.content}
@@ -174,6 +255,51 @@ function InlineText({ text, isUser }: { text: string; isUser: boolean }) {
   );
 }
 
+function SafeRemoteImage({ url }: { url: string }) {
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const safeUrl = useMemo(() => getSafeExternalUrl(url), [url]);
+
+  if (!safeUrl) {
+    return (
+      <Text style={styles.blockedImageText}>Blocked non-HTTPS image URL.</Text>
+    );
+  }
+
+  if (!isLoaded) {
+    const host = getDisplayHost(safeUrl);
+
+    return (
+      <TouchableOpacity
+        style={styles.loadImageButton}
+        onPress={() => {
+          setHasError(false);
+          setIsLoaded(true);
+        }}
+      >
+        <Text style={styles.loadImageButtonText}>
+          {hasError
+            ? `Failed to load image. Tap to retry loading from ${host}`
+            : `Load image from ${host}`}
+        </Text>
+      </TouchableOpacity>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri: safeUrl }}
+      style={styles.inlineImage}
+      resizeMode="contain"
+      onLoad={() => setHasError(false)}
+      onError={() => {
+        setHasError(true);
+        setIsLoaded(false);
+      }}
+    />
+  );
+}
+
 function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
   const blocks = useMemo(() => parseBlocks(text), [text]);
 
@@ -181,29 +307,34 @@ function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
     <View>
       {blocks.map((block, i) => {
         switch (block.type) {
-          case 'code':
+          case "code":
             return (
               <View key={i} style={styles.codeBlock}>
                 {block.language ? (
                   <Text style={styles.codeLang}>{block.language}</Text>
                 ) : null}
-                <Text style={styles.codeText} selectable>{block.content}</Text>
+                <Text style={styles.codeText} selectable>
+                  {block.content}
+                </Text>
               </View>
             );
 
-          case 'image':
+          case "image":
             return (
               <View key={i} style={styles.imageWrap}>
-                <Image
-                  source={{ uri: block.content }}
-                  style={styles.inlineImage}
-                  resizeMode="contain"
-                />
+                <SafeRemoteImage url={block.content} />
               </View>
             );
 
-          case 'header':
-            const headerSize = block.level === 1 ? 20 : block.level === 2 ? 18 : block.level === 3 ? 16 : 15;
+          case "header": {
+            const headerSize =
+              block.level === 1
+                ? 20
+                : block.level === 2
+                  ? 18
+                  : block.level === 3
+                    ? 16
+                    : 15;
             return (
               <Text
                 key={i}
@@ -216,9 +347,10 @@ function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
                 {block.content}
               </Text>
             );
+          }
 
-          case 'listItem':
-            const bullet = block.ordered ? `${block.index ?? i + 1}.` : '•';
+          case "listItem": {
+            const bullet = block.ordered ? `${block.index ?? i + 1}.` : "•";
             return (
               <View key={i} style={styles.listRow}>
                 <Text style={styles.listBullet}>{bullet}</Text>
@@ -227,15 +359,16 @@ function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
                 </View>
               </View>
             );
+          }
 
-          case 'blockquote':
+          case "blockquote":
             return (
               <View key={i} style={styles.blockquote}>
                 <InlineText text={block.content} isUser={isUser} />
               </View>
             );
 
-          case 'divider':
+          case "divider":
             return <View key={i} style={styles.divider} />;
 
           default:
@@ -251,17 +384,26 @@ function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
 }
 
 export default React.memo(function ChatBubble({ role, text }: ChatBubbleProps) {
-  const isUser = role === 'user';
-  const needsRichRender = !isUser && (/[*_`#\[\]!>-]/.test(text) || /^\s*\d+\.\s/m.test(text));
+  const isUser = role === "user";
+  const needsRichRender =
+    !isUser && (/[*_`#\[\]!>-]/.test(text) || /^\s*\d+\.\s/m.test(text));
 
   return (
     <View style={[styles.row, isUser && styles.rowUser]}>
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
+      <View
+        style={[
+          styles.bubble,
+          isUser ? styles.bubbleUser : styles.bubbleAssistant,
+        ]}
+      >
         {needsRichRender ? (
           <RenderedContent text={text} isUser={isUser} />
         ) : (
           <Text
-            style={[styles.text, isUser ? styles.textUser : styles.textAssistant]}
+            style={[
+              styles.text,
+              isUser ? styles.textUser : styles.textAssistant,
+            ]}
             selectable
           >
             {text}
@@ -276,14 +418,14 @@ const styles = StyleSheet.create({
   row: {
     paddingHorizontal: 16,
     marginVertical: 3,
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "flex-start",
   },
   rowUser: {
-    justifyContent: 'flex-end',
+    justifyContent: "flex-end",
   },
   bubble: {
-    maxWidth: '82%',
+    maxWidth: "82%",
     borderRadius: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -311,35 +453,35 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   bold: {
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
   },
   italic: {
-    fontStyle: 'italic' as const,
+    fontStyle: "italic" as const,
   },
   boldItalic: {
-    fontWeight: '700' as const,
-    fontStyle: 'italic' as const,
+    fontWeight: "700" as const,
+    fontStyle: "italic" as const,
   },
   inlineCode: {
     backgroundColor: Colors.dark.surface,
     color: Colors.dark.cyan,
     fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     borderRadius: 4,
     paddingHorizontal: 4,
     paddingVertical: 1,
   },
   link: {
     color: Colors.dark.info,
-    textDecorationLine: 'underline' as const,
+    textDecorationLine: "underline" as const,
   },
   header: {
     color: Colors.dark.text,
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
     marginBottom: 4,
   },
   listRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginVertical: 2,
     paddingRight: 4,
   },
@@ -347,7 +489,7 @@ const styles = StyleSheet.create({
     color: Colors.dark.accent,
     fontSize: 14,
     width: 18,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   listContent: {
     flex: 1,
@@ -378,8 +520,8 @@ const styles = StyleSheet.create({
   codeLang: {
     fontSize: 10,
     color: Colors.dark.textTertiary,
-    fontWeight: '600' as const,
-    textTransform: 'uppercase' as const,
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
     letterSpacing: 0.5,
     marginBottom: 6,
   },
@@ -387,17 +529,34 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     color: Colors.dark.accent,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
   imageWrap: {
     marginVertical: 6,
     borderRadius: 10,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   inlineImage: {
-    width: '100%',
+    width: "100%",
     aspectRatio: 1,
     borderRadius: 10,
     backgroundColor: Colors.dark.surface,
+  },
+  loadImageButton: {
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+    backgroundColor: Colors.dark.surface,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+  },
+  loadImageButtonText: {
+    color: Colors.dark.info,
+    textAlign: "center",
+    fontWeight: "600" as const,
+  },
+  blockedImageText: {
+    color: Colors.dark.warning,
+    fontSize: 13,
   },
 });
