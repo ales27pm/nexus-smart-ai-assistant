@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,21 +10,21 @@ import {
   Dimensions,
   ScrollView,
   Easing,
-} from 'react-native';
-import { X, Mic, Volume2, VolumeX, ChevronDown } from 'lucide-react-native';
-import { Audio } from 'expo-av';
-import * as Speech from 'expo-speech';
-import * as Haptics from 'expo-haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Colors from '@/constants/colors';
+} from "react-native";
+import { X, Mic, Volume2, VolumeX, ChevronDown } from "lucide-react-native";
+import { Audio } from "expo-av";
+import * as Speech from "expo-speech";
+import * as Haptics from "expo-haptics";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Colors from "@/constants/colors";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const STT_URL = 'https://toolkit.rork.com/stt/transcribe/';
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const STT_URL = "https://toolkit.rork.com/stt/transcribe/";
 
-type VoiceState = 'idle' | 'listening' | 'processing' | 'thinking' | 'speaking';
+type VoiceState = "idle" | "listening" | "processing" | "thinking" | "speaking";
 
 interface VoiceTurn {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   text: string;
   timestamp: number;
 }
@@ -57,20 +57,41 @@ const AUTO_LISTEN_DELAY = 700;
 const POST_SPEAK_LISTEN_DELAY = 600;
 
 const NOISE_WORDS = new Set([
-  '', '.', '..', '...', ',', '!', '?', 'you', 'the', 'a', 'an',
-  'um', 'uh', 'ah', 'oh', 'hm', 'hmm', 'mhm', 'er', 'erm',
-  'bye', 'bye.', 'thanks.', 'thank you.',
+  "",
+  ".",
+  "..",
+  "...",
+  ",",
+  "!",
+  "?",
+  "you",
+  "the",
+  "a",
+  "an",
+  "um",
+  "uh",
+  "ah",
+  "oh",
+  "hm",
+  "hmm",
+  "mhm",
+  "er",
+  "erm",
+  "bye",
+  "bye.",
+  "thanks.",
+  "thank you.",
 ]);
 
 function getSpeechRate(): number {
-  if (Platform.OS === 'ios') return SPEECH_RATE_IOS;
-  if (Platform.OS === 'android') return SPEECH_RATE_ANDROID;
+  if (Platform.OS === "ios") return SPEECH_RATE_IOS;
+  if (Platform.OS === "android") return SPEECH_RATE_ANDROID;
   return SPEECH_RATE_WEB;
 }
 
 async function configureAudioForRecording(): Promise<void> {
-  if (Platform.OS === 'web') return;
-  console.log('[VoiceMode] Configuring audio for RECORDING');
+  if (Platform.OS === "web") return;
+  console.log("[VoiceMode] Configuring audio for RECORDING");
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: true,
     playsInSilentModeIOS: true,
@@ -80,8 +101,8 @@ async function configureAudioForRecording(): Promise<void> {
 }
 
 async function configureAudioForPlayback(): Promise<void> {
-  if (Platform.OS === 'web') return;
-  console.log('[VoiceMode] Configuring audio for PLAYBACK');
+  if (Platform.OS === "web") return;
+  console.log("[VoiceMode] Configuring audio for PLAYBACK");
   await Audio.setAudioModeAsync({
     allowsRecordingIOS: false,
     playsInSilentModeIOS: true,
@@ -99,10 +120,10 @@ export default function VoiceMode({
   streamingText,
 }: VoiceModeProps) {
   const insets = useSafeAreaInsets();
-  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
-  const [transcript, setTranscript] = useState('');
-  const [displayText, setDisplayText] = useState('');
-  const [errorText, setErrorText] = useState('');
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [transcript, setTranscript] = useState("");
+  const [displayText, setDisplayText] = useState("");
+  const [errorText, setErrorText] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [turns, setTurns] = useState<VoiceTurn[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -117,11 +138,17 @@ export default function VoiceMode({
   const halo3Scale = useRef(new Animated.Value(1)).current;
   const halo3Opacity = useRef(new Animated.Value(0)).current;
   const innerGlow = useRef(new Animated.Value(0.4)).current;
-  const barAnims = useRef(Array.from({ length: 9 }, () => new Animated.Value(0.15))).current;
+  const barAnims = useRef(
+    Array.from({ length: 9 }, () => new Animated.Value(0.15)),
+  ).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const bgPulse = useRef(new Animated.Value(0)).current;
-  const dotAnims = useRef(Array.from({ length: 3 }, () => new Animated.Value(0.3))).current;
-  const speakWave = useRef(Array.from({ length: 5 }, () => new Animated.Value(0.2))).current;
+  const dotAnims = useRef(
+    Array.from({ length: 3 }, () => new Animated.Value(0.3)),
+  ).current;
+  const speakWave = useRef(
+    Array.from({ length: 5 }, () => new Animated.Value(0.2)),
+  ).current;
   const historyOpacity = useRef(new Animated.Value(0)).current;
 
   const recordingRef = useRef<Audio.Recording | null>(null);
@@ -130,57 +157,77 @@ export default function VoiceMode({
   const streamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const meteringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const webLevelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meteringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const webLevelIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const recordingStartTime = useRef<number>(0);
   const isActiveRef = useRef(false);
   const animLoopsRef = useRef<Animated.CompositeAnimation[]>([]);
   const prevRespondingRef = useRef(false);
-  const lastSpokenTextRef = useRef('');
+  const lastSpokenTextRef = useRef("");
   const isSpeakingRef = useRef(false);
-  const voiceStateRef = useRef<VoiceState>('idle');
+  const voiceStateRef = useRef<VoiceState>("idle");
   const isMutedRef = useRef(false);
   const spokenLengthRef = useRef(0);
   const speakQueueRef = useRef<string[]>([]);
   const isSpeakingChunkRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const autoStartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const maxRecordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const transcriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const maxRecordingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const transcriptionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const retryCountRef = useRef(0);
   const peakLevelRef = useRef(0);
   const hadSpeechRef = useRef(false);
-  const lastResponseTextRef = useRef('');
-  const responseStableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const speechCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastResponseTextRef = useRef("");
+  const responseStableTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const speechCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
-  useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
-  useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
+  useEffect(() => {
+    voiceStateRef.current = voiceState;
+  }, [voiceState]);
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
 
   useEffect(() => {
     if (visible) {
       isActiveRef.current = true;
-      setVoiceState('idle');
-      setTranscript('');
-      setDisplayText('');
-      setErrorText('');
+      setVoiceState("idle");
+      setTranscript("");
+      setDisplayText("");
+      setErrorText("");
       setTurns([]);
       setShowHistory(false);
-      lastSpokenTextRef.current = '';
+      lastSpokenTextRef.current = "";
       spokenLengthRef.current = 0;
       speakQueueRef.current = [];
       isSpeakingChunkRef.current = false;
       isSpeakingRef.current = false;
       retryCountRef.current = 0;
-      peakLevelRef.current = Platform.OS === 'web' ? 0 : -160;
+      peakLevelRef.current = Platform.OS === "web" ? 0 : -160;
       hadSpeechRef.current = false;
       orbScale.setValue(1);
       orbOpacity.setValue(0.6);
       fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
       autoStartTimerRef.current = setTimeout(() => {
         if (isActiveRef.current) {
-          console.log('[VoiceMode] Auto-starting listening');
+          console.log("[VoiceMode] Auto-starting listening");
           startListening();
         }
       }, AUTO_LISTEN_DELAY);
@@ -194,7 +241,11 @@ export default function VoiceMode({
 
   useEffect(() => {
     if (!streamingText || isMutedRef.current) return;
-    if (voiceStateRef.current !== 'thinking' && voiceStateRef.current !== 'speaking') return;
+    if (
+      voiceStateRef.current !== "thinking" &&
+      voiceStateRef.current !== "speaking"
+    )
+      return;
 
     const newContent = streamingText.substring(spokenLengthRef.current);
     if (newContent.length < SPEECH_CHUNK_SIZE) return;
@@ -215,13 +266,17 @@ export default function VoiceMode({
   }, [streamingText]);
 
   useEffect(() => {
-    if (isResponding && voiceStateRef.current !== 'thinking' && voiceStateRef.current !== 'speaking') {
-      console.log('[VoiceMode] Agent responding, switching to thinking');
-      setVoiceState('thinking');
-      setDisplayText('');
+    if (
+      isResponding &&
+      voiceStateRef.current !== "thinking" &&
+      voiceStateRef.current !== "speaking"
+    ) {
+      console.log("[VoiceMode] Agent responding, switching to thinking");
+      setVoiceState("thinking");
+      setDisplayText("");
       spokenLengthRef.current = 0;
       speakQueueRef.current = [];
-      lastResponseTextRef.current = '';
+      lastResponseTextRef.current = "";
     }
 
     if (isResponding && lastAssistantText) {
@@ -229,16 +284,24 @@ export default function VoiceMode({
     }
 
     if (prevRespondingRef.current && !isResponding) {
-      const responseText = (lastResponseTextRef.current || lastAssistantText)?.trim();
-      console.log('[VoiceMode] Agent done responding, text length:', responseText?.length ?? 0);
+      const responseText = (
+        lastResponseTextRef.current || lastAssistantText
+      )?.trim();
+      console.log(
+        "[VoiceMode] Agent done responding, text length:",
+        responseText?.length ?? 0,
+      );
       if (responseText) {
         const remaining = responseText.substring(spokenLengthRef.current);
         if (remaining.trim()) {
-          console.log('[VoiceMode] Speaking remaining:', remaining.substring(0, 80));
+          console.log(
+            "[VoiceMode] Speaking remaining:",
+            remaining.substring(0, 80),
+          );
           enqueueSpeechChunk(remaining);
         }
         setDisplayText(responseText);
-        addTurn('assistant', responseText);
+        addTurn("assistant", responseText);
         if (isMutedRef.current && !isSpeakingChunkRef.current) {
           finishSpeakingCycle();
         }
@@ -252,17 +315,33 @@ export default function VoiceMode({
   useEffect(() => {
     stopAllAnims();
     switch (voiceState) {
-      case 'idle': animateIdle(); break;
-      case 'listening': animateListening(); break;
-      case 'processing': animateProcessing(); break;
-      case 'thinking': animateThinking(); break;
-      case 'speaking': animateSpeaking(); break;
+      case "idle":
+        animateIdle();
+        break;
+      case "listening":
+        animateListening();
+        break;
+      case "processing":
+        animateProcessing();
+        break;
+      case "thinking":
+        animateThinking();
+        break;
+      case "speaking":
+        animateSpeaking();
+        break;
     }
     return () => stopAllAnims();
   }, [voiceState]);
 
   const clearAllTimers = useCallback(() => {
-    [autoStartTimerRef, maxRecordingTimerRef, transcriptionTimeoutRef, responseStableTimerRef, speechCheckTimerRef].forEach(ref => {
+    [
+      autoStartTimerRef,
+      maxRecordingTimerRef,
+      transcriptionTimeoutRef,
+      responseStableTimerRef,
+      speechCheckTimerRef,
+    ].forEach((ref) => {
       if (ref.current) {
         clearTimeout(ref.current as ReturnType<typeof setTimeout>);
         ref.current = null;
@@ -271,7 +350,7 @@ export default function VoiceMode({
   }, []);
 
   const stopAllAnims = useCallback(() => {
-    animLoopsRef.current.forEach(a => a.stop());
+    animLoopsRef.current.forEach((a) => a.stop());
     animLoopsRef.current = [];
   }, []);
 
@@ -281,150 +360,405 @@ export default function VoiceMode({
   }, []);
 
   const animateIdle = useCallback(() => {
-    Animated.timing(orbOpacity, { toValue: 0.5, duration: 400, useNativeDriver: true }).start();
-    Animated.timing(innerGlow, { toValue: 0.3, duration: 400, useNativeDriver: true }).start();
+    Animated.timing(orbOpacity, {
+      toValue: 0.5,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(innerGlow, {
+      toValue: 0.3,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
     haloOpacity.setValue(0);
     halo2Opacity.setValue(0);
     halo3Opacity.setValue(0);
-    Animated.timing(bgPulse, { toValue: 0, duration: 600, useNativeDriver: true }).start();
-    barAnims.forEach(b => b.setValue(0.15));
+    Animated.timing(bgPulse, {
+      toValue: 0,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+    barAnims.forEach((b) => b.setValue(0.15));
 
-    startLoop(Animated.loop(Animated.sequence([
-      Animated.timing(orbScale, { toValue: 1.04, duration: 2200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(orbScale, { toValue: 0.96, duration: 2200, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ])));
+    startLoop(
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbScale, {
+            toValue: 1.04,
+            duration: 2200,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbScale, {
+            toValue: 0.96,
+            duration: 2200,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
   }, []);
 
   const animateListening = useCallback(() => {
-    Animated.timing(orbOpacity, { toValue: 1, duration: 250, useNativeDriver: true }).start();
-    Animated.timing(innerGlow, { toValue: 0.8, duration: 250, useNativeDriver: true }).start();
-    Animated.timing(bgPulse, { toValue: 0.3, duration: 400, useNativeDriver: true }).start();
+    Animated.timing(orbOpacity, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(innerGlow, {
+      toValue: 0.8,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(bgPulse, {
+      toValue: 0.3,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
 
-    startLoop(Animated.loop(Animated.stagger(180, [
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(haloScale, { toValue: 1.8, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(haloScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+    startLoop(
+      Animated.loop(
+        Animated.stagger(180, [
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(haloScale, {
+                toValue: 1.8,
+                duration: 1400,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(haloScale, {
+                toValue: 1,
+                duration: 0,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.sequence([
+              Animated.timing(haloOpacity, {
+                toValue: 0.35,
+                duration: 80,
+                useNativeDriver: true,
+              }),
+              Animated.timing(haloOpacity, {
+                toValue: 0,
+                duration: 1320,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(halo2Scale, {
+                toValue: 1.8,
+                duration: 1400,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo2Scale, {
+                toValue: 1,
+                duration: 0,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.sequence([
+              Animated.timing(halo2Opacity, {
+                toValue: 0.25,
+                duration: 80,
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo2Opacity, {
+                toValue: 0,
+                duration: 1320,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(halo3Scale, {
+                toValue: 1.8,
+                duration: 1400,
+                easing: Easing.out(Easing.ease),
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo3Scale, {
+                toValue: 1,
+                duration: 0,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.sequence([
+              Animated.timing(halo3Opacity, {
+                toValue: 0.15,
+                duration: 80,
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo3Opacity, {
+                toValue: 0,
+                duration: 1320,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
         ]),
-        Animated.sequence([
-          Animated.timing(haloOpacity, { toValue: 0.35, duration: 80, useNativeDriver: true }),
-          Animated.timing(haloOpacity, { toValue: 0, duration: 1320, useNativeDriver: true }),
-        ]),
-      ]),
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(halo2Scale, { toValue: 1.8, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(halo2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(halo2Opacity, { toValue: 0.25, duration: 80, useNativeDriver: true }),
-          Animated.timing(halo2Opacity, { toValue: 0, duration: 1320, useNativeDriver: true }),
-        ]),
-      ]),
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(halo3Scale, { toValue: 1.8, duration: 1400, easing: Easing.out(Easing.ease), useNativeDriver: true }),
-          Animated.timing(halo3Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(halo3Opacity, { toValue: 0.15, duration: 80, useNativeDriver: true }),
-          Animated.timing(halo3Opacity, { toValue: 0, duration: 1320, useNativeDriver: true }),
-        ]),
-      ]),
-    ])));
+      ),
+    );
 
     barAnims.forEach((b, i) => {
-      startLoop(Animated.loop(Animated.sequence([
-        Animated.delay(i * 60),
-        Animated.timing(b, { toValue: 0.9 + Math.random() * 0.1, duration: 200 + Math.random() * 200, useNativeDriver: true }),
-        Animated.timing(b, { toValue: 0.15 + Math.random() * 0.2, duration: 200 + Math.random() * 200, useNativeDriver: true }),
-      ])));
+      startLoop(
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 60),
+            Animated.timing(b, {
+              toValue: 0.9 + Math.random() * 0.1,
+              duration: 200 + Math.random() * 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(b, {
+              toValue: 0.15 + Math.random() * 0.2,
+              duration: 200 + Math.random() * 200,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      );
     });
   }, []);
 
   const animateProcessing = useCallback(() => {
-    Animated.timing(orbOpacity, { toValue: 0.7, duration: 200, useNativeDriver: true }).start();
-    Animated.timing(innerGlow, { toValue: 0.6, duration: 200, useNativeDriver: true }).start();
+    Animated.timing(orbOpacity, {
+      toValue: 0.7,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(innerGlow, {
+      toValue: 0.6,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
     haloOpacity.setValue(0);
     halo2Opacity.setValue(0);
     halo3Opacity.setValue(0);
-    Animated.timing(bgPulse, { toValue: 0.15, duration: 300, useNativeDriver: true }).start();
+    Animated.timing(bgPulse, {
+      toValue: 0.15,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
 
-    startLoop(Animated.loop(Animated.sequence([
-      Animated.timing(orbScale, { toValue: 1.06, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(orbScale, { toValue: 0.94, duration: 600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ])));
+    startLoop(
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbScale, {
+            toValue: 1.06,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbScale, {
+            toValue: 0.94,
+            duration: 600,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
 
     dotAnims.forEach((d, i) => {
-      startLoop(Animated.loop(Animated.sequence([
-        Animated.delay(i * 250),
-        Animated.timing(d, { toValue: 1, duration: 400, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0.2, duration: 400, useNativeDriver: true }),
-      ])));
+      startLoop(
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 250),
+            Animated.timing(d, {
+              toValue: 1,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+            Animated.timing(d, {
+              toValue: 0.2,
+              duration: 400,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      );
     });
   }, []);
 
   const animateThinking = useCallback(() => {
-    Animated.timing(orbOpacity, { toValue: 0.8, duration: 300, useNativeDriver: true }).start();
-    Animated.timing(innerGlow, { toValue: 0.7, duration: 300, useNativeDriver: true }).start();
+    Animated.timing(orbOpacity, {
+      toValue: 0.8,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(innerGlow, {
+      toValue: 0.7,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
     haloOpacity.setValue(0);
     halo2Opacity.setValue(0);
     halo3Opacity.setValue(0);
-    Animated.timing(bgPulse, { toValue: 0.2, duration: 400, useNativeDriver: true }).start();
+    Animated.timing(bgPulse, {
+      toValue: 0.2,
+      duration: 400,
+      useNativeDriver: true,
+    }).start();
 
-    startLoop(Animated.loop(Animated.sequence([
-      Animated.timing(orbScale, { toValue: 1.05, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(orbScale, { toValue: 0.95, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ])));
+    startLoop(
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbScale, {
+            toValue: 1.05,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbScale, {
+            toValue: 0.95,
+            duration: 900,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
 
     dotAnims.forEach((d, i) => {
-      startLoop(Animated.loop(Animated.sequence([
-        Animated.delay(i * 300),
-        Animated.timing(d, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.timing(d, { toValue: 0.15, duration: 500, useNativeDriver: true }),
-      ])));
+      startLoop(
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 300),
+            Animated.timing(d, {
+              toValue: 1,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+            Animated.timing(d, {
+              toValue: 0.15,
+              duration: 500,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      );
     });
   }, []);
 
   const animateSpeaking = useCallback(() => {
-    Animated.timing(orbOpacity, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-    Animated.timing(innerGlow, { toValue: 0.9, duration: 200, useNativeDriver: true }).start();
-    Animated.timing(bgPulse, { toValue: 0.25, duration: 300, useNativeDriver: true }).start();
+    Animated.timing(orbOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(innerGlow, {
+      toValue: 0.9,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(bgPulse, {
+      toValue: 0.25,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
 
-    startLoop(Animated.loop(Animated.sequence([
-      Animated.timing(orbScale, { toValue: 1.08, duration: 500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(orbScale, { toValue: 0.92, duration: 500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-    ])));
+    startLoop(
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(orbScale, {
+            toValue: 1.08,
+            duration: 500,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(orbScale, {
+            toValue: 0.92,
+            duration: 500,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    );
 
-    startLoop(Animated.loop(Animated.stagger(150, [
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(haloScale, { toValue: 1.5, duration: 1000, useNativeDriver: true }),
-          Animated.timing(haloScale, { toValue: 1, duration: 0, useNativeDriver: true }),
+    startLoop(
+      Animated.loop(
+        Animated.stagger(150, [
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(haloScale, {
+                toValue: 1.5,
+                duration: 1000,
+                useNativeDriver: true,
+              }),
+              Animated.timing(haloScale, {
+                toValue: 1,
+                duration: 0,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.sequence([
+              Animated.timing(haloOpacity, {
+                toValue: 0.3,
+                duration: 80,
+                useNativeDriver: true,
+              }),
+              Animated.timing(haloOpacity, {
+                toValue: 0,
+                duration: 920,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
+          Animated.parallel([
+            Animated.sequence([
+              Animated.timing(halo2Scale, {
+                toValue: 1.5,
+                duration: 1000,
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo2Scale, {
+                toValue: 1,
+                duration: 0,
+                useNativeDriver: true,
+              }),
+            ]),
+            Animated.sequence([
+              Animated.timing(halo2Opacity, {
+                toValue: 0.2,
+                duration: 80,
+                useNativeDriver: true,
+              }),
+              Animated.timing(halo2Opacity, {
+                toValue: 0,
+                duration: 920,
+                useNativeDriver: true,
+              }),
+            ]),
+          ]),
         ]),
-        Animated.sequence([
-          Animated.timing(haloOpacity, { toValue: 0.3, duration: 80, useNativeDriver: true }),
-          Animated.timing(haloOpacity, { toValue: 0, duration: 920, useNativeDriver: true }),
-        ]),
-      ]),
-      Animated.parallel([
-        Animated.sequence([
-          Animated.timing(halo2Scale, { toValue: 1.5, duration: 1000, useNativeDriver: true }),
-          Animated.timing(halo2Scale, { toValue: 1, duration: 0, useNativeDriver: true }),
-        ]),
-        Animated.sequence([
-          Animated.timing(halo2Opacity, { toValue: 0.2, duration: 80, useNativeDriver: true }),
-          Animated.timing(halo2Opacity, { toValue: 0, duration: 920, useNativeDriver: true }),
-        ]),
-      ]),
-    ])));
+      ),
+    );
 
     speakWave.forEach((w, i) => {
-      startLoop(Animated.loop(Animated.sequence([
-        Animated.delay(i * 80),
-        Animated.timing(w, { toValue: 0.8 + Math.random() * 0.2, duration: 250 + i * 30, useNativeDriver: true }),
-        Animated.timing(w, { toValue: 0.15 + Math.random() * 0.15, duration: 250 + i * 30, useNativeDriver: true }),
-      ])));
+      startLoop(
+        Animated.loop(
+          Animated.sequence([
+            Animated.delay(i * 80),
+            Animated.timing(w, {
+              toValue: 0.8 + Math.random() * 0.2,
+              duration: 250 + i * 30,
+              useNativeDriver: true,
+            }),
+            Animated.timing(w, {
+              toValue: 0.15 + Math.random() * 0.15,
+              duration: 250 + i * 30,
+              useNativeDriver: true,
+            }),
+          ]),
+        ),
+      );
     });
   }, []);
 
@@ -438,20 +772,29 @@ export default function VoiceMode({
       webLevelIntervalRef.current = null;
     }
     if (recordingRef.current) {
-      try { recordingRef.current.stopAndUnloadAsync().catch(() => {}); } catch (_e) {}
+      try {
+        recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      } catch (_e) {}
       recordingRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try { mediaRecorderRef.current.stop(); } catch (_e) {}
+    if (
+      mediaRecorderRef.current &&
+      mediaRecorderRef.current.state !== "inactive"
+    ) {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (_e) {}
       mediaRecorderRef.current = null;
     }
     if (audioContextRef.current) {
-      try { audioContextRef.current.close(); } catch (_e) {}
+      try {
+        audioContextRef.current.close();
+      } catch (_e) {}
       audioContextRef.current = null;
       analyserRef.current = null;
     }
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
     setMicLevel(0);
@@ -473,31 +816,31 @@ export default function VoiceMode({
         speechCheckTimerRef.current = null;
       }
     } catch (e) {
-      console.log('[VoiceMode] Stop speech error:', e);
+      console.log("[VoiceMode] Stop speech error:", e);
     }
   }, []);
 
-  const addTurn = useCallback((role: 'user' | 'assistant', text: string) => {
-    setTurns(prev => [...prev, { role, text, timestamp: Date.now() }]);
+  const addTurn = useCallback((role: "user" | "assistant", text: string) => {
+    setTurns((prev) => [...prev, { role, text, timestamp: Date.now() }]);
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
   const cleanTextForSpeech = useCallback((text: string): string => {
     return text
-      .replace(/```[\s\S]*?```/g, ' code block ')
-      .replace(/`[^`]+`/g, (m) => m.replace(/`/g, ''))
-      .replace(/#{1,6}\s*/g, '')
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/\*([^*]+)\*/g, '$1')
-      .replace(/__([^_]+)__/g, '$1')
-      .replace(/_([^_]+)_/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
-      .replace(/^\s*[-*+]\s/gm, '')
-      .replace(/^\s*\d+\.\s/gm, '')
-      .replace(/\n{2,}/g, '. ')
-      .replace(/\n/g, '. ')
-      .replace(/\s{2,}/g, ' ')
+      .replace(/```[\s\S]*?```/g, " code block ")
+      .replace(/`[^`]+`/g, (m) => m.replace(/`/g, ""))
+      .replace(/#{1,6}\s*/g, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/__([^_]+)__/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+      .replace(/^\s*[-*+]\s/gm, "")
+      .replace(/^\s*\d+\.\s/gm, "")
+      .replace(/\n{2,}/g, ". ")
+      .replace(/\n/g, ". ")
+      .replace(/\s{2,}/g, " ")
       .trim();
   }, []);
 
@@ -509,11 +852,11 @@ export default function VoiceMode({
       }
 
       isSpeakingChunkRef.current = true;
-      if (voiceStateRef.current !== 'speaking') {
-        setVoiceState('speaking');
+      if (voiceStateRef.current !== "speaking") {
+        setVoiceState("speaking");
       }
 
-      console.log('[VoiceMode] TTS speaking:', cleaned.substring(0, 80));
+      console.log("[VoiceMode] TTS speaking:", cleaned.substring(0, 80));
 
       let resolved = false;
       const finish = () => {
@@ -523,28 +866,31 @@ export default function VoiceMode({
         }
       };
 
-      const safetyTimeout = setTimeout(() => {
-        console.log('[VoiceMode] TTS safety timeout fired');
-        finish();
-      }, Math.max(15000, cleaned.length * 120));
+      const safetyTimeout = setTimeout(
+        () => {
+          console.log("[VoiceMode] TTS safety timeout fired");
+          finish();
+        },
+        Math.max(15000, cleaned.length * 120),
+      );
 
       Speech.speak(cleaned, {
-        language: 'en-US',
+        language: "en-US",
         pitch: 1.0,
         rate: getSpeechRate(),
         onDone: () => {
           clearTimeout(safetyTimeout);
-          console.log('[VoiceMode] TTS chunk done');
+          console.log("[VoiceMode] TTS chunk done");
           finish();
         },
         onError: (err) => {
           clearTimeout(safetyTimeout);
-          console.log('[VoiceMode] TTS chunk error:', err);
+          console.log("[VoiceMode] TTS chunk error:", err);
           finish();
         },
         onStopped: () => {
           clearTimeout(safetyTimeout);
-          console.log('[VoiceMode] TTS chunk stopped');
+          console.log("[VoiceMode] TTS chunk stopped");
           finish();
         },
       });
@@ -570,7 +916,7 @@ export default function VoiceMode({
     }
 
     await configureAudioForPlayback();
-    await new Promise(r => setTimeout(r, 80));
+    await new Promise((r) => setTimeout(r, 80));
 
     await speakText(cleaned);
 
@@ -583,75 +929,88 @@ export default function VoiceMode({
     }
   }, [cleanTextForSpeech, speakText]);
 
-  const enqueueSpeechChunk = useCallback((chunk: string) => {
-    if (isMutedRef.current) return;
-    speakQueueRef.current.push(chunk);
-    if (!isSpeakingChunkRef.current) {
-      processNextChunk();
-    }
-  }, [processNextChunk]);
+  const enqueueSpeechChunk = useCallback(
+    (chunk: string) => {
+      if (isMutedRef.current) return;
+      speakQueueRef.current.push(chunk);
+      if (!isSpeakingChunkRef.current) {
+        processNextChunk();
+      }
+    },
+    [processNextChunk],
+  );
 
   const finishSpeakingCycle = useCallback(() => {
-    console.log('[VoiceMode] Finishing speaking cycle');
+    console.log("[VoiceMode] Finishing speaking cycle");
     isSpeakingRef.current = false;
     isSpeakingChunkRef.current = false;
     spokenLengthRef.current = 0;
     speakQueueRef.current = [];
     if (isActiveRef.current) {
-      setVoiceState('idle');
-      setDisplayText('');
+      setVoiceState("idle");
+      setDisplayText("");
       setTimeout(() => {
         if (isActiveRef.current) startListening();
       }, POST_SPEAK_LISTEN_DELAY);
     }
   }, []);
 
-  const transcribeAudio = useCallback(async (formData: FormData, attempt: number = 0): Promise<string | null> => {
-    try {
-      console.log('[VoiceMode] Transcribing (attempt', attempt + 1, ')...');
+  const transcribeAudio = useCallback(
+    async (formData: FormData, attempt: number = 0): Promise<string | null> => {
+      try {
+        console.log("[VoiceMode] Transcribing (attempt", attempt + 1, ")...");
 
-      const controller = new AbortController();
-      transcriptionTimeoutRef.current = setTimeout(() => {
-        controller.abort();
-      }, TRANSCRIPTION_TIMEOUT_MS);
+        const controller = new AbortController();
+        transcriptionTimeoutRef.current = setTimeout(() => {
+          controller.abort();
+        }, TRANSCRIPTION_TIMEOUT_MS);
 
-      const response = await fetch(STT_URL, {
-        method: 'POST',
-        body: formData,
-        signal: controller.signal,
-      });
+        const response = await fetch(STT_URL, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
 
-      if (transcriptionTimeoutRef.current) {
-        clearTimeout(transcriptionTimeoutRef.current);
-        transcriptionTimeoutRef.current = null;
-      }
+        if (transcriptionTimeoutRef.current) {
+          clearTimeout(transcriptionTimeoutRef.current);
+          transcriptionTimeoutRef.current = null;
+        }
 
-      if (!response.ok) {
-        console.log('[VoiceMode] STT error:', response.status);
-        if (attempt < MAX_RETRIES) {
+        if (!response.ok) {
+          console.log("[VoiceMode] STT error:", response.status);
+          if (attempt < MAX_RETRIES) {
+            return transcribeAudio(formData, attempt + 1);
+          }
+          return null;
+        }
+        const data = await response.json();
+        console.log("[VoiceMode] Transcribed:", data.text?.substring(0, 100));
+        return data.text || null;
+      } catch (e: unknown) {
+        if (transcriptionTimeoutRef.current) {
+          clearTimeout(transcriptionTimeoutRef.current);
+          transcriptionTimeoutRef.current = null;
+        }
+        const isAbort = e instanceof Error && e.name === "AbortError";
+        console.log(
+          "[VoiceMode] Transcription error:",
+          isAbort ? "timeout" : e,
+        );
+        if (!isAbort && attempt < MAX_RETRIES) {
           return transcribeAudio(formData, attempt + 1);
         }
         return null;
       }
-      const data = await response.json();
-      console.log('[VoiceMode] Transcribed:', data.text?.substring(0, 100));
-      return data.text || null;
-    } catch (e: unknown) {
-      if (transcriptionTimeoutRef.current) {
-        clearTimeout(transcriptionTimeoutRef.current);
-        transcriptionTimeoutRef.current = null;
-      }
-      const isAbort = e instanceof Error && e.name === 'AbortError';
-      console.log('[VoiceMode] Transcription error:', isAbort ? 'timeout' : e);
-      if (!isAbort && attempt < MAX_RETRIES) {
-        return transcribeAudio(formData, attempt + 1);
-      }
-      return null;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const isNoiseTranscription = useCallback((text: string): boolean => {
-    const trimmed = text.trim().toLowerCase().replace(/[.!?,;:]+$/, '').trim();
+    const trimmed = text
+      .trim()
+      .toLowerCase()
+      .replace(/[.!?,;:]+$/, "")
+      .trim();
     if (trimmed.length < 2) return true;
     if (NOISE_WORDS.has(trimmed)) return true;
     if (/^[\s.,!?;:]+$/.test(trimmed)) return true;
@@ -667,53 +1026,63 @@ export default function VoiceMode({
     return false;
   }, []);
 
-  const handleTranscriptReady = useCallback((text: string) => {
-    const trimmed = text.trim();
-    if (!trimmed) {
-      console.log('[VoiceMode] Empty transcript, restarting');
-      if (isActiveRef.current) {
-        setErrorText("Didn't catch that. Try again.");
-        setTimeout(() => {
-          setErrorText('');
-          if (isActiveRef.current) startListening();
-        }, 1200);
+  const handleTranscriptReady = useCallback(
+    (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        console.log("[VoiceMode] Empty transcript, restarting");
+        if (isActiveRef.current) {
+          setErrorText("Didn't catch that. Try again.");
+          setTimeout(() => {
+            setErrorText("");
+            if (isActiveRef.current) startListening();
+          }, 1200);
+        }
+        return;
       }
-      return;
-    }
-    if (!hadSpeechRef.current) {
-      console.log('[VoiceMode] No speech detected in audio, skipping:', trimmed.substring(0, 50));
-      if (isActiveRef.current) {
-        setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+      if (!hadSpeechRef.current) {
+        console.log(
+          "[VoiceMode] No speech detected in audio, skipping:",
+          trimmed.substring(0, 50),
+        );
+        if (isActiveRef.current) {
+          setTimeout(() => {
+            if (isActiveRef.current) startListening();
+          }, 400);
+        }
+        return;
       }
-      return;
-    }
-    if (isNoiseTranscription(trimmed)) {
-      console.log('[VoiceMode] Noise transcription filtered:', trimmed);
-      if (isActiveRef.current) {
-        setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+      if (isNoiseTranscription(trimmed)) {
+        console.log("[VoiceMode] Noise transcription filtered:", trimmed);
+        if (isActiveRef.current) {
+          setTimeout(() => {
+            if (isActiveRef.current) startListening();
+          }, 400);
+        }
+        return;
       }
-      return;
-    }
-    retryCountRef.current = 0;
-    setTranscript(trimmed);
-    setDisplayText(trimmed);
-    addTurn('user', trimmed);
-    setVoiceState('thinking');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('[VoiceMode] Sending to AI:', trimmed.substring(0, 80));
-    onSend(trimmed);
-  }, [onSend, addTurn, isNoiseTranscription]);
+      retryCountRef.current = 0;
+      setTranscript(trimmed);
+      setDisplayText(trimmed);
+      addTurn("user", trimmed);
+      setVoiceState("thinking");
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      console.log("[VoiceMode] Sending to AI:", trimmed.substring(0, 80));
+      onSend(trimmed);
+    },
+    [onSend, addTurn, isNoiseTranscription],
+  );
 
   const handleTranscriptionFailure = useCallback(() => {
     retryCountRef.current++;
     if (retryCountRef.current >= 3) {
-      setErrorText('Voice recognition unavailable. Try again later.');
-      setVoiceState('idle');
-      setTimeout(() => setErrorText(''), 3000);
+      setErrorText("Voice recognition unavailable. Try again later.");
+      setVoiceState("idle");
+      setTimeout(() => setErrorText(""), 3000);
     } else {
-      setErrorText('Could not understand. Try again.');
+      setErrorText("Could not understand. Try again.");
       setTimeout(() => {
-        setErrorText('');
+        setErrorText("");
         if (isActiveRef.current) startListening();
       }, 1500);
     }
@@ -731,11 +1100,16 @@ export default function VoiceMode({
         clearTimeout(maxRecordingTimerRef.current);
         maxRecordingTimerRef.current = null;
       }
-      setVoiceState('processing');
-      setDisplayText('');
+      setVoiceState("processing");
+      setDisplayText("");
       setMicLevel(0);
 
-      console.log('[VoiceMode] Stopping native recording, peak:', peakLevelRef.current.toFixed(1), 'hadSpeech:', hadSpeechRef.current);
+      console.log(
+        "[VoiceMode] Stopping native recording, peak:",
+        peakLevelRef.current.toFixed(1),
+        "hadSpeech:",
+        hadSpeechRef.current,
+      );
 
       await recording.stopAndUnloadAsync();
       recordingRef.current = null;
@@ -744,27 +1118,39 @@ export default function VoiceMode({
 
       const uri = recording.getURI();
       if (!uri) {
-        console.log('[VoiceMode] No URI from recording');
+        console.log("[VoiceMode] No URI from recording");
         if (isActiveRef.current) {
-          setVoiceState('idle');
-          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+          setVoiceState("idle");
+          setTimeout(() => {
+            if (isActiveRef.current) startListening();
+          }, 400);
         }
         return;
       }
 
       if (!hadSpeechRef.current) {
-        console.log('[VoiceMode] No speech detected (peak:', peakLevelRef.current.toFixed(1), '), skipping transcription');
+        console.log(
+          "[VoiceMode] No speech detected (peak:",
+          peakLevelRef.current.toFixed(1),
+          "), skipping transcription",
+        );
         if (isActiveRef.current) {
-          setVoiceState('idle');
-          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+          setVoiceState("idle");
+          setTimeout(() => {
+            if (isActiveRef.current) startListening();
+          }, 400);
         }
         return;
       }
 
-      const uriParts = uri.split('.');
+      const uriParts = uri.split(".");
       const fileType = uriParts[uriParts.length - 1];
       const formData = new FormData();
-      formData.append('audio', { uri, name: `recording.${fileType}`, type: `audio/${fileType}` } as any);
+      formData.append("audio", {
+        uri,
+        name: `recording.${fileType}`,
+        type: `audio/${fileType}`,
+      } as any);
 
       const text = await transcribeAudio(formData);
       if (text) {
@@ -773,19 +1159,19 @@ export default function VoiceMode({
         handleTranscriptionFailure();
       }
     } catch (e) {
-      console.log('[VoiceMode] Native stop error:', e);
-      setErrorText('Recording error. Try again.');
-      setVoiceState('idle');
-      setTimeout(() => setErrorText(''), 2000);
+      console.log("[VoiceMode] Native stop error:", e);
+      setErrorText("Recording error. Try again.");
+      setVoiceState("idle");
+      setTimeout(() => setErrorText(""), 2000);
     }
   }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
 
   const stopAndTranscribeWeb = useCallback(async () => {
     try {
       const mediaRecorder = mediaRecorderRef.current;
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-      setVoiceState('processing');
-      setDisplayText('');
+      if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+      setVoiceState("processing");
+      setDisplayText("");
       setMicLevel(0);
       if (webLevelIntervalRef.current) {
         clearInterval(webLevelIntervalRef.current);
@@ -800,55 +1186,74 @@ export default function VoiceMode({
         maxRecordingTimerRef.current = null;
       }
 
-      console.log('[VoiceMode] Stopping web recording, peak:', peakLevelRef.current.toFixed(1), 'hadSpeech:', hadSpeechRef.current);
+      console.log(
+        "[VoiceMode] Stopping web recording, peak:",
+        peakLevelRef.current.toFixed(1),
+        "hadSpeech:",
+        hadSpeechRef.current,
+      );
 
       if (!hadSpeechRef.current) {
-        console.log('[VoiceMode] No speech detected on web, skipping transcription');
+        console.log(
+          "[VoiceMode] No speech detected on web, skipping transcription",
+        );
         if (audioContextRef.current) {
-          try { audioContextRef.current.close(); } catch (_e) {}
+          try {
+            audioContextRef.current.close();
+          } catch (_e) {}
           audioContextRef.current = null;
           analyserRef.current = null;
         }
         if (streamRef.current) {
-          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current.getTracks().forEach((track) => track.stop());
           streamRef.current = null;
         }
-        try { mediaRecorder.stop(); } catch (_e) {}
+        try {
+          mediaRecorder.stop();
+        } catch (_e) {}
         mediaRecorderRef.current = null;
         if (isActiveRef.current) {
-          setVoiceState('idle');
-          setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+          setVoiceState("idle");
+          setTimeout(() => {
+            if (isActiveRef.current) startListening();
+          }, 400);
         }
         return;
       }
 
       return new Promise<void>((resolve) => {
         mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
           if (audioContextRef.current) {
-            try { audioContextRef.current.close(); } catch (_e) {}
+            try {
+              audioContextRef.current.close();
+            } catch (_e) {}
             audioContextRef.current = null;
             analyserRef.current = null;
           }
           if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current.getTracks().forEach((track) => track.stop());
             streamRef.current = null;
           }
           mediaRecorderRef.current = null;
 
           if (blob.size < 1000) {
-            console.log('[VoiceMode] Audio too short, restarting');
+            console.log("[VoiceMode] Audio too short, restarting");
             if (isActiveRef.current) {
-              setVoiceState('idle');
-              setTimeout(() => { if (isActiveRef.current) startListening(); }, 300);
+              setVoiceState("idle");
+              setTimeout(() => {
+                if (isActiveRef.current) startListening();
+              }, 300);
             }
             resolve();
             return;
           }
 
-          const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+          const file = new File([blob], "recording.webm", {
+            type: "audio/webm",
+          });
           const formData = new FormData();
-          formData.append('audio', file);
+          formData.append("audio", file);
           const text = await transcribeAudio(formData);
           if (text) {
             handleTranscriptReady(text);
@@ -860,10 +1265,10 @@ export default function VoiceMode({
         mediaRecorder.stop();
       });
     } catch (e) {
-      console.log('[VoiceMode] Web stop error:', e);
-      setErrorText('Recording error. Try again.');
-      setVoiceState('idle');
-      setTimeout(() => setErrorText(''), 2000);
+      console.log("[VoiceMode] Web stop error:", e);
+      setErrorText("Recording error. Try again.");
+      setVoiceState("idle");
+      setTimeout(() => setErrorText(""), 2000);
     }
   }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
 
@@ -871,8 +1276,8 @@ export default function VoiceMode({
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        setErrorText('Microphone permission required');
-        setTimeout(() => setErrorText(''), 3000);
+        setErrorText("Microphone permission required");
+        setTimeout(() => setErrorText(""), 3000);
         return;
       }
 
@@ -882,7 +1287,7 @@ export default function VoiceMode({
       await recording.prepareToRecordAsync({
         isMeteringEnabled: true,
         android: {
-          extension: '.m4a',
+          extension: ".m4a",
           outputFormat: Audio.AndroidOutputFormat.MPEG_4,
           audioEncoder: Audio.AndroidAudioEncoder.AAC,
           sampleRate: 44100,
@@ -890,7 +1295,7 @@ export default function VoiceMode({
           bitRate: 128000,
         },
         ios: {
-          extension: '.wav',
+          extension: ".wav",
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,
           audioQuality: Audio.IOSAudioQuality.HIGH,
           sampleRate: 44100,
@@ -907,18 +1312,20 @@ export default function VoiceMode({
       recordingStartTime.current = Date.now();
       peakLevelRef.current = -160;
       hadSpeechRef.current = false;
-      setVoiceState('listening');
-      setDisplayText('');
-      setErrorText('');
+      setVoiceState("listening");
+      setDisplayText("");
+      setErrorText("");
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       maxRecordingTimerRef.current = setTimeout(() => {
-        console.log('[VoiceMode] Max recording time reached');
+        console.log("[VoiceMode] Max recording time reached");
         if (recordingRef.current) stopAndTranscribeNative();
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / METERING_INTERVAL);
+      const SILENCE_FRAMES_NEEDED = Math.ceil(
+        SILENCE_DURATION_MS / METERING_INTERVAL,
+      );
 
       meteringIntervalRef.current = setInterval(async () => {
         try {
@@ -933,10 +1340,19 @@ export default function VoiceMode({
           if (metering > MIN_PEAK_LEVEL_NATIVE) hadSpeechRef.current = true;
 
           const elapsed = Date.now() - recordingStartTime.current;
-          if (metering < SILENCE_THRESHOLD_NATIVE && elapsed > MIN_RECORDING_MS) {
+          if (
+            metering < SILENCE_THRESHOLD_NATIVE &&
+            elapsed > MIN_RECORDING_MS
+          ) {
             consecutiveSilentFrames++;
-            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
-              console.log('[VoiceMode] Silence after speech, peak:', peakLevelRef.current.toFixed(1));
+            if (
+              consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED &&
+              hadSpeechRef.current
+            ) {
+              console.log(
+                "[VoiceMode] Silence after speech, peak:",
+                peakLevelRef.current.toFixed(1),
+              );
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
@@ -948,12 +1364,12 @@ export default function VoiceMode({
           }
         } catch (_e) {}
       }, METERING_INTERVAL);
-      console.log('[VoiceMode] Native recording started');
+      console.log("[VoiceMode] Native recording started");
     } catch (e) {
-      console.log('[VoiceMode] Native start error:', e);
-      setErrorText('Failed to start recording');
-      setVoiceState('idle');
-      setTimeout(() => setErrorText(''), 2000);
+      console.log("[VoiceMode] Native start error:", e);
+      setErrorText("Failed to start recording");
+      setVoiceState("idle");
+      setTimeout(() => setErrorText(""), 2000);
     }
   }, [stopAndTranscribeNative]);
 
@@ -978,7 +1394,9 @@ export default function VoiceMode({
       analyserRef.current = analyser;
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm",
+      });
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -987,20 +1405,25 @@ export default function VoiceMode({
       recordingStartTime.current = Date.now();
       peakLevelRef.current = 0;
       hadSpeechRef.current = false;
-      setVoiceState('listening');
-      setDisplayText('');
-      setErrorText('');
+      setVoiceState("listening");
+      setDisplayText("");
+      setErrorText("");
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       maxRecordingTimerRef.current = setTimeout(() => {
-        console.log('[VoiceMode] Max recording time reached (web)');
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        console.log("[VoiceMode] Max recording time reached (web)");
+        if (
+          mediaRecorderRef.current &&
+          mediaRecorderRef.current.state !== "inactive"
+        ) {
           stopAndTranscribeWeb();
         }
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(SILENCE_DURATION_MS / METERING_INTERVAL);
+      const SILENCE_FRAMES_NEEDED = Math.ceil(
+        SILENCE_DURATION_MS / METERING_INTERVAL,
+      );
 
       webLevelIntervalRef.current = setInterval(() => {
         if (!analyserRef.current) return;
@@ -1020,8 +1443,14 @@ export default function VoiceMode({
           const elapsed = Date.now() - recordingStartTime.current;
           if (avg < WEB_SILENCE_AVG_THRESHOLD && elapsed > MIN_RECORDING_MS) {
             consecutiveSilentFrames++;
-            if (consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED && hadSpeechRef.current) {
-              console.log('[VoiceMode] Web silence after speech, peak:', peakLevelRef.current.toFixed(1));
+            if (
+              consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED &&
+              hadSpeechRef.current
+            ) {
+              console.log(
+                "[VoiceMode] Web silence after speech, peak:",
+                peakLevelRef.current.toFixed(1),
+              );
               if (meteringIntervalRef.current) {
                 clearInterval(meteringIntervalRef.current);
                 meteringIntervalRef.current = null;
@@ -1033,49 +1462,59 @@ export default function VoiceMode({
           }
         } catch (_e) {}
       }, METERING_INTERVAL);
-      console.log('[VoiceMode] Web recording started');
+      console.log("[VoiceMode] Web recording started");
     } catch (e) {
-      console.log('[VoiceMode] Web start error:', e);
-      setErrorText('Microphone access required');
-      setVoiceState('idle');
-      setTimeout(() => setErrorText(''), 3000);
+      console.log("[VoiceMode] Web start error:", e);
+      setErrorText("Microphone access required");
+      setVoiceState("idle");
+      setTimeout(() => setErrorText(""), 3000);
     }
   }, [stopAndTranscribeWeb]);
 
   const startListening = useCallback(() => {
     if (!isActiveRef.current) return;
     if (isSpeakingRef.current || isSpeakingChunkRef.current) stopSpeaking();
-    if (Platform.OS === 'web') startListeningWeb();
+    if (Platform.OS === "web") startListeningWeb();
     else startListeningNative();
   }, [startListeningNative, startListeningWeb, stopSpeaking]);
 
   const handleOrbPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    if (voiceState === 'speaking') {
+    if (voiceState === "speaking") {
       stopSpeaking();
-      setVoiceState('idle');
-      setDisplayText('');
-      setTimeout(() => { if (isActiveRef.current) startListening(); }, 300);
+      setVoiceState("idle");
+      setDisplayText("");
+      setTimeout(() => {
+        if (isActiveRef.current) startListening();
+      }, 300);
       return;
     }
-    if (voiceState === 'thinking') {
+    if (voiceState === "thinking") {
       return;
     }
-    if (voiceState === 'idle') {
+    if (voiceState === "idle") {
       startListening();
-    } else if (voiceState === 'listening') {
+    } else if (voiceState === "listening") {
       if (meteringIntervalRef.current) {
         clearInterval(meteringIntervalRef.current);
         meteringIntervalRef.current = null;
       }
-      if (Platform.OS === 'web') stopAndTranscribeWeb();
+      if (Platform.OS === "web") stopAndTranscribeWeb();
       else stopAndTranscribeNative();
     }
-  }, [voiceState, startListening, stopAndTranscribeNative, stopAndTranscribeWeb, stopSpeaking]);
+  }, [
+    voiceState,
+    startListening,
+    stopAndTranscribeNative,
+    stopAndTranscribeWeb,
+    stopSpeaking,
+  ]);
 
   const handleClose = useCallback(() => {
     Animated.timing(fadeAnim, {
-      toValue: 0, duration: 250, useNativeDriver: true,
+      toValue: 0,
+      duration: 250,
+      useNativeDriver: true,
     }).start(() => {
       stopSpeaking();
       clearAllTimers();
@@ -1090,9 +1529,11 @@ export default function VoiceMode({
     setIsMuted(newMuted);
     if (newMuted && (isSpeakingRef.current || isSpeakingChunkRef.current)) {
       stopSpeaking();
-      setVoiceState('idle');
-      setDisplayText('');
-      setTimeout(() => { if (isActiveRef.current) startListening(); }, 400);
+      setVoiceState("idle");
+      setDisplayText("");
+      setTimeout(() => {
+        if (isActiveRef.current) startListening();
+      }, 400);
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [isMuted, stopSpeaking, startListening]);
@@ -1101,27 +1542,40 @@ export default function VoiceMode({
     const next = !showHistory;
     setShowHistory(next);
     Animated.timing(historyOpacity, {
-      toValue: next ? 1 : 0, duration: 250, useNativeDriver: true,
+      toValue: next ? 1 : 0,
+      duration: 250,
+      useNativeDriver: true,
     }).start();
   }, [showHistory, historyOpacity]);
 
   const orbTint =
-    voiceState === 'listening' ? '#10B981'
-    : voiceState === 'processing' ? '#3B82F6'
-    : voiceState === 'thinking' ? '#A78BFA'
-    : voiceState === 'speaking' ? '#22D3EE'
-    : '#52525B';
+    voiceState === "listening"
+      ? "#10B981"
+      : voiceState === "processing"
+        ? "#3B82F6"
+        : voiceState === "thinking"
+          ? "#A78BFA"
+          : voiceState === "speaking"
+            ? "#22D3EE"
+            : "#52525B";
 
   const stateLabel =
-    voiceState === 'idle' ? 'Ready'
-    : voiceState === 'listening' ? 'Listening'
-    : voiceState === 'processing' ? 'Processing'
-    : voiceState === 'thinking' ? 'Thinking'
-    : 'Speaking';
+    voiceState === "idle"
+      ? "Ready"
+      : voiceState === "listening"
+        ? "Listening"
+        : voiceState === "processing"
+          ? "Processing"
+          : voiceState === "thinking"
+            ? "Thinking"
+            : "Speaking";
 
   const micBars = barAnims.map((anim, i) => {
     const baseHeight = [16, 28, 22, 38, 32, 40, 26, 34, 18][i];
-    const height = voiceState === 'listening' ? baseHeight * (0.4 + micLevel * 0.6) : baseHeight;
+    const height =
+      voiceState === "listening"
+        ? baseHeight * (0.4 + micLevel * 0.6)
+        : baseHeight;
     return (
       <Animated.View
         key={i}
@@ -1140,12 +1594,31 @@ export default function VoiceMode({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} animationType="none" presentationStyle="fullScreen" onRequestClose={handleClose}>
-      <Animated.View style={[styles.container, { opacity: fadeAnim, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-        <Animated.View style={[styles.bgGlow, {
-          opacity: bgPulse,
-          backgroundColor: orbTint,
-        }]} />
+    <Modal
+      visible={visible}
+      animationType="none"
+      presentationStyle="fullScreen"
+      onRequestClose={handleClose}
+    >
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            opacity: fadeAnim,
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
+        <Animated.View
+          style={[
+            styles.bgGlow,
+            {
+              opacity: bgPulse,
+              backgroundColor: orbTint,
+            },
+          ]}
+        />
 
         <View style={styles.topBar}>
           <View style={styles.statusRow}>
@@ -1154,11 +1627,17 @@ export default function VoiceMode({
           </View>
           <View style={styles.topActions}>
             {turns.length > 0 && (
-              <TouchableOpacity style={styles.iconBtn} onPress={toggleHistory} activeOpacity={0.7}>
+              <TouchableOpacity
+                style={styles.iconBtn}
+                onPress={toggleHistory}
+                activeOpacity={0.7}
+              >
                 <ChevronDown
                   size={18}
                   color={Colors.dark.textSecondary}
-                  style={{ transform: [{ rotate: showHistory ? '180deg' : '0deg' }] }}
+                  style={{
+                    transform: [{ rotate: showHistory ? "180deg" : "0deg" }],
+                  }}
                 />
               </TouchableOpacity>
             )}
@@ -1168,23 +1647,58 @@ export default function VoiceMode({
               activeOpacity={0.7}
               testID="voice-mute"
             >
-              {isMuted ? <VolumeX size={17} color={Colors.dark.error} /> : <Volume2 size={17} color={Colors.dark.cyan} />}
+              {isMuted ? (
+                <VolumeX size={17} color={Colors.dark.error} />
+              ) : (
+                <Volume2 size={17} color={Colors.dark.cyan} />
+              )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.closeBtn} onPress={handleClose} activeOpacity={0.7} testID="voice-close">
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={handleClose}
+              activeOpacity={0.7}
+              testID="voice-close"
+            >
               <X size={20} color={Colors.dark.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
 
         {showHistory && turns.length > 0 && (
-          <Animated.View style={[styles.historyContainer, { opacity: historyOpacity }]}>
-            <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} style={styles.historyScroll}>
+          <Animated.View
+            style={[styles.historyContainer, { opacity: historyOpacity }]}
+          >
+            <ScrollView
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+              style={styles.historyScroll}
+            >
               {turns.map((turn, i) => (
-                <View key={i} style={[styles.turnBubble, turn.role === 'user' ? styles.userTurn : styles.assistantTurn]}>
-                  <Text style={[styles.turnLabel, { color: turn.role === 'user' ? Colors.dark.accent : Colors.dark.cyan }]}>
-                    {turn.role === 'user' ? 'You' : 'AI'}
+                <View
+                  key={i}
+                  style={[
+                    styles.turnBubble,
+                    turn.role === "user"
+                      ? styles.userTurn
+                      : styles.assistantTurn,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.turnLabel,
+                      {
+                        color:
+                          turn.role === "user"
+                            ? Colors.dark.accent
+                            : Colors.dark.cyan,
+                      },
+                    ]}
+                  >
+                    {turn.role === "user" ? "You" : "AI"}
                   </Text>
-                  <Text style={styles.turnText} numberOfLines={4}>{turn.text}</Text>
+                  <Text style={styles.turnText} numberOfLines={4}>
+                    {turn.text}
+                  </Text>
                 </View>
               ))}
             </ScrollView>
@@ -1192,46 +1706,85 @@ export default function VoiceMode({
         )}
 
         <View style={styles.orbArea}>
-          <Animated.View style={[styles.haloRing, {
-            transform: [{ scale: haloScale }],
-            opacity: haloOpacity,
-            borderColor: orbTint,
-          }]} />
-          <Animated.View style={[styles.haloRing, {
-            transform: [{ scale: halo2Scale }],
-            opacity: halo2Opacity,
-            borderColor: orbTint,
-          }]} />
-          <Animated.View style={[styles.haloRing, {
-            transform: [{ scale: halo3Scale }],
-            opacity: halo3Opacity,
-            borderColor: orbTint,
-          }]} />
+          <Animated.View
+            style={[
+              styles.haloRing,
+              {
+                transform: [{ scale: haloScale }],
+                opacity: haloOpacity,
+                borderColor: orbTint,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.haloRing,
+              {
+                transform: [{ scale: halo2Scale }],
+                opacity: halo2Opacity,
+                borderColor: orbTint,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.haloRing,
+              {
+                transform: [{ scale: halo3Scale }],
+                opacity: halo3Opacity,
+                borderColor: orbTint,
+              },
+            ]}
+          />
 
           <TouchableOpacity
             activeOpacity={0.85}
             onPress={handleOrbPress}
-            disabled={voiceState === 'processing'}
+            disabled={voiceState === "processing"}
           >
-            <Animated.View style={[styles.orbShell, { transform: [{ scale: orbScale }] }]}>
-              <Animated.View style={[styles.orbGlowBg, { opacity: innerGlow, backgroundColor: orbTint }]} />
-              <Animated.View style={[styles.orbSurface, { borderColor: orbTint, opacity: orbOpacity }]}>
-                {voiceState === 'listening' ? (
+            <Animated.View
+              style={[styles.orbShell, { transform: [{ scale: orbScale }] }]}
+            >
+              <Animated.View
+                style={[
+                  styles.orbGlowBg,
+                  { opacity: innerGlow, backgroundColor: orbTint },
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.orbSurface,
+                  { borderColor: orbTint, opacity: orbOpacity },
+                ]}
+              >
+                {voiceState === "listening" ? (
                   <View style={styles.barsRow}>{micBars}</View>
-                ) : voiceState === 'speaking' ? (
+                ) : voiceState === "speaking" ? (
                   <View style={styles.barsRow}>
                     {speakWave.map((w, i) => (
-                      <Animated.View key={i} style={[styles.speakBar, {
-                        height: [20, 32, 44, 36, 24][i],
-                        opacity: w,
-                        backgroundColor: orbTint,
-                      }]} />
+                      <Animated.View
+                        key={i}
+                        style={[
+                          styles.speakBar,
+                          {
+                            height: [20, 32, 44, 36, 24][i],
+                            opacity: w,
+                            backgroundColor: orbTint,
+                          },
+                        ]}
+                      />
                     ))}
                   </View>
-                ) : voiceState === 'thinking' || voiceState === 'processing' ? (
+                ) : voiceState === "thinking" || voiceState === "processing" ? (
                   <View style={styles.dotsRow}>
                     {dotAnims.map((d, i) => (
-                      <Animated.View key={i} style={[styles.dot, { backgroundColor: orbTint, opacity: d }]} />
+                      <Animated.View
+                        key={i}
+                        style={[
+                          styles.dot,
+                          { backgroundColor: orbTint, opacity: d },
+                        ]}
+                      />
                     ))}
                   </View>
                 ) : (
@@ -1246,36 +1799,45 @@ export default function VoiceMode({
           {errorText ? (
             <Text style={styles.errorText}>{errorText}</Text>
           ) : displayText ? (
-            <Text style={styles.displayText} numberOfLines={5}>{displayText}</Text>
-          ) : voiceState === 'listening' ? (
+            <Text style={styles.displayText} numberOfLines={5}>
+              {displayText}
+            </Text>
+          ) : voiceState === "listening" ? (
             <Text style={styles.hintLabel}>Listening...</Text>
-          ) : voiceState === 'idle' ? (
+          ) : voiceState === "idle" ? (
             <Text style={styles.hintLabel}>Tap to speak</Text>
           ) : null}
-          {transcript && (voiceState === 'thinking' || voiceState === 'speaking') && (
-            <Text style={styles.transcriptLabel}>You said: &quot;{transcript}&quot;</Text>
-          )}
+          {transcript &&
+            (voiceState === "thinking" || voiceState === "speaking") && (
+              <Text style={styles.transcriptLabel}>
+                You said: {'"'}
+                {transcript}
+                {'"'}
+              </Text>
+            )}
         </View>
 
         <View style={styles.bottomBar}>
-          {voiceState === 'speaking' && (
+          {voiceState === "speaking" && (
             <Text style={styles.bottomHint}>Tap orb to interrupt</Text>
           )}
-          {voiceState === 'thinking' && (
+          {voiceState === "thinking" && (
             <Text style={styles.bottomHint}>Thinking...</Text>
           )}
-          {voiceState === 'idle' && (
-            <Text style={styles.bottomHint}>Conversation flows automatically</Text>
+          {voiceState === "idle" && (
+            <Text style={styles.bottomHint}>
+              Conversation flows automatically
+            </Text>
           )}
-          {voiceState === 'listening' && (
+          {voiceState === "listening" && (
             <TouchableOpacity
               style={styles.endBtn}
               onPress={() => {
                 cleanupRecording();
                 clearAllTimers();
-                setVoiceState('idle');
-                setTranscript('');
-                setDisplayText('');
+                setVoiceState("idle");
+                setTranscript("");
+                setDisplayText("");
                 setMicLevel(0);
               }}
               activeOpacity={0.7}
@@ -1292,11 +1854,11 @@ export default function VoiceMode({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#050507',
-    justifyContent: 'space-between',
+    backgroundColor: "#050507",
+    justifyContent: "space-between",
   },
   bgGlow: {
-    position: 'absolute',
+    position: "absolute",
     top: SCREEN_HEIGHT * 0.2,
     left: SCREEN_WIDTH * 0.1,
     width: SCREEN_WIDTH * 0.8,
@@ -1305,16 +1867,16 @@ const styles = StyleSheet.create({
     transform: [{ scaleY: 1.3 }],
   },
   topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingTop: 8,
   },
   statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.06)",
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 16,
@@ -1326,41 +1888,41 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusText: {
-    color: '#A1A1AA',
+    color: "#A1A1AA",
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
     letterSpacing: 0.8,
-    textTransform: 'uppercase' as const,
+    textTransform: "uppercase" as const,
   },
   topActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   iconBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   iconBtnActive: {
-    backgroundColor: 'rgba(239,68,68,0.15)',
+    backgroundColor: "rgba(239,68,68,0.15)",
   },
   closeBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   historyContainer: {
     maxHeight: 180,
     marginHorizontal: 16,
     marginTop: 8,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    backgroundColor: "rgba(255,255,255,0.04)",
     borderRadius: 14,
     padding: 10,
   },
@@ -1374,34 +1936,34 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   userTurn: {
-    backgroundColor: 'rgba(16,185,129,0.08)',
-    alignSelf: 'flex-end' as const,
-    maxWidth: '85%' as const,
+    backgroundColor: "rgba(16,185,129,0.08)",
+    alignSelf: "flex-end" as const,
+    maxWidth: "85%" as const,
   },
   assistantTurn: {
-    backgroundColor: 'rgba(34,211,238,0.08)',
-    alignSelf: 'flex-start' as const,
-    maxWidth: '85%' as const,
+    backgroundColor: "rgba(34,211,238,0.08)",
+    alignSelf: "flex-start" as const,
+    maxWidth: "85%" as const,
   },
   turnLabel: {
     fontSize: 10,
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
     letterSpacing: 0.5,
     marginBottom: 3,
-    textTransform: 'uppercase' as const,
+    textTransform: "uppercase" as const,
   },
   turnText: {
-    color: '#D4D4D8',
+    color: "#D4D4D8",
     fontSize: 13,
     lineHeight: 18,
   },
   orbArea: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   haloRing: {
-    position: 'absolute',
+    position: "absolute",
     width: ORB_SIZE,
     height: ORB_SIZE,
     borderRadius: ORB_SIZE / 2,
@@ -1411,11 +1973,11 @@ const styles = StyleSheet.create({
     width: ORB_SIZE,
     height: ORB_SIZE,
     borderRadius: ORB_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   orbGlowBg: {
-    position: 'absolute',
+    position: "absolute",
     width: ORB_SIZE + 50,
     height: ORB_SIZE + 50,
     borderRadius: (ORB_SIZE + 50) / 2,
@@ -1425,14 +1987,14 @@ const styles = StyleSheet.create({
     height: ORB_SIZE - 6,
     borderRadius: (ORB_SIZE - 6) / 2,
     borderWidth: 1.5,
-    backgroundColor: '#0A0A0C',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#0A0A0C",
+    alignItems: "center",
+    justifyContent: "center",
   },
   barsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 3,
   },
   bar: {
@@ -1444,9 +2006,9 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   dotsRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
-    alignItems: 'center',
+    alignItems: "center",
   },
   dot: {
     width: 12,
@@ -1455,52 +2017,52 @@ const styles = StyleSheet.create({
   },
   textArea: {
     paddingHorizontal: 28,
-    alignItems: 'center',
+    alignItems: "center",
     minHeight: 100,
   },
   displayText: {
-    color: '#E4E4E7',
+    color: "#E4E4E7",
     fontSize: 16,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
     lineHeight: 24,
-    fontWeight: '400' as const,
+    fontWeight: "400" as const,
   },
   errorText: {
-    color: '#EF4444',
+    color: "#EF4444",
     fontSize: 14,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
   },
   hintLabel: {
-    color: '#71717A',
+    color: "#71717A",
     fontSize: 15,
-    fontWeight: '500' as const,
+    fontWeight: "500" as const,
   },
   transcriptLabel: {
-    color: '#52525B',
+    color: "#52525B",
     fontSize: 12,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
     marginTop: 10,
-    fontStyle: 'italic' as const,
+    fontStyle: "italic" as const,
   },
   bottomBar: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingBottom: 12,
     minHeight: 44,
   },
   bottomHint: {
-    color: '#3F3F46',
+    color: "#3F3F46",
     fontSize: 12,
   },
   endBtn: {
-    backgroundColor: 'rgba(239,68,68,0.12)',
+    backgroundColor: "rgba(239,68,68,0.12)",
     paddingHorizontal: 22,
     paddingVertical: 10,
     borderRadius: 20,
   },
   endBtnText: {
-    color: '#EF4444',
+    color: "#EF4444",
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
 });

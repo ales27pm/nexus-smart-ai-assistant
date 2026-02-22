@@ -344,7 +344,7 @@ The **Device** tab now includes a full native capability hub for on-device testi
 - Local vector database with semantic lookup (`expo-sqlite`)
 - Encrypted local storage (`expo-secure-store`)
 - Audio permissions and native TTS (`expo-audio` + `expo-speech`)
-- Native STT capture (`@react-native-voice/voice`)
+- Native STT capture (`expo-speech-recognition`)
 - GPS retrieval (`expo-location`) with native map rendering (`react-native-maps`)
 - Calendar event creation (`expo-calendar`)
 - Contacts read probe (`expo-contacts`)

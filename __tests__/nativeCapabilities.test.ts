@@ -1,8 +1,5 @@
-import {
-  buildRviCaptureCommands,
-  computeEmbedding,
-  cosineSimilarity,
-} from "../utils/nativeCapabilities";
+import { buildRviCaptureCommands } from "../utils/nativeCapabilities";
+import { computeEmbedding, cosineSimilarity } from "../utils/vectorUtils";
 
 describe("nativeCapabilities embeddings", () => {
   it("returns stable embedding dimension", () => {
