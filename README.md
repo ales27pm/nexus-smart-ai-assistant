@@ -296,9 +296,10 @@ When `eas build --local` invokes `eas-cli-local-build-plugin`, it uses npm under
 Run the local build with an isolated project cache:
 
 1. `npm run build:prod:ios:local`
-2. If the cache is already corrupted, run: `npm run build:prod:ios:local:clean`
+2. If the project cache is corrupted, run: `npm run build:prod:ios:local:clean`
+3. If you still get `EEXIST` / `EACCES` rename errors, run: `npm run build:prod:ios:local:repair` (note: this also clears the shared npm tarball cache at `~/.npm/_cacache`; subsequent installs in other projects will re-download packages).
 
-These scripts set `NPM_CONFIG_CACHE=.npm-cache`, which avoids permission collisions in the global npm cache during local EAS builds.
+These scripts set `NPM_CONFIG_CACHE=.npm-cache`, and the `:repair` variant also removes the global npm content cache (`~/.npm/_cacache`). This avoids permission collisions during local EAS builds.
 
 ### **Need help with native features?**
 
