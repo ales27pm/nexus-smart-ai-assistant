@@ -4,7 +4,7 @@
 
 This is a native cross-platform mobile app created with [Rork](https://rork.com)
 
-**Platform**: Native iOS & Android app, exportable to web
+**Platform**: Native iOS app, exportable to web
 **Framework**: Expo Router + React Native
 
 ## How can I edit this code?
@@ -78,18 +78,16 @@ This project is built with the most popular native mobile cross-platform technic
 
 Run `bun start-web` to test in a web browser. Note: The browser preview is great for quick testing, but some native features may not be available.
 
-### **iOS Simulator / Android Emulator**
+### **iOS Simulator**
 
 This project is configured to use **Expo Development Builds** instead of Expo Go, so native modules and config plugins always match your runtime.
 
-If you have XCode (iOS) or Android Studio installed:
+If you have XCode installed:
 
 ```bash
 # iOS Simulator
 bun run start -- --ios
 
-# Android Emulator
-bun run start -- --android
 ```
 
 ## How can I deploy this project?
@@ -99,6 +97,12 @@ bun run start -- --android
 ### **Local iOS production builds (`--local`)**
 
 `eas build --platform ios --local` requires **fastlane** to be installed on your machine and available in `PATH`.
+
+This repository is configured for **local iOS credentials** (`eas.json` uses `ios.credentialsSource=local`) to avoid remote certificate import failures such as:
+
+`Distribution certificate ... hasn't been imported successfully`.
+
+Create a `credentials.json` file in the project root before running local iOS builds.
 
 ```bash
 # RubyGem option
@@ -136,21 +140,6 @@ The repair script only touches `.npm-cache` in this project, so it won't require
 
 For detailed instructions, visit [Expo's App Store deployment guide](https://docs.expo.dev/submit/ios/).
 
-### **Publish to Google Play (Android)**
-
-1. **Build for Android**:
-
-   ```bash
-   npx eas build --platform android
-   ```
-
-2. **Submit to Google Play**:
-   ```bash
-   npx eas submit --platform android
-   ```
-
-For detailed instructions, visit [Expo's Google Play deployment guide](https://docs.expo.dev/submit/android/).
-
 ### **Publish as a Website**
 
 Your React Native app can also run on the web:
@@ -176,7 +165,7 @@ Alternative web deployment options:
 
 This template includes:
 
-- **Cross-platform compatibility** - Works on iOS, Android, and Web
+- **Cross-platform compatibility** - Works on iOS and Web
 - **File-based routing** with Expo Router
 - **Tab navigation** with customizable tabs
 - **Modal screens** for overlays and dialogs
@@ -221,9 +210,6 @@ bun i -g @expo/eas-cli
 
 # iOS development client
 bun run build:dev:ios
-
-# Android development client
-bun run build:dev:android
 
 # Start Metro for development build
 bun run start
@@ -334,7 +320,7 @@ Rork builds fully native mobile apps using React Native and Expo - the same tech
 
 Your Rork app is production-ready and can be published to both the App Store and Google Play Store. You can also export your app to run on the web, making it truly cross-platform.
 
-## Native Development Build Diagnostics (iOS + Android)
+## Native Development Build Diagnostics (iOS)
 
 A new **Device** tab runs native readiness checks that only work in Expo development builds:
 
@@ -370,7 +356,7 @@ tcpdump -i rvi0 -w capture.pcap
 
 Then import/export `pcap` files for analysis in Wireshark or backend tooling.
 
-## Native Capability Hub (iOS + Android Dev Builds)
+## Native Capability Hub (iOS Dev Builds)
 
 The **Device** tab now includes a full native capability hub for on-device testing:
 
