@@ -257,6 +257,7 @@ function InlineText({ text, isUser }: { text: string; isUser: boolean }) {
 
 function SafeRemoteImage({ url }: { url: string }) {
   const [isLoaded, setIsLoaded] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const safeUrl = useMemo(() => getSafeExternalUrl(url), [url]);
 
   if (!safeUrl) {
@@ -266,13 +267,20 @@ function SafeRemoteImage({ url }: { url: string }) {
   }
 
   if (!isLoaded) {
+    const host = getDisplayHost(safeUrl);
+
     return (
       <TouchableOpacity
         style={styles.loadImageButton}
-        onPress={() => setIsLoaded(true)}
+        onPress={() => {
+          setHasError(false);
+          setIsLoaded(true);
+        }}
       >
         <Text style={styles.loadImageButtonText}>
-          Load image from {getDisplayHost(safeUrl)}
+          {hasError
+            ? `Failed to load image. Tap to retry loading from ${host}`
+            : `Load image from ${host}`}
         </Text>
       </TouchableOpacity>
     );
@@ -283,6 +291,11 @@ function SafeRemoteImage({ url }: { url: string }) {
       source={{ uri: safeUrl }}
       style={styles.inlineImage}
       resizeMode="contain"
+      onLoad={() => setHasError(false)}
+      onError={() => {
+        setHasError(true);
+        setIsLoaded(false);
+      }}
     />
   );
 }
