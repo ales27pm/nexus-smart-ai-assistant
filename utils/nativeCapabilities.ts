@@ -6,10 +6,13 @@ import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
 import * as Speech from "expo-speech";
 import { Linking, Platform } from "react-native";
+import { recognizeOnce } from "@/utils/speechRecognition";
+import { computeEmbedding, cosineSimilarity } from "@/utils/vectorUtils";
 
 const VECTOR_DB_NAME = "native_vectors.db";
 const STORAGE_KEY = "native_lab_last_note";
-const EMBED_DIMENSIONS = 64;
+
+export { computeEmbedding, cosineSimilarity };
 
 export type VectorSearchResult = {
   id: number;
@@ -23,55 +26,6 @@ export type NetworkSnapshot = {
   type: string;
   isInternetReachable: boolean | null;
 };
-
-function tokenize(input: string): string[] {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function hashToken(token: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < token.length; i += 1) {
-    hash ^= token.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return Math.abs(hash);
-}
-
-export function computeEmbedding(text: string): number[] {
-  const tokens = tokenize(text);
-  const vector = Array.from<number>({ length: EMBED_DIMENSIONS }).fill(0);
-
-  for (const token of tokens) {
-    const index = hashToken(token) % EMBED_DIMENSIONS;
-    vector[index] += 1;
-  }
-
-  const magnitude = Math.sqrt(
-    vector.reduce((acc, value) => acc + value * value, 0),
-  );
-  if (magnitude === 0) {
-    return vector;
-  }
-
-  return vector.map((value) => value / magnitude);
-}
-
-export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error("Embedding dimension mismatch");
-  }
-
-  let dot = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i] * b[i];
-  }
-
-  return dot;
-}
 
 export function buildRviCaptureCommands(udid: string): string[] {
   if (!udid.trim()) {
@@ -235,54 +189,16 @@ export async function transcribeSpeechOnce(): Promise<string> {
     throw new Error("Speech permission was denied");
   }
 
-  return new Promise((resolve, reject) => {
-    let transcript = "";
-    const timeout = setTimeout(() => {
-      cleanUp();
-      reject(new Error("No speech detected in time"));
-    }, 8000);
+  const { promise } = recognizeOnce(module, 8000);
 
-    const resultSub = module.addListener("result", (event) => {
-      transcript = event.results?.[0]?.transcript ?? transcript;
-      if (event.isFinal && transcript) {
-        cleanUp();
-        resolve(transcript);
-      }
-    });
-
-    const errorSub = module.addListener("error", (event) => {
-      cleanUp();
-      reject(
-        new Error(event.message ?? event.error ?? "Speech recognition failed"),
-      );
-    });
-
-    const endSub = module.addListener("end", () => {
-      if (transcript) {
-        cleanUp();
-        resolve(transcript);
-      }
-    });
-
-    function cleanUp() {
-      clearTimeout(timeout);
-      resultSub.remove();
-      errorSub.remove();
-      endSub.remove();
-      try {
-        module.stop();
-      } catch {
-        // no-op
-      }
-    }
-
-    module.start({
-      lang: "en-US",
-      interimResults: true,
-      requiresOnDeviceRecognition: false,
-      addsPunctuation: true,
-    });
+  module.start({
+    lang: "en-US",
+    interimResults: true,
+    requiresOnDeviceRecognition: false,
+    addsPunctuation: true,
   });
+
+  return promise;
 }
 
 export async function openDialer(phoneNumber: string): Promise<void> {
