@@ -6,6 +6,10 @@ import { spawnSync } from "node:child_process";
 
 const root = process.cwd();
 const credentialsPath = path.join(root, "credentials.json");
+const OPENSSL_TOOL = "openssl";
+const OPENSSL_LABEL = "OpenSSL";
+const SECURITY_TOOL = "security";
+const SECURITY_LABEL = "Security";
 
 function fail(message) {
   console.error(`❌ ${message}`);
@@ -21,14 +25,14 @@ function getToolSpawnError(result) {
   return result.status === null || result.error?.code === "ENOENT";
 }
 
-function formatStderr(stderr, toolName) {
+function formatStderr(stderr, toolLabel) {
   const output = (stderr ?? "").trim();
   if (!output) return "";
 
   const maxLength = 240;
   const excerpt =
     output.length > maxLength ? `${output.slice(0, maxLength)}...` : output;
-  return `${toolName} error: ${excerpt}`;
+  return `${toolLabel} error: ${excerpt}`;
 }
 
 function failMissingSystemTool(toolName, purpose, errorMessage) {
@@ -42,6 +46,12 @@ function failMissingSystemTool(toolName, purpose, errorMessage) {
       .filter(Boolean)
       .join(" "),
   );
+}
+
+function runWithLegacyFallback(cmd, args) {
+  const firstTry = run(cmd, [...args, "-legacy"]);
+  const secondTry = firstTry.status === 0 ? firstTry : run(cmd, args);
+  return { firstTry, secondTry };
 }
 
 if (!fs.existsSync(credentialsPath)) {
@@ -71,7 +81,7 @@ function walk(node) {
   ) {
     const cert = node.distributionCertificate;
     if (typeof cert.path === "string") {
-      certs.push({ path: cert.path, password: cert.password ?? "" });
+      certs.push({ path: cert.path, password: cert.password });
     }
   }
 
@@ -92,6 +102,12 @@ for (const cert of certs) {
     fail(`Distribution certificate file not found: ${cert.path}`);
   }
 
+  if (typeof cert.password !== "string") {
+    fail(
+      `distributionCertificate.password is missing or invalid for ${cert.path} in credentials.json. Re-download credentials via \`eas credentials -p ios\` and try again.`,
+    );
+  }
+
   if (os.platform() === "darwin") {
     const baseArgs = [
       "pkcs12",
@@ -102,20 +118,25 @@ for (const cert of certs) {
     ];
 
     const certReadArgs = [...baseArgs, "-clcerts", "-nokeys"];
-    const firstCertTry = run("openssl", [...certReadArgs, "-legacy"]);
-    const certTry =
-      firstCertTry.status === 0 ? firstCertTry : run("openssl", certReadArgs);
+    const certAttempt = runWithLegacyFallback(OPENSSL_TOOL, certReadArgs);
 
-    if (getToolSpawnError(firstCertTry) || getToolSpawnError(certTry)) {
+    if (
+      getToolSpawnError(certAttempt.firstTry) ||
+      getToolSpawnError(certAttempt.secondTry)
+    ) {
       failMissingSystemTool(
-        "openssl",
+        OPENSSL_TOOL,
         "It is required to validate and read the iOS P12 distribution certificate.",
-        firstCertTry.error?.message ?? certTry.error?.message,
+        certAttempt.firstTry.error?.message ??
+          certAttempt.secondTry.error?.message,
       );
     }
 
-    if (certTry.status !== 0) {
-      const opensslDetails = formatStderr(certTry.stderr, "OpenSSL");
+    if (certAttempt.secondTry.status !== 0) {
+      const opensslDetails = formatStderr(
+        certAttempt.secondTry.stderr,
+        OPENSSL_LABEL,
+      );
       fail(
         [
           `Cannot read P12 certificate ${cert.path} with the password from credentials.json.`,
@@ -129,20 +150,25 @@ for (const cert of certs) {
     }
 
     const keyReadArgs = [...baseArgs, "-nocerts", "-nodes"];
-    const firstKeyTry = run("openssl", [...keyReadArgs, "-legacy"]);
-    const keyTry =
-      firstKeyTry.status === 0 ? firstKeyTry : run("openssl", keyReadArgs);
+    const keyAttempt = runWithLegacyFallback(OPENSSL_TOOL, keyReadArgs);
 
-    if (getToolSpawnError(firstKeyTry) || getToolSpawnError(keyTry)) {
+    if (
+      getToolSpawnError(keyAttempt.firstTry) ||
+      getToolSpawnError(keyAttempt.secondTry)
+    ) {
       failMissingSystemTool(
-        "openssl",
+        OPENSSL_TOOL,
         "It is required to validate and read the iOS P12 distribution private key.",
-        firstKeyTry.error?.message ?? keyTry.error?.message,
+        keyAttempt.firstTry.error?.message ??
+          keyAttempt.secondTry.error?.message,
       );
     }
 
-    if (keyTry.status !== 0) {
-      const opensslDetails = formatStderr(keyTry.stderr, "OpenSSL");
+    if (keyAttempt.secondTry.status !== 0) {
+      const opensslDetails = formatStderr(
+        keyAttempt.secondTry.stderr,
+        OPENSSL_LABEL,
+      );
       fail(
         [
           `P12 certificate ${cert.path} does not expose a readable private key with the password from credentials.json.`,
@@ -164,17 +190,17 @@ for (const profilePathRaw of profiles) {
   }
 
   if (os.platform() === "darwin") {
-    const result = run("security", ["cms", "-D", "-i", profilePath]);
+    const result = run(SECURITY_TOOL, ["cms", "-D", "-i", profilePath]);
     if (getToolSpawnError(result)) {
       failMissingSystemTool(
-        "security",
+        SECURITY_TOOL,
         "It is required to validate and parse iOS provisioning profiles on macOS.",
         result.error?.message,
       );
     }
 
     if (result.status !== 0) {
-      const securityDetails = formatStderr(result.stderr, "security");
+      const securityDetails = formatStderr(result.stderr, SECURITY_LABEL);
       fail(
         [
           `Provisioning profile could not be parsed by macOS security tool: ${profilePathRaw}.`,
