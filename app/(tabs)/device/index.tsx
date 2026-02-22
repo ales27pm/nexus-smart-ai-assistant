@@ -334,8 +334,7 @@ export default function DeviceNativeHubScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Native Capability Hub (Dev Build)</Text>
       <Text style={styles.subtitle}>
-        iOS/Android native features for on-device workflows and diagnostics
-        research.
+        iOS native features for on-device workflows and diagnostics research.
       </Text>
 
       <View style={styles.section}>
