@@ -73,16 +73,18 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
       LocalAuthentication.getEnrolledLevelAsync(),
     ]);
 
-    const isEnrolled = enrolledLevel !== LocalAuthentication.SecurityLevel.NONE;
+    const isBiometricEnrolled =
+      enrolledLevel === LocalAuthentication.SecurityLevel.BIOMETRIC_WEAK ||
+      enrolledLevel === LocalAuthentication.SecurityLevel.BIOMETRIC_STRONG;
     diagnostics.push({
       id: "biometric",
       title: "Biometric Capability",
       detail: hasHardware
-        ? isEnrolled
+        ? isBiometricEnrolled
           ? `Available and enrolled (${LocalAuthentication.SecurityLevel[enrolledLevel]})`
           : "Hardware present but no enrollment yet"
         : "No biometric hardware",
-      status: hasHardware && isEnrolled ? "supported" : "limited",
+      status: hasHardware && isBiometricEnrolled ? "supported" : "limited",
     });
   } catch (error) {
     diagnostics.push({
