@@ -1,0 +1,22 @@
+{
+  "name": "expo-coreml-llm",
+  "version": "0.0.1",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf build"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "dependencies": {
+    "expo-modules-core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
