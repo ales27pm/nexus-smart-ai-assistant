@@ -289,6 +289,17 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 2. Delete `node_modules` and reinstall: `rm -rf node_modules && bun install`
 3. Check [Expo's troubleshooting guide](https://docs.expo.dev/troubleshooting/build-errors/)
 
+### **EAS local iOS build fails with npm `EEXIST` / cache permission errors?**
+
+When `eas build --local` invokes `eas-cli-local-build-plugin`, it uses npm under the hood. On some machines, a shared/global npm cache can fail with errors like `EEXIST`, `EACCES`, or rename failures in `~/.npm/_cacache`.
+
+Run the local build with an isolated project cache:
+
+1. `npm run build:prod:ios:local`
+2. If the cache is already corrupted, run: `npm run build:prod:ios:local:clean`
+
+These scripts set `NPM_CONFIG_CACHE=.npm-cache`, which avoids permission collisions in the global npm cache during local EAS builds.
+
 ### **Need help with native features?**
 
 - Check [Expo's documentation](https://docs.expo.dev/) for native APIs
