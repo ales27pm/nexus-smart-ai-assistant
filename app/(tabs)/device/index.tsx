@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import {
+  Brain,
   CalendarDays,
   Contact,
   Database,
@@ -191,6 +192,23 @@ export default function DeviceNativeHubScreen() {
   const [status, setStatus] = useState("Idle");
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [coreML, setCoreML] = useState<null | {
+    loadModel: (opts: any) => Promise<any>;
+    isLoaded: () => Promise<boolean>;
+    generate: (prompt: string, opts?: any) => Promise<string>;
+  }>(null);
+  const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
+  const [coreMLModelName, setCoreMLModelName] = useState("MyLLM");
+  const [coreMLPrompt, setCoreMLPrompt] = useState(
+    "Write a short, useful checklist for setting up a workshop.",
+  );
+  const [coreMLOutput, setCoreMLOutput] = useState("");
+  const [coreMLVocabPath, setCoreMLVocabPath] = useState(
+    "module:tokenizers/gpt2/vocab.json",
+  );
+  const [coreMLMergesPath, setCoreMLMergesPath] = useState(
+    "module:tokenizers/gpt2/merges.txt",
+  );
 
   const runSafely = useSafeAction(setStatus);
 
@@ -204,7 +222,71 @@ export default function DeviceNativeHubScreen() {
         .then((module) => setMapViewNative(() => module.default))
         .catch((error) => console.warn("react-native-maps unavailable", error));
     }
+
+    if (Platform.OS === "ios") {
+      import("@/modules/expo-coreml-llm")
+        .then((mod: any) => {
+          if (mod?.CoreMLLLM) {
+            setCoreML(mod.CoreMLLLM);
+            setCoreMLStatus("CoreML LLM: linked (not loaded)");
+          }
+        })
+        .catch((error) => {
+          console.warn("CoreML module unavailable", error);
+          setCoreMLStatus(
+            "CoreML LLM: not linked (run expo prebuild + dev build)",
+          );
+        });
+    }
   }, [runSafely]);
+
+  const loadCoreMLModel = useCallback(async () => {
+    await runSafely("CoreML load", async () => {
+      if (!coreML) {
+        throw new Error(
+          "CoreML module not available (iOS dev build + prebuild required)",
+        );
+      }
+      const info = await coreML.loadModel({
+        modelName: coreMLModelName.trim(),
+        inputIdsName: "input_ids",
+        attentionMaskName: "attention_mask",
+        logitsName: "logits",
+        computeUnits: "all",
+        eosTokenId: 50256,
+      });
+      setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
+      setStatus("CoreML model loaded");
+    });
+  }, [coreML, coreMLModelName, runSafely]);
+
+  const runCoreMLGenerate = useCallback(async () => {
+    await runSafely("CoreML generate", async () => {
+      if (!coreML) {
+        throw new Error(
+          "CoreML module not available (iOS dev build + prebuild required)",
+        );
+      }
+      const loaded = await coreML.isLoaded();
+      if (!loaded) {
+        throw new Error("Load the CoreML model first");
+      }
+      const text = await coreML.generate(coreMLPrompt, {
+        maxNewTokens: 160,
+        temperature: 0.8,
+        topK: 40,
+        topP: 0.95,
+        repetitionPenalty: 1.05,
+        tokenizer: {
+          vocabJsonAssetPath: coreMLVocabPath,
+          mergesTxtAssetPath: coreMLMergesPath,
+          eosTokenId: 50256,
+        },
+      });
+      setCoreMLOutput(text);
+      setStatus("CoreML generation complete");
+    });
+  }, [coreML, coreMLPrompt, coreMLVocabPath, coreMLMergesPath, runSafely]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
@@ -377,6 +459,56 @@ export default function DeviceNativeHubScreen() {
       <View style={styles.status}>
         <Send size={12} color={Colors.dark.textSecondary} />
         <Text style={styles.statusText}>{status}</Text>
+      </View>
+
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Brain size={14} color={Colors.dark.cyan} />
+          <Text style={styles.sectionTitle}>On-device CoreML LLM (iOS)</Text>
+        </View>
+        <Text style={styles.result}>{coreMLStatus}</Text>
+        <TextInput
+          value={coreMLModelName}
+          onChangeText={setCoreMLModelName}
+          placeholder='Model name in iOS bundle (e.g. "MyLLM" -> MyLLM.mlmodelc)'
+          placeholderTextColor={Colors.dark.textTertiary}
+          style={styles.input}
+        />
+        <TouchableOpacity style={styles.button} onPress={loadCoreMLModel}>
+          <Text style={styles.buttonText}>Load CoreML model</Text>
+        </TouchableOpacity>
+        <TextInput
+          value={coreMLVocabPath}
+          onChangeText={setCoreMLVocabPath}
+          placeholder="Tokenizer vocab path (bundle:/module:/absolute)"
+          placeholderTextColor={Colors.dark.textTertiary}
+          style={styles.input}
+        />
+        <TextInput
+          value={coreMLMergesPath}
+          onChangeText={setCoreMLMergesPath}
+          placeholder="Tokenizer merges path (bundle:/module:/absolute)"
+          placeholderTextColor={Colors.dark.textTertiary}
+          style={styles.input}
+        />
+        <TextInput
+          value={coreMLPrompt}
+          onChangeText={setCoreMLPrompt}
+          placeholder="Prompt"
+          placeholderTextColor={Colors.dark.textTertiary}
+          style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]}
+          multiline
+        />
+        <TouchableOpacity style={styles.button} onPress={runCoreMLGenerate}>
+          <Text style={styles.buttonText}>Generate locally</Text>
+        </TouchableOpacity>
+        <Text style={styles.result}>
+          Output: {coreMLOutput ? coreMLOutput : "—"}
+        </Text>
+        <Text style={styles.result}>
+          Notes: CoreML model must be bundled as a compiled .mlmodelc. Tokenizer
+          files must exist at the provided paths.
+        </Text>
       </View>
 
       <View style={styles.section}>
