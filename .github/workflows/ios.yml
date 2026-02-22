@@ -15,43 +15,60 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies (no lock file)
-        run: npm install --legacy-peer-deps
-      
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "latest"
+      - name: Install JS deps (locked)
+        run: npm ci
 
-      - name: Install JS deps
-        run: bun install --frozen-lockfile
+      - name: Toolchain sanity (Xcode + Node)
+        run: |
+          xcodebuild -version
+          node -v
+          npm -v
 
-      # Generates ios/ (since your repo doesn't include an Xcode project)
       - name: Expo prebuild (iOS)
-        run: bunx expo prebuild --platform ios --non-interactive --no-install
+        run: npx expo prebuild --platform ios --non-interactive --no-install
 
-      - name: Install CocoaPods
-        working-directory: ios
-        run: pod install
+      - name: CocoaPods (clean install)
+        run: |
+          set -euo pipefail
+          rm -rf ios/Pods ios/*.xcworkspace
+          cd ios
+          pod install --repo-update
+          ls -lah
+          find . -maxdepth 2 -name "*.xcworkspace" -print -exec ls -lah {} \; || true
+          find . -maxdepth 2 -name "contents.xcworkspacedata" -print || true
 
-      - name: Resolve Xcode scheme + workspace/project
+      - name: Resolve Xcode scheme + workspace/project (robust)
         run: |
           set -euo pipefail
 
-          if ls ios/*.xcworkspace >/dev/null 2>&1; then
+          # Prefer a valid workspace (must contain contents.xcworkspacedata)
+          WORKSPACE="$(find ios -maxdepth 1 -name "*.xcworkspace" -type d -print | head -n 1 || true)"
+          if [ -n "${WORKSPACE}" ] && [ -f "${WORKSPACE}/contents.xcworkspacedata" ]; then
             FILETYPE="workspace"
-            XCODE_FILE="$(ls -1 ios/*.xcworkspace | head -n 1)"
-            SCHEME="$(xcodebuild -list -json -workspace "$XCODE_FILE" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["workspace"]["schemes"][0]')"
+            XCODE_FILE="$WORKSPACE"
+            JSON="$(xcodebuild -list -json -workspace "$XCODE_FILE" 2>/dev/null || true)"
+            if [ -z "$JSON" ]; then
+              echo "xcodebuild -list failed for workspace: $XCODE_FILE"
+              xcodebuild -list -workspace "$XCODE_FILE" || true
+              exit 1
+            fi
+            SCHEME="$(echo "$JSON" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["workspace"]["schemes"][0]')"
           else
             FILETYPE="project"
-            XCODE_FILE="$(ls -1 ios/*.xcodeproj | head -n 1)"
-            SCHEME="$(xcodebuild -list -json -project "$XCODE_FILE" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["project"]["targets"][0]')"
+            XCODE_FILE="$(find ios -maxdepth 1 -name "*.xcodeproj" -type d -print | head -n 1)"
+            JSON="$(xcodebuild -list -json -project "$XCODE_FILE" 2>/dev/null || true)"
+            if [ -z "$JSON" ]; then
+              echo "xcodebuild -list failed for project: $XCODE_FILE"
+              xcodebuild -list -project "$XCODE_FILE" || true
+              exit 1
+            fi
+            SCHEME="$(echo "$JSON" | ruby -e 'require "json"; puts JSON.parse(STDIN.read)["project"]["targets"][0]')"
           fi
 
           echo "FILETYPE=$FILETYPE" >> "$GITHUB_ENV"
@@ -64,13 +81,7 @@ jobs:
       - name: Build (for testing) on iPhone Simulator
         run: |
           set -euo pipefail
-
-          # xcrun xctrace outputs devices on stderr
-          device="$(xcrun xctrace list devices 2>&1 \
-            | grep -oE 'iPhone.*?[^\(]+' \
-            | head -1 \
-            | awk '{$1=$1;print}' \
-            | sed -e "s/ Simulator$//")"
+          device="$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\(]+' | head -1 | awk '{$1=$1;print}' | sed -e "s/ Simulator$//")"
 
           xcodebuild build-for-testing \
             -scheme "$SCHEME" \
@@ -81,12 +92,7 @@ jobs:
       - name: Test (without building) on iPhone Simulator
         run: |
           set -euo pipefail
-
-          device="$(xcrun xctrace list devices 2>&1 \
-            | grep -oE 'iPhone.*?[^\(]+' \
-            | head -1 \
-            | awk '{$1=$1;print}' \
-            | sed -e "s/ Simulator$//")"
+          device="$(xcrun xctrace list devices 2>&1 | grep -oE 'iPhone.*?[^\(]+' | head -1 | awk '{$1=$1;print}' | sed -e "s/ Simulator$//")"
 
           xcodebuild test-without-building \
             -scheme "$SCHEME" \
