@@ -190,6 +190,7 @@ export default function DeviceNativeHubScreen() {
   const [contact, setContact] = useState("Not loaded");
   const [status, setStatus] = useState("Idle");
   const [speechTranscript, setSpeechTranscript] = useState("");
+  const [isListening, setIsListening] = useState(false);
 
   const runSafely = useSafeAction(setStatus);
 
@@ -206,13 +207,19 @@ export default function DeviceNativeHubScreen() {
   }, [runSafely]);
 
   const runSttCapture = useCallback(async () => {
+    if (isListening) {
+      return;
+    }
+
+    setIsListening(true);
     await runSafely("Speech-to-text", async () => {
       setStatus("Listening... speak now");
       const transcript = await transcribeSpeechOnce();
       setSpeechTranscript(transcript);
       setStatus("Speech captured");
     });
-  }, [runSafely]);
+    setIsListening(false);
+  }, [isListening, runSafely]);
 
   const saveNote = useCallback(async () => {
     await runSafely("Local save", async () => {
@@ -304,7 +311,11 @@ export default function DeviceNativeHubScreen() {
         >
           <Text style={styles.buttonText}>Speak sample text</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={runSttCapture}>
+        <TouchableOpacity
+          style={[styles.button, isListening && styles.buttonDisabled]}
+          onPress={runSttCapture}
+          disabled={isListening}
+        >
           <Text style={styles.buttonText}>Capture speech-to-text</Text>
         </TouchableOpacity>
         <Text style={styles.result}>Transcript: {speechTranscript || "—"}</Text>
@@ -414,6 +425,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingVertical: 10,
     alignItems: "center",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   buttonText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
   result: { color: Colors.dark.textSecondary, fontSize: 12, lineHeight: 17 },
