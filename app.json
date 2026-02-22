@@ -17,7 +17,13 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.smart-ai-assistant-slxh0fb",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSFaceIDUsageDescription": "Allow Smart AI Assistant to verify your identity for secure diagnostics.",
+        "NSMicrophoneUsageDescription": "Allow Smart AI Assistant to capture voice input for on-device speech recognition.",
+        "NSSpeechRecognitionUsageDescription": "Allow Smart AI Assistant to convert speech to text for native diagnostics.",
+        "NSLocationWhenInUseUsageDescription": "Allow Smart AI Assistant to access your location for native GPS diagnostics.",
+        "NSCalendarsUsageDescription": "Allow Smart AI Assistant to create calendar entries for native capability checks.",
+        "NSContactsUsageDescription": "Allow Smart AI Assistant to access contacts for native feature validation."
       }
     },
     "android": {
@@ -43,14 +49,15 @@
           "origin": "https://rork.com/"
         }
       ],
-      [
-        "expo-dev-client",
-        {
-          "launchMode": "most-recent"
-        }
-      ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-local-authentication",
+      "expo-secure-store",
+      "expo-location",
+      "expo-calendar",
+      "expo-contacts",
+      "expo-audio",
+      "expo-speech-recognition"
     ],
     "experiments": {
       "typedRoutes": true
