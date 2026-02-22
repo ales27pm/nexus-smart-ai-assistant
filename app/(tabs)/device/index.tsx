@@ -23,6 +23,13 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
+  DEFAULT_COREML_EOS_TOKEN_ID,
+  DEFAULT_COREML_LOAD_OPTIONS,
+  DEFAULT_COREML_TOKENIZER,
+  buildCoreMLChatPrompt,
+  CoreMLBridge,
+} from "@/utils/coreml";
+import {
   buildRviCaptureCommands,
   createCalendarEvent,
   getCurrentCoordinates,
@@ -192,25 +199,24 @@ export default function DeviceNativeHubScreen() {
   const [status, setStatus] = useState("Idle");
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [coreML, setCoreML] = useState<null | {
-    loadModel: (opts: any) => Promise<any>;
-    isLoaded: () => Promise<boolean>;
-    generate: (prompt: string, opts?: any) => Promise<string>;
-  }>(null);
+  const [coreML, setCoreML] = useState<CoreMLBridge | null>(null);
   const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
-  const [coreMLModelName, setCoreMLModelName] = useState("MyLLM");
+  const [coreMLModelName, setCoreMLModelName] = useState(
+    DEFAULT_COREML_LOAD_OPTIONS.modelName ?? "MyLLM",
+  );
   const [coreMLPrompt, setCoreMLPrompt] = useState(
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [coreMLVocabPath, setCoreMLVocabPath] = useState(
-    "module:tokenizers/gpt2/vocab.json",
+    DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath,
   );
   const [coreMLMergesPath, setCoreMLMergesPath] = useState(
-    "module:tokenizers/gpt2/merges.txt",
+    DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath,
   );
 
   const runSafely = useSafeAction(setStatus);
+  const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
 
   useEffect(() => {
     void runSafely("Load note", async () => {
@@ -227,7 +233,7 @@ export default function DeviceNativeHubScreen() {
       import("@/modules/expo-coreml-llm")
         .then((mod: any) => {
           if (mod?.CoreMLLLM) {
-            setCoreML(mod.CoreMLLLM);
+            setCoreML(mod.CoreMLLLM as CoreMLBridge);
             setCoreMLStatus("CoreML LLM: linked (not loaded)");
           }
         })
@@ -247,13 +253,11 @@ export default function DeviceNativeHubScreen() {
           "CoreML module not available (iOS dev build + prebuild required)",
         );
       }
+      const selectedModelName = coreMLModelName.trim();
       const info = await coreML.loadModel({
-        modelName: coreMLModelName.trim(),
-        inputIdsName: "input_ids",
-        attentionMaskName: "attention_mask",
-        logitsName: "logits",
-        computeUnits: "all",
-        eosTokenId: 50256,
+        ...DEFAULT_COREML_LOAD_OPTIONS,
+        modelName:
+          selectedModelName || DEFAULT_COREML_LOAD_OPTIONS.modelName || "MyLLM",
       });
       setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
       setStatus("CoreML model loaded");
@@ -271,18 +275,21 @@ export default function DeviceNativeHubScreen() {
       if (!loaded) {
         throw new Error("Load the CoreML model first");
       }
-      const text = await coreML.generate(coreMLPrompt, {
-        maxNewTokens: 160,
-        temperature: 0.8,
-        topK: 40,
-        topP: 0.95,
-        repetitionPenalty: 1.05,
-        tokenizer: {
-          vocabJsonAssetPath: coreMLVocabPath,
-          mergesTxtAssetPath: coreMLMergesPath,
-          eosTokenId: 50256,
+      const text = await coreML.generate(
+        buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
+        {
+          maxNewTokens: 160,
+          temperature: 0.8,
+          topK: 40,
+          topP: 0.95,
+          repetitionPenalty: 1.05,
+          tokenizer: {
+            vocabJsonAssetPath: coreMLVocabPath,
+            mergesTxtAssetPath: coreMLMergesPath,
+            eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+          },
         },
-      });
+      );
       setCoreMLOutput(text);
       setStatus("CoreML generation complete");
     });
@@ -461,11 +468,20 @@ export default function DeviceNativeHubScreen() {
         <Text style={styles.statusText}>{status}</Text>
       </View>
 
-      <View style={styles.section}>
+      <View
+        style={[styles.section, !isCoreMLAvailable && styles.sectionDisabled]}
+        pointerEvents={isCoreMLAvailable ? "auto" : "none"}
+      >
         <View style={styles.sectionHeader}>
           <Brain size={14} color={Colors.dark.cyan} />
           <Text style={styles.sectionTitle}>On-device CoreML LLM (iOS)</Text>
         </View>
+        {!isCoreMLAvailable && (
+          <Text style={styles.result}>
+            On-device CoreML controls are available on iOS dev builds with the
+            native module linked. This platform uses server-side generation.
+          </Text>
+        )}
         <Text style={styles.result}>{coreMLStatus}</Text>
         <TextInput
           value={coreMLModelName}
@@ -474,7 +490,11 @@ export default function DeviceNativeHubScreen() {
           placeholderTextColor={Colors.dark.textTertiary}
           style={styles.input}
         />
-        <TouchableOpacity style={styles.button} onPress={loadCoreMLModel}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={loadCoreMLModel}
+          disabled={!isCoreMLAvailable}
+        >
           <Text style={styles.buttonText}>Load CoreML model</Text>
         </TouchableOpacity>
         <TextInput
@@ -499,7 +519,11 @@ export default function DeviceNativeHubScreen() {
           style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]}
           multiline
         />
-        <TouchableOpacity style={styles.button} onPress={runCoreMLGenerate}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={runCoreMLGenerate}
+          disabled={!isCoreMLAvailable}
+        >
           <Text style={styles.buttonText}>Generate locally</Text>
         </TouchableOpacity>
         <Text style={styles.result}>
@@ -560,6 +584,9 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  sectionDisabled: {
+    opacity: 0.5,
   },
   buttonText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
   result: { color: Colors.dark.textSecondary, fontSize: 12, lineHeight: 17 },

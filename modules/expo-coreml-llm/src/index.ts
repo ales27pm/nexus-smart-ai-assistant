@@ -45,7 +45,7 @@ export type ModelInfo = {
   computeUnits: CoreMLComputeUnits;
 };
 
-const Native = requireNativeModule("ExpoCoreMLLLMModule") as {
+type NativeModuleShape = {
   loadModelAsync(opts: LoadModelOptions): Promise<ModelInfo>;
   unloadModelAsync(): Promise<void>;
   isLoadedAsync(): Promise<boolean>;
@@ -64,24 +64,41 @@ const Native = requireNativeModule("ExpoCoreMLLLMModule") as {
   ): Promise<number[]>;
 };
 
+let nativeModule: NativeModuleShape | null = null;
+
+function getNativeModule(): NativeModuleShape {
+  if (nativeModule) return nativeModule;
+
+  try {
+    nativeModule = requireNativeModule(
+      "ExpoCoreMLLLMModule",
+    ) as NativeModuleShape;
+    return nativeModule;
+  } catch {
+    throw new Error(
+      "ExpoCoreMLLLMModule is not available. Ensure you ran `npx expo prebuild --clean`, installed pods, and launched an iOS dev client containing this native module.",
+    );
+  }
+}
+
 export const CoreMLLLM = {
-  loadModel: (opts: LoadModelOptions) => Native.loadModelAsync(opts),
-  unloadModel: () => Native.unloadModelAsync(),
-  isLoaded: () => Native.isLoadedAsync(),
+  loadModel: (opts: LoadModelOptions) => getNativeModule().loadModelAsync(opts),
+  unloadModel: () => getNativeModule().unloadModelAsync(),
+  isLoaded: () => getNativeModule().isLoadedAsync(),
   tokenize: (
     prompt: string,
     tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
-  ) => Native.tokenizeAsync(prompt, tokenizer),
+  ) => getNativeModule().tokenizeAsync(prompt, tokenizer),
   decode: (
     tokenIds: number[],
     tokenizer: NonNullable<GenerateOptions["tokenizer"]>,
-  ) => Native.decodeAsync(tokenIds, tokenizer),
+  ) => getNativeModule().decodeAsync(tokenIds, tokenizer),
   generate: (prompt: string, opts: GenerateOptions = {}) =>
-    Native.generateAsync(prompt, opts),
+    getNativeModule().generateAsync(prompt, opts),
   generateFromTokens: (
     tokenIds: number[],
     opts: GenerateFromTokensOptions = {},
-  ) => Native.generateFromTokensAsync(tokenIds, opts),
+  ) => getNativeModule().generateFromTokensAsync(tokenIds, opts),
 };
 
 export default CoreMLLLM;
