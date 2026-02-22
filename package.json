@@ -11,8 +11,9 @@
     "ios": "expo run:ios",
     "start-tunnel": "expo start --dev-client --tunnel",
     "start-go": "expo start",
-    "build:dev:ios": "eas build --profile development --platform ios",
-    "build:dev:android": "eas build --profile development --platform android"
+    "build:dev:ios": "npx eas build --profile development --platform ios",
+    "build:dev:android": "npx eas build --profile development --platform android",
+    "test": "jest"
   },
   "dependencies": {
     "@nkzw/create-context-hook": "^1.1.0",
@@ -20,14 +21,26 @@
     "@rork-ai/toolkit-sdk": "^0.2.51",
     "@tanstack/react-query": "^5.83.0",
     "expo": "~54.0.27",
+    "expo-application": "^7.0.8",
+    "expo-audio": "^1.1.1",
     "expo-av": "~16.0.8",
+    "expo-calendar": "^15.0.8",
+    "expo-clipboard": "^8.0.8",
+    "expo-contacts": "^15.0.11",
     "expo-dev-client": "~6.0.20",
+    "expo-device": "^8.0.10",
     "expo-haptics": "~15.0.8",
     "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.10",
+    "expo-local-authentication": "^17.0.8",
+    "expo-location": "^19.0.8",
+    "expo-network": "^8.0.8",
     "expo-router": "~6.0.17",
+    "expo-secure-store": "^15.0.8",
     "expo-speech": "~14.0.8",
+    "expo-speech-recognition": "^3.1.0",
     "expo-splash-screen": "~31.0.12",
+    "expo-sqlite": "^16.0.10",
     "expo-status-bar": "~3.0.9",
     "expo-system-ui": "~6.0.9",
     "lucide-react-native": "^0.575.0",
@@ -35,6 +48,7 @@
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-maps": "^1.27.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-svg": "15.12.1",
@@ -44,11 +58,14 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@expo/ngrok": "^4.1.0",
+    "@types/jest": "^29.5.14",
     "@types/react": "~19.1.10",
     "eslint": "^9.31.0",
     "eslint-config-expo": "~10.0.0",
-    "typescript": "~5.9.2",
-    "eas-cli": "^16.26.0"
+    "jest": "^29.7.0",
+    "jest-expo": "^54.0.17",
+    "react-test-renderer": "^19.1.0",
+    "typescript": "~5.9.2"
   },
   "private": true
 }
