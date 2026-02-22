@@ -3,12 +3,16 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "bunx rork start -p w8upxw4a5i94a9gcscv7t --tunnel",
-    "start-web": "bunx rork start -p w8upxw4a5i94a9gcscv7t --web --tunnel",
-    "start-web-dev": "DEBUG=expo* bunx rork start -p w8upxw4a5i94a9gcscv7t --web --tunnel",
+    "start": "expo start --dev-client",
+    "start-web": "expo start --web",
+    "start-web-dev": "DEBUG=expo* expo start --web",
     "lint": "expo lint",
     "android": "expo run:android",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "start-tunnel": "expo start --dev-client --tunnel",
+    "start-go": "expo start",
+    "build:dev:ios": "eas build --profile development --platform ios",
+    "build:dev:android": "eas build --profile development --platform android"
   },
   "dependencies": {
     "@nkzw/create-context-hook": "^1.1.0",
