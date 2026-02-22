@@ -104,6 +104,8 @@ This repository is configured for **local iOS credentials** (`eas.json` uses `io
 
 Create a `credentials.json` file in the project root before running local iOS builds.
 
+The local build preflight now validates that your `.p12` and provisioning profile are readable before invoking EAS, so credential corruption/password mismatches fail fast with actionable errors.
+
 ```bash
 # RubyGem option
 sudo gem install fastlane
@@ -307,6 +309,20 @@ Run the local build with an isolated project cache:
 3. If you still get `EEXIST` / `EACCES` rename errors, run: `npm run build:prod:ios:local:repair` (note: this also clears the shared npm tarball cache at `~/.npm/_cacache`; subsequent installs in other projects will re-download packages).
 
 These scripts set `NPM_CONFIG_CACHE=.npm-cache`, and the `:repair` variant also removes the global npm content cache (`~/.npm/_cacache`). This avoids permission collisions during local EAS builds.
+
+### **EAS local iOS build fails with certificate import errors?**
+
+If you see this during `npm run build:prod:ios:local*`:
+
+`Distribution certificate with fingerprint ... hasn't been imported successfully`
+
+run:
+
+1. `node ./scripts/validate-ios-local-credentials.mjs`
+2. Re-download credentials from EAS: `eas credentials -p ios` → `credentials.json: Download credentials from EAS to credentials.json`
+3. Retry with a clean local cache: `npm run build:prod:ios:local:repair`
+
+If validation still fails, the local `.p12` password in `credentials.json` or certificate payload is invalid/corrupted. Regenerate the iOS distribution certificate/profile and download credentials again.
 
 ### **Need help with native features?**
 
