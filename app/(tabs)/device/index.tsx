@@ -25,7 +25,6 @@ import Colors from "@/constants/colors";
 import {
   DEFAULT_COREML_EOS_TOKEN_ID,
   DEFAULT_COREML_LOAD_OPTIONS,
-  DEFAULT_COREML_TOKENIZER,
   buildCoreMLChatPrompt,
   CoreMLBridge,
 } from "@/utils/coreml";
@@ -208,12 +207,8 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
-  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath as string,
-  );
-  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath as string,
-  );
+  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>("");
+  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>("");
 
   const runSafely = useSafeAction(setStatus);
   const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
@@ -275,6 +270,18 @@ export default function DeviceNativeHubScreen() {
       if (!loaded) {
         throw new Error("Load the CoreML model first");
       }
+      const vocabPath = coreMLVocabPath.trim();
+      const mergesPath = coreMLMergesPath.trim();
+      const tokenizer =
+        vocabPath && mergesPath
+          ? {
+              kind: "gpt2_bpe" as const,
+              vocabJsonAssetPath: vocabPath,
+              mergesTxtAssetPath: mergesPath,
+              eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+            }
+          : undefined;
+
       const text = await coreML.generate(
         buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
         {
@@ -283,11 +290,7 @@ export default function DeviceNativeHubScreen() {
           topK: 40,
           topP: 0.95,
           repetitionPenalty: 1.05,
-          tokenizer: {
-            vocabJsonAssetPath: coreMLVocabPath,
-            mergesTxtAssetPath: coreMLMergesPath,
-            eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-          },
+          tokenizer,
         },
       );
       setCoreMLOutput(text);

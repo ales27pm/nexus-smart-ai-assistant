@@ -1,9 +1,9 @@
-import { Stack } from 'expo-router';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
-import { SquarePen } from 'lucide-react-native';
-import Colors from '@/constants/colors';
-import { useConversations } from '@/providers/ConversationsProvider';
-import * as Haptics from 'expo-haptics';
+import { Stack } from "expo-router";
+import { TouchableOpacity, StyleSheet } from "react-native";
+import { SquarePen } from "lucide-react-native";
+import Colors from "@/constants/colors";
+import { useConversations } from "@/providers/ConversationsProvider";
+import * as Haptics from "expo-haptics";
 
 export default function ChatLayout() {
   const { startNewChat } = useConversations();
@@ -13,18 +13,17 @@ export default function ChatLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: Colors.dark.surface },
         headerTintColor: Colors.dark.text,
-        headerTitleStyle: { fontWeight: '700' as const, fontSize: 16 },
+        headerTitleStyle: { fontWeight: "700" as const, fontSize: 16 },
         contentStyle: { backgroundColor: Colors.dark.background },
       }}
     >
       <Stack.Screen
         name="index"
         options={{
-          title: 'NEXUS',
+          title: "NEXUS",
           headerTitleStyle: {
-            fontWeight: '800' as const,
+            fontWeight: "800" as const,
             fontSize: 16,
-            letterSpacing: 2,
             color: Colors.dark.accent,
           },
           headerRight: () => (
@@ -53,7 +52,7 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 10,
     backgroundColor: Colors.dark.accentGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -1,6 +1,6 @@
 import ExpoHfTokenizers from "@naveen521kk/expo-hf-tokenizers";
 import { sha256 } from "js-sha256";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 const HF_COMMIT = "392a6f57223e7ccfe6ef4ebdb2ff101a42d57364";
 const HF_BASE = `https://huggingface.co/dphn/Dolphin3.0-Llama3.2-3B/resolve/${HF_COMMIT}`;
@@ -26,15 +26,17 @@ const TOKENIZER_SHA256: Record<(typeof TOKENIZER_FILES)[number], string> = {
 };
 
 let tokenizerDirCache: string | null = null;
+let pendingTokenizerDownload: Promise<string> | null = null;
 
 function getTokenizerDir() {
   if (tokenizerDirCache) return tokenizerDirCache;
-  if (!FileSystem.cacheDirectory) {
+  const cacheDirectory = FileSystem.cacheDirectory;
+  if (!cacheDirectory) {
     throw new Error(
       "FileSystem.cacheDirectory is null - tokenizer cannot be stored",
     );
   }
-  tokenizerDirCache = `${FileSystem.cacheDirectory}dolphin_llama3_2_3b_tokenizer`;
+  tokenizerDirCache = `${cacheDirectory}dolphin_llama3_2_3b_tokenizer`;
   return tokenizerDirCache;
 }
 
@@ -57,61 +59,49 @@ async function verifySha256(path: string, expectedHash: string) {
   }
 }
 
-async function ensureTokenizerFilesDownloaded() {
-  const tokenizerDir = getTokenizerDir();
-  await ensureDir(tokenizerDir);
-
-  await Promise.all(
-    TOKENIZER_FILES.map(async (file) => {
-      const toFile = `${tokenizerDir}/${file}`;
-      const expectedHash = TOKENIZER_SHA256[file];
-      const exists = await FileSystem.getInfoAsync(toFile);
-      if (exists.exists && exists.size && exists.size > 0) {
-        await verifySha256(toFile, expectedHash);
-        return;
-      }
-
-      const url = `${HF_BASE}/${file}`;
-      const res = await FileSystem.downloadAsync(url, toFile);
-      if (res.status !== 200) {
-        throw new Error(`Failed to download ${file} (HTTP ${res.status})`);
-      }
-let pendingTokenizerDownload: Promise<string> | null = null;
+function extractFirstTokenId(
+  encoded: any,
+  tokenText: string,
+  mode: string,
+): number {
+  const rawIds = encoded?.ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    throw new Error(`${mode} returned no ids for token '${tokenText}'`);
+  }
+  return Number(rawIds[0]);
+}
 
 async function ensureTokenizerFilesDownloaded(): Promise<string> {
-  if (pendingTokenizerDownload) {
-    return pendingTokenizerDownload;
-  }
+  if (pendingTokenizerDownload) return pendingTokenizerDownload;
 
   pendingTokenizerDownload = (async () => {
-    await ensureDir(TOKENIZER_DIR);
+    const tokenizerDir = getTokenizerDir();
+    await ensureDir(tokenizerDir);
 
     await Promise.all(
       TOKENIZER_FILES.map(async (file) => {
-        const toFile = `${TOKENIZER_DIR}/${file}`;
+        const toFile = `${tokenizerDir}/${file}`;
+        const expectedHash = TOKENIZER_SHA256[file];
         const exists = await FileSystem.getInfoAsync(toFile);
-        if (exists.exists && exists.size && exists.size > 0) return;
 
-        const url = `${HF_BASE}/${file}`;
-        const res = await FileSystem.downloadAsync(url, toFile);
-        if (res.status !== 200) {
-          throw new Error(`Failed to download ${file} (HTTP ${res.status})`);
+        if (!exists.exists || !exists.size || exists.size <= 0) {
+          const url = `${HF_BASE}/${file}`;
+          const res = await FileSystem.downloadAsync(url, toFile);
+          if (res.status !== 200) {
+            throw new Error(`Failed to download ${file} (HTTP ${res.status})`);
+          }
         }
+
+        await verifySha256(toFile, expectedHash);
       }),
     );
 
-    const tok = await FileSystem.getInfoAsync(`${TOKENIZER_DIR}/tokenizer.json`);
-    if (!tok.exists || !tok.size || tok.size < 1024) {
-      throw new Error("tokenizer.json missing or suspiciously small");
-    }
-
-    return TOKENIZER_DIR;
+    return tokenizerDir;
   })();
 
   try {
     return await pendingTokenizerDownload;
   } finally {
-    // Allow future calls to re-check the filesystem and re-download if needed.
     pendingTokenizerDownload = null;
   }
 }
@@ -131,11 +121,7 @@ export async function dolphinEncode(text: string): Promise<Encoded> {
     ? (encoded.attentionMask as bigint[]).map((x: bigint) => Number(x))
     : undefined;
 
-  return {
-    ids,
-    attentionMask,
-    tokens: encoded.tokens,
-  };
+  return { ids, attentionMask, tokens: encoded.tokens };
 }
 
 export async function dolphinDecode(

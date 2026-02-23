@@ -13,6 +13,7 @@ import { computeEmbedding, cosineSimilarity } from "@/utils/vectorUtils";
 
 const VECTOR_DB_NAME = "native_vectors.db";
 const STORAGE_KEY = "native_lab_last_note";
+const VECTOR_SEARCH_CANDIDATE_LIMIT = 400;
 let cachedDb: SQLite.SQLiteDatabase | null = null;
 
 export { computeEmbedding, cosineSimilarity };
@@ -82,26 +83,52 @@ export async function searchVectorDocuments(
   limit = 5,
 ): Promise<VectorSearchResult[]> {
   const db = await getDb();
-  const rows = await db.getAllAsync<{
-    id: number;
-    content: string;
-    embedding: string;
-  }>(
-    "SELECT id, content, embedding FROM vector_docs ORDER BY created_at DESC LIMIT 200;",
-  );
   const queryVector = computeEmbedding(query);
+  const queryVectorJson = JSON.stringify(queryVector);
 
-  return rows
-    .map((row) => ({
-      id: row.id,
-      content: row.content,
-      score: cosineSimilarity(
-        queryVector,
-        JSON.parse(row.embedding) as number[],
-      ),
-    }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  const candidateLimit = Math.max(limit, VECTOR_SEARCH_CANDIDATE_LIMIT);
+  const rows = await db.getAllAsync<VectorSearchResult>(
+    `WITH recent_docs AS (
+      SELECT id, content, embedding
+      FROM vector_docs
+      ORDER BY created_at DESC
+      LIMIT ?
+    ),
+    query_vector AS (
+      SELECT CAST(value AS REAL) AS q_value, key AS idx
+      FROM json_each(?)
+    ),
+    query_norm AS (
+      SELECT SQRT(SUM(q_value * q_value)) AS value
+      FROM query_vector
+    )
+    SELECT
+      d.id AS id,
+      d.content AS content,
+      CASE
+        WHEN norm.doc_norm = 0 OR qn.value = 0 THEN 0
+        ELSE norm.dot_product / (norm.doc_norm * qn.value)
+      END AS score
+    FROM recent_docs d
+    JOIN (
+      SELECT
+        vd.id,
+        SUM(CAST(doc.value AS REAL) * q.q_value) AS dot_product,
+        SQRT(SUM(CAST(doc.value AS REAL) * CAST(doc.value AS REAL))) AS doc_norm
+      FROM recent_docs vd
+      JOIN json_each(vd.embedding) doc
+      JOIN query_vector q ON q.idx = doc.key
+      GROUP BY vd.id
+    ) norm ON norm.id = d.id
+    CROSS JOIN query_norm qn
+    ORDER BY score DESC
+    LIMIT ?;`,
+    candidateLimit,
+    queryVectorJson,
+    limit,
+  );
+
+  return rows;
 }
 
 export async function persistLocalNote(note: string): Promise<void> {

@@ -186,6 +186,9 @@ export default function VoiceMode({
   const speechCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const lastWebMeteringErrorAtRef = useRef(0);
+  const errorTextRef = useRef("");
+  const hasNativeMeteringFatalErrorRef = useRef(false);
 
   useEffect(() => {
     voiceStateRef.current = voiceState;
@@ -193,6 +196,10 @@ export default function VoiceMode({
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    errorTextRef.current = errorText;
+  }, [errorText]);
 
   useEffect(() => {
     if (visible) {
@@ -768,7 +775,9 @@ export default function VoiceMode({
     if (recordingRef.current) {
       try {
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
-      } catch (_e) {}
+      } catch (error) {
+        console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+      }
       recordingRef.current = null;
     }
     if (
@@ -777,13 +786,17 @@ export default function VoiceMode({
     ) {
       try {
         mediaRecorderRef.current.stop();
-      } catch (_e) {}
+      } catch (error) {
+        console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+      }
       mediaRecorderRef.current = null;
     }
     if (audioContextRef.current) {
       try {
         audioContextRef.current.close();
-      } catch (_e) {}
+      } catch (error) {
+        console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+      }
       audioContextRef.current = null;
       analyserRef.current = null;
     }
@@ -1194,7 +1207,9 @@ export default function VoiceMode({
         if (audioContextRef.current) {
           try {
             audioContextRef.current.close();
-          } catch (_e) {}
+          } catch (error) {
+            console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+          }
           audioContextRef.current = null;
           analyserRef.current = null;
         }
@@ -1204,7 +1219,9 @@ export default function VoiceMode({
         }
         try {
           mediaRecorder.stop();
-        } catch (_e) {}
+        } catch (error) {
+          console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+        }
         mediaRecorderRef.current = null;
         if (isActiveRef.current) {
           setVoiceState("idle");
@@ -1221,7 +1238,9 @@ export default function VoiceMode({
           if (audioContextRef.current) {
             try {
               audioContextRef.current.close();
-            } catch (_e) {}
+            } catch (error) {
+              console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+            }
             audioContextRef.current = null;
             analyserRef.current = null;
           }
@@ -1277,6 +1296,7 @@ export default function VoiceMode({
 
       await configureAudioForRecording();
 
+      hasNativeMeteringFatalErrorRef.current = false;
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         isMeteringEnabled: true,
@@ -1290,6 +1310,14 @@ export default function VoiceMode({
           linearPCMBitDepth: 16,
           linearPCMIsBigEndian: false,
           linearPCMIsFloat: false,
+        },
+        android: {
+          extension: ".m4a",
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
         },
         web: {},
       });
@@ -1348,7 +1376,18 @@ export default function VoiceMode({
           } else {
             consecutiveSilentFrames = 0;
           }
-        } catch (_e) {}
+        } catch (error) {
+          if (meteringIntervalRef.current) {
+            clearInterval(meteringIntervalRef.current);
+            meteringIntervalRef.current = null;
+          }
+          console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+          if (!hasNativeMeteringFatalErrorRef.current) {
+            hasNativeMeteringFatalErrorRef.current = true;
+            setErrorText("Voice operation failed. Please retry.");
+          }
+          setVoiceState("idle");
+        }
       }, METERING_INTERVAL);
       console.log("[VoiceMode] Native recording started");
     } catch (e) {
@@ -1446,7 +1485,17 @@ export default function VoiceMode({
           } else {
             consecutiveSilentFrames = 0;
           }
-        } catch (_e) {}
+        } catch (error) {
+          console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
+          const now = Date.now();
+          if (
+            !errorTextRef.current &&
+            now - lastWebMeteringErrorAtRef.current >= METERING_INTERVAL
+          ) {
+            lastWebMeteringErrorAtRef.current = now;
+            setErrorText("Voice operation failed. Please retry.");
+          }
+        }
       }, METERING_INTERVAL);
       console.log("[VoiceMode] Web recording started");
     } catch (e) {

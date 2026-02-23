@@ -35,6 +35,7 @@ import {
   buildAssociativeLinks,
   loadAssociativeLinks,
   saveAssociativeLinks,
+  scheduleAssociativeLinkPruning,
 } from "@/utils/memory";
 import {
   extractMemoryCandidates,
@@ -110,13 +111,14 @@ function TypingIndicator() {
 }
 
 export default function ChatScreen() {
-  const { activeId, setActiveId, upsertConversation, addMemory, startNewChat } =
+  const { activeId, setActiveId, upsertConversation, addMemory } =
     useConversations();
   const convIdRef = useRef<string>(activeId ?? generateId());
   const hasLoadedRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractionRef = useRef(false);
+  const messagesCountRef = useRef(0);
 
   useEffect(() => {
     if (!activeId) {
@@ -125,6 +127,64 @@ export default function ChatScreen() {
       setActiveId(newId);
     }
   }, [activeId, setActiveId]);
+
+  const runWebSearch = useCallback(async (query: string): Promise<string> => {
+    console.log("[NEXUS] Web search:", query);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timeout);
+      const data = await response.json();
+      const results: string[] = [];
+      if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
+      if (data.RelatedTopics) {
+        for (const topic of data.RelatedTopics.slice(0, 5)) {
+          if (topic.Text) results.push(`- ${topic.Text}`);
+        }
+      }
+      return results.length > 0
+        ? `Search results for "${query}":
+
+${results.join("\n")}`
+        : `No structured results for "${query}". Answer from knowledge and note limitations.`;
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return `Search timeout for "${query}". Answer from knowledge and note limitations.`;
+      }
+      return `Search failed for "${query}". Answer from knowledge.`;
+    }
+  }, []);
+
+  const runCognitiveAnalysis = useCallback(
+    async (
+      problem: string,
+      preloadedMemories?: MemoryEntry[],
+    ): Promise<string> => {
+      const memories = preloadedMemories ?? (await loadMemories());
+      const relevant = searchMemories(memories, problem, {
+        maxResults: 5,
+      });
+      const meta = assessMetacognition(problem, messagesCountRef.current);
+      const tree = buildThoughtTree(problem, relevant, meta);
+      const branches = tree.branches
+        .filter((b) => !b.pruned)
+        .slice(0, 4)
+        .map((b) => `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`)
+        .join("\n");
+      return `## Analysis
+Problem: "${problem}"
+Complexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%
+
+${branches}
+
+Explore highest-confidence paths and synthesize.`;
+    },
+    [],
+  );
 
   const tools = useMemo(
     () => ({
@@ -135,25 +195,7 @@ export default function ChatScreen() {
           query: z.string().describe("Search query"),
         }),
         async execute(input: { query: string }) {
-          console.log("[NEXUS] Web search:", input.query);
-          try {
-            const response = await fetch(
-              `https://api.duckduckgo.com/?q=${encodeURIComponent(input.query)}&format=json&no_html=1&skip_disambig=1`,
-            );
-            const data = await response.json();
-            const results: string[] = [];
-            if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
-            if (data.RelatedTopics) {
-              for (const topic of data.RelatedTopics.slice(0, 5)) {
-                if (topic.Text) results.push(`- ${topic.Text}`);
-              }
-            }
-            return results.length > 0
-              ? `Search results for "${input.query}":\n\n${results.join("\n")}`
-              : `No structured results for "${input.query}". Answer from knowledge and note limitations.`;
-          } catch {
-            return `Search failed for "${input.query}". Answer from knowledge.`;
-          }
+          return runWebSearch(input.query);
         },
       }),
 
@@ -215,6 +257,7 @@ export default function ChatScreen() {
             );
             if (newLinks.length > 0)
               await saveAssociativeLinks([...existingLinks, ...newLinks]);
+            scheduleAssociativeLinkPruning();
           } catch (e) {
             console.log("[NEXUS] Link error:", e);
           }
@@ -299,7 +342,51 @@ export default function ChatScreen() {
             .optional(),
         }),
         async execute(input: { topic: string; framework?: string }) {
-          return `Analysis: ${(input.framework ?? "general").toUpperCase()} | "${input.topic}". Provide structured analysis with evidence-based reasoning.`;
+          const framework = input.framework ?? "general";
+          if (framework === "swot") {
+            const dimensions = [
+              "Strengths",
+              "Weaknesses",
+              "Opportunities",
+              "Threats",
+            ];
+            const memories = await loadMemories();
+            const branchAnalyses = await Promise.all(
+              dimensions.map((dimension) =>
+                runCognitiveAnalysis(`${input.topic} — ${dimension}`, memories),
+              ),
+            );
+            return `## Deep Analysis: SWOT
+Topic: ${input.topic}
+
+${dimensions
+  .map(
+    (dimension, idx) => `### ${dimension}
+${branchAnalyses[idx]}`,
+  )
+  .join("\n\n")}`;
+          }
+
+          if (framework === "pros_cons") {
+            const dimensions = ["Pros", "Cons"];
+            const memories = await loadMemories();
+            const branchAnalyses = await Promise.all(
+              dimensions.map((dimension) =>
+                runCognitiveAnalysis(`${input.topic} — ${dimension}`, memories),
+              ),
+            );
+            return `## Deep Analysis: Pros/Cons
+Topic: ${input.topic}
+
+${dimensions
+  .map(
+    (dimension, idx) => `### ${dimension}
+${branchAnalyses[idx]}`,
+  )
+  .join("\n\n")}`;
+          }
+
+          return `Analysis: ${framework.toUpperCase()} | "${input.topic}". Provide structured analysis with evidence-based reasoning.`;
         },
       }),
 
@@ -440,18 +527,7 @@ export default function ChatScreen() {
             .optional(),
         }),
         async execute(input: { problem: string; preferredApproach?: string }) {
-          const memories = await loadMemories();
-          const relevant = searchMemories(memories, input.problem, {
-            maxResults: 5,
-          });
-          const meta = assessMetacognition(input.problem, 0);
-          const tree = buildThoughtTree(input.problem, relevant, meta);
-          const branches = tree.branches
-            .filter((b) => !b.pruned)
-            .slice(0, 4)
-            .map((b) => `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`)
-            .join("\n");
-          return `## Analysis\nProblem: "${input.problem}"\nComplexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\n${branches}\n\nExplore highest-confidence paths and synthesize.`;
+          return runCognitiveAnalysis(input.problem);
         },
       }),
 
@@ -523,11 +599,31 @@ export default function ChatScreen() {
           whatYouKnow?: string;
           suggestedAction: string;
         }) {
-          return `## Uncertainty\nTopic: ${input.topic}\nReason: ${input.uncertaintyReason.replace(/_/g, " ")}${input.whatYouKnow ? `\nPartial: ${input.whatYouKnow}` : ""}\nAction: ${input.suggestedAction.replace(/_/g, " ")}`;
+          if (input.suggestedAction === "search_web") {
+            const searchQuery = input.whatYouKnow
+              ? `${input.topic} ${input.whatYouKnow}`
+              : input.topic;
+            const searchResults = await runWebSearch(searchQuery);
+            return `## Uncertainty
+Topic: ${input.topic}
+Reason: ${input.uncertaintyReason.replace(/_/g, " ")}
+Action: search web
+
+${searchResults}`;
+          }
+          return `## Uncertainty
+Topic: ${input.topic}
+Reason: ${input.uncertaintyReason.replace(/_/g, " ")}${
+            input.whatYouKnow
+              ? `
+Partial: ${input.whatYouKnow}`
+              : ""
+          }
+Action: ${input.suggestedAction.replace(/_/g, " ")}`;
         },
       }),
     }),
-    [addMemory],
+    [addMemory, runCognitiveAnalysis, runWebSearch],
   );
 
   const [dismissed, setDismissed] = useState(false);
@@ -542,6 +638,10 @@ export default function ChatScreen() {
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
   });
+
+  useEffect(() => {
+    messagesCountRef.current = messages.length;
+  }, [messages.length]);
 
   useEffect(() => {
     if (error) {
@@ -673,8 +773,9 @@ export default function ChatScreen() {
                   );
                   if (newLinks.length > 0)
                     await saveAssociativeLinks([...existingLinks, ...newLinks]);
-                } catch (_e) {
-                  console.log("[NEXUS] Auto-link error");
+                  scheduleAssociativeLinkPruning();
+                } catch (e) {
+                  console.log("[NEXUS] Auto-link error", e);
                 }
               }
               extractionRef.current = false;
