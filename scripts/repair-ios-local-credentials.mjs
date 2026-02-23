@@ -7,14 +7,19 @@ import { spawnSync } from "node:child_process";
 
 const root = process.cwd();
 const credentialsPath = path.join(root, "credentials.json");
+const isMacOS = os.platform() === "darwin";
+
+const args = new Set(process.argv.slice(2));
+const shouldWrite = args.has("--repair") || args.has("--write");
+const checkOnly = args.has("--check") || !shouldWrite;
 
 function fail(msg) {
   console.error(`❌ ${msg}`);
   process.exit(1);
 }
 
-function run(cmd, args, options = {}) {
-  return spawnSync(cmd, args, { encoding: "utf8", ...options });
+function run(cmd, argsList, options = {}) {
+  return spawnSync(cmd, argsList, { encoding: "utf8", ...options });
 }
 
 function toolMissing(r) {
@@ -89,10 +94,11 @@ function getP12Fingerprint(p12Path, password) {
       "-sha1",
     ]);
     if (toolMissing(r)) fail("openssl not found on PATH.");
-    if (r.status !== 0)
+    if (r.status !== 0) {
       throw new Error(
         `openssl x509 fingerprint failed: ${String(r.stderr).trim()}`,
       );
+    }
 
     return normalizeSha1Fingerprint(r.stdout);
   } finally {
@@ -108,13 +114,15 @@ function createTempKeychain() {
   const r1 = run("security", ["create-keychain", "-p", kcPass, keychain]);
   if (toolMissing(r1))
     fail("macOS `security` tool not found (must run on macOS).");
-  if (r1.status !== 0)
+  if (r1.status !== 0) {
     throw new Error(`security create-keychain failed: ${r1.stderr}`);
+  }
 
   run("security", ["set-keychain-settings", "-lut", "21600", keychain]);
   const r2 = run("security", ["unlock-keychain", "-p", kcPass, keychain]);
-  if (r2.status !== 0)
+  if (r2.status !== 0) {
     throw new Error(`security unlock-keychain failed: ${r2.stderr}`);
+  }
 
   return { tmp, keychain, kcPass };
 }
@@ -238,10 +246,11 @@ function repackP12Legacy(originalP12Path, password, outP12Path) {
       "-passout",
       `pass:${password}`,
     ]);
-    if (exp.status !== 0)
+    if (exp.status !== 0) {
       throw new Error(
         `openssl pkcs12 export -legacy failed: ${String(exp.stderr).trim()}`,
       );
+    }
   } finally {
     rmrf(tmp);
   }
@@ -315,6 +324,13 @@ if (!fs.existsSync(credentialsPath)) {
   fail("credentials.json missing in project root.");
 }
 
+if (!isMacOS) {
+  console.warn(
+    "⚠️ iOS keychain import checks are only available on macOS; skipping credential import validation.",
+  );
+  process.exit(0);
+}
+
 let credentials;
 try {
   credentials = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
@@ -325,12 +341,12 @@ try {
 const { certNodes, profileNodes } = findCredentialNodes(
   credentials.ios ?? credentials,
 );
-
 if (certNodes.length === 0) {
   fail("No distributionCertificate found in credentials.json.");
 }
 
 let changed = false;
+let needsRepair = false;
 const backupPath = credentialsPath + ".bak";
 
 for (const cert of certNodes) {
@@ -377,6 +393,7 @@ for (const cert of certNodes) {
     continue;
   }
 
+  needsRepair = true;
   console.warn(`⚠️ P12 import FAILED for fingerprint ${fp}`);
   console.warn(`   Reason: ${t1.reason}`);
 
@@ -401,6 +418,14 @@ for (const cert of certNodes) {
 
   console.log(`✅ Repacked legacy P12 imports OK (${fp2})`);
 
+  if (checkOnly) {
+    console.warn(
+      "⚠️ Repair is available but --check mode is active; no files were modified.",
+    );
+    rmrf(tmp);
+    continue;
+  }
+
   if (!fs.existsSync(backupPath)) {
     fs.copyFileSync(credentialsPath, backupPath);
   }
@@ -414,7 +439,7 @@ for (const cert of certNodes) {
     const fixedBuf = fs.readFileSync(fixedP12);
     cert.dataBase64 = fixedBuf.toString("base64");
     console.log(
-      `✅ Updated distributionCertificate.dataBase64 with legacy P12 bytes`,
+      "✅ Updated distributionCertificate.dataBase64 with legacy P12 bytes",
     );
   }
 
@@ -425,7 +450,7 @@ for (const cert of certNodes) {
 try {
   if (profileNodes.length) {
     console.log(
-      `\n[i] Checking provisioning profile DeveloperCertificates match…`,
+      "\n[i] Checking provisioning profile DeveloperCertificates match…",
     );
     const cert = certNodes[0];
     const password = cert.password;
@@ -440,10 +465,10 @@ try {
     const fp = getP12Fingerprint(p12, password);
 
     for (const p of profileNodes) {
-      let profBuf;
-      if (p.type === "path")
-        profBuf = fs.readFileSync(path.resolve(root, p.value));
-      else profBuf = decodeBase64Maybe(p.value);
+      const profBuf =
+        p.type === "path"
+          ? fs.readFileSync(path.resolve(root, p.value))
+          : decodeBase64Maybe(p.value);
 
       const plist = decodeProvisioningProfileToPlist(profBuf);
       const fps = extractDevCertFingerprintsFromProfilePlist(plist);
@@ -453,6 +478,7 @@ try {
         );
         continue;
       }
+
       if (!fps.includes(fp)) {
         console.warn(
           `⚠️ Provisioning profile does NOT include distribution cert fingerprint ${fp}`,
@@ -479,6 +505,10 @@ if (changed) {
   console.log(
     `\n✅ Updated credentials.json (backup: ${path.basename(backupPath)})`,
   );
+} else if (needsRepair && checkOnly) {
+  fail(
+    "Credential import failures detected. Re-run with `node ./scripts/repair-ios-local-credentials.mjs --repair` to apply automatic fixes.",
+  );
 } else {
-  console.log(`\n✅ credentials.json OK (no changes needed)`);
+  console.log("\n✅ credentials.json OK (no changes needed)");
 }

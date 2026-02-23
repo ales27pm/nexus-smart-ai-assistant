@@ -18,24 +18,29 @@ function fail(msg) {
 if (!fs.existsSync(credentialsPath))
   fail("credentials.json is missing in project root.");
 
-let creds;
 try {
-  creds = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+  const creds = JSON.parse(fs.readFileSync(credentialsPath, "utf8"));
+  if (!creds || typeof creds !== "object") {
+    fail("credentials.json parsed but does not contain an object.");
+  }
 } catch (e) {
   fail(`credentials.json invalid JSON: ${e.message}`);
 }
 
-if (!creds || typeof creds !== "object") {
-  fail("credentials.json parsed but does not contain an object.");
-}
-
-const r = run("node", ["./scripts/repair-ios-local-credentials.mjs"]);
+const r = run("node", [
+  "./scripts/repair-ios-local-credentials.mjs",
+  "--check",
+]);
 if (r.status !== 0) {
   console.error(r.stdout || "");
   console.error(r.stderr || "");
-  fail("iOS credential validation/repair failed. See logs above.");
+  fail(
+    "iOS credential validation failed. Run `node ./scripts/repair-ios-local-credentials.mjs --repair` to auto-fix when possible.",
+  );
 }
 
+if (r.stdout) process.stdout.write(r.stdout);
+if (r.stderr) process.stderr.write(r.stderr);
 console.log(
-  "✅ iOS credential validation passed (P12 imports into a temp keychain).",
+  "✅ iOS credential validation passed (temp keychain import check).",
 );
