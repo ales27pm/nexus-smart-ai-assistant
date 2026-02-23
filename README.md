@@ -342,7 +342,6 @@ A new **Device** tab runs native readiness checks that only work in Expo develop
 
 - Build/runtime metadata (`expo-application`)
 - Device identity (`expo-device`)
-- Reachability + transport type (`expo-network`)
 - Biometric hardware/enrollment (`expo-local-authentication`)
 - Encrypted keychain/keystore probe (`expo-secure-store`)
 - Clipboard export for bug reports (`expo-clipboard`)
@@ -360,17 +359,6 @@ A new **Device** tab runs native readiness checks that only work in Expo develop
 2. Download the produced `.ipa` from EAS build artifacts.
 3. Install with AltStore (or Apple Configurator / Xcode Devices).
 4. Launch and use the **Device** tab to verify on-device native capability availability.
-
-### Tethered packet capture workflow (Apple-supported)
-
-Use this for diagnostics research when on-device low-level capture APIs are unavailable:
-
-```bash
-rvictl -s <UDID>
-tcpdump -i rvi0 -w capture.pcap
-```
-
-Then import/export `pcap` files for analysis in Wireshark or backend tooling.
 
 ## Native Capability Hub (iOS Dev Builds)
 
@@ -402,14 +390,3 @@ npx eas build --platform ios --profile development
 ```
 
 Install the `.ipa` using AltStore or Apple Configurator and run diagnostics on a physical device.
-
-### Apple-supported packet capture workflow from the app
-
-The Device tab now helps generate copy-ready tethered capture commands:
-
-1. Connect iPhone to Mac and obtain device UDID (`xcrun devicectl list devices`).
-2. Paste UDID into the app and tap **Copy rvictl + tcpdump commands**.
-3. Run copied commands in Terminal to capture traffic to `capture.pcap`.
-4. Analyze with Wireshark, Zeek, or custom tooling.
-
-This keeps low-level capture in Apple-supported tethered tooling while the app handles metadata, local indexing, and reporting.
