@@ -248,9 +248,15 @@ final class CoreMLLLMRunner {
       prefillTokens = tokens
     }
 
+    let batchTokens: [Int]
+    if let mc = maxContext, mc > 0, tokens.count > mc {
+      batchTokens = Array(tokens.suffix(mc))
+    } else {
+      batchTokens = tokens
+    }
     var logits = try predictTokenBatch(
       model: model,
-      tokenIds: prefillTokens,
+      tokenIds: batchTokens,
       startPosition: 0,
       state: localState,
       maxContext: maxContext
