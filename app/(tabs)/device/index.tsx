@@ -207,12 +207,8 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
-  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
-    "ios/resources/tokenizers/gpt2/vocab.json",
-  );
-  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
-    "ios/resources/tokenizers/gpt2/merges.txt",
-  );
+  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>("");
+  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>("");
 
   const runSafely = useSafeAction(setStatus);
   const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
@@ -274,6 +270,21 @@ export default function DeviceNativeHubScreen() {
       if (!loaded) {
         throw new Error("Load the CoreML model first");
       }
+      const vocabPath = coreMLVocabPath.trim();
+      const mergesPath = coreMLMergesPath.trim();
+      const tokenizer =
+        vocabPath && mergesPath
+          ? {
+              kind: "gpt2_bpe" as const,
+              vocabJsonAssetPath: vocabPath,
+              mergesTxtAssetPath: mergesPath,
+              eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+            }
+          : {
+              kind: "none" as const,
+              eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+            };
+
       const text = await coreML.generate(
         buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
         {
@@ -282,12 +293,7 @@ export default function DeviceNativeHubScreen() {
           topK: 40,
           topP: 0.95,
           repetitionPenalty: 1.05,
-          tokenizer: {
-            kind: "gpt2_bpe",
-            vocabJsonAssetPath: coreMLVocabPath,
-            mergesTxtAssetPath: coreMLMergesPath,
-            eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-          },
+          tokenizer,
         },
       );
       setCoreMLOutput(text);

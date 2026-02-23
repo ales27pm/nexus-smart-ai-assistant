@@ -17,7 +17,11 @@ interface ChatBubbleProps {
   text: string;
 }
 
-function openExternalLink(rawUrl: string) {
+function openExternalLink(rawUrl?: string | null) {
+  if (!rawUrl || typeof rawUrl !== "string") {
+    Alert.alert("Blocked link", "Invalid or missing URL.");
+    return;
+  }
   const safeUrl = getSafeExternalUrl(rawUrl);
   if (!safeUrl) {
     Alert.alert("Blocked link", "Only valid HTTPS links can be opened.");
@@ -80,14 +84,29 @@ export default function ChatBubble({ role, text }: ChatBubbleProps) {
               <Text
                 key={node.key}
                 style={styles.link}
-                onPress={() => openExternalLink(node.attributes.href)}
+                onPress={() => {
+                  const href = node.attributes?.href;
+                  if (typeof href === "string") {
+                    openExternalLink(href);
+                  } else {
+                    Alert.alert("Blocked link", "Invalid or missing URL.");
+                  }
+                }}
               >
                 {children}
               </Text>
             ),
-            image: (node) => (
-              <SafeRemoteImage key={node.key} url={node.attributes.src} />
-            ),
+            image: (node) =>
+              (() => {
+                const src = node.attributes?.src;
+                return typeof src === "string" ? (
+                  <SafeRemoteImage key={node.key} url={src} />
+                ) : (
+                  <Text key={node.key} style={styles.blockedImage}>
+                    Blocked image URL for safety. HTTPS required.
+                  </Text>
+                );
+              })(),
           }}
         >
           {markdownText}
