@@ -18,7 +18,6 @@ import {
   Phone,
   Send,
   Volume2,
-  Wifi,
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
@@ -30,7 +29,6 @@ import {
 import {
   createCalendarEvent,
   getCurrentCoordinates,
-  getNetworkSnapshot,
   getPrimaryContactSummary,
   loadLocalNote,
   openDialer,
@@ -59,39 +57,6 @@ function useSafeAction(
       }
     },
     [setStatus],
-  );
-}
-
-function DeviceNativeHubNetworkSection({
-  runSafely,
-  setStatus,
-}: {
-  runSafely: SafeAction;
-  setStatus: React.Dispatch<React.SetStateAction<string>>;
-}) {
-  const [networkSummary, setNetworkSummary] = useState("Not checked");
-
-  const runNetworkSnapshot = useCallback(async () => {
-    await runSafely("Network snapshot", async () => {
-      const snapshot = await getNetworkSnapshot();
-      setNetworkSummary(
-        `IP ${snapshot.ipAddress} • ${snapshot.type} • connected ${snapshot.isConnected ? "yes" : "no"} • internet ${snapshot.isInternetReachable === null ? "unknown" : snapshot.isInternetReachable ? "yes" : "no"}`,
-      );
-      setStatus("Network snapshot captured");
-    });
-  }, [runSafely, setStatus]);
-
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Wifi size={14} color={Colors.dark.info} />
-        <Text style={styles.sectionTitle}>Network diagnostics</Text>
-      </View>
-      <TouchableOpacity style={styles.button} onPress={runNetworkSnapshot}>
-        <Text style={styles.buttonText}>Capture network snapshot</Text>
-      </TouchableOpacity>
-      <Text style={styles.result}>{networkSummary}</Text>
-    </View>
   );
 }
 
@@ -161,7 +126,7 @@ function DeviceNativeHubLocationSection({
 
 export default function DeviceNativeHubScreen() {
   const [note, setNote] = useState("");
-  const [searchQuery, setSearchQuery] = useState("network diagnostics profile");
+  const [searchQuery, setSearchQuery] = useState("device diagnostics profile");
   const [results, setResults] = useState<
     { id: number; content: string; score: number }[]
   >([]);
@@ -346,11 +311,6 @@ export default function DeviceNativeHubScreen() {
           </Text>
         ))}
       </View>
-
-      <DeviceNativeHubNetworkSection
-        runSafely={runSafely}
-        setStatus={setStatus}
-      />
 
       <DeviceNativeHubLocationSection
         MapViewNative={MapViewNative}
