@@ -280,10 +280,7 @@ export default function DeviceNativeHubScreen() {
               mergesTxtAssetPath: mergesPath,
               eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
             }
-          : {
-              kind: "none" as const,
-              eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-            };
+          : undefined;
 
       const text = await coreML.generate(
         buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
