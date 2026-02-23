@@ -1,7 +1,6 @@
 import * as Calendar from "expo-calendar";
 import * as Contacts from "expo-contacts";
 import * as Location from "expo-location";
-import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
 import * as Speech from "expo-speech";
@@ -22,13 +21,6 @@ export type VectorSearchResult = {
   id: number;
   content: string;
   score: number;
-};
-
-export type NetworkSnapshot = {
-  ipAddress: string;
-  isConnected: boolean;
-  type: string;
-  isInternetReachable: boolean | null;
 };
 
 async function getDb() {
@@ -119,20 +111,6 @@ export async function persistLocalNote(note: string): Promise<void> {
 
 export async function loadLocalNote(): Promise<string> {
   return (await SecureStore.getItemAsync(STORAGE_KEY)) ?? "";
-}
-
-export async function getNetworkSnapshot(): Promise<NetworkSnapshot> {
-  const [state, ipAddress] = await Promise.all([
-    Network.getNetworkStateAsync(),
-    Network.getIpAddressAsync().catch(() => "unavailable"),
-  ]);
-
-  return {
-    ipAddress,
-    isConnected: !!state.isConnected,
-    type: state.type ?? "unknown",
-    isInternetReachable: state.isInternetReachable ?? null,
-  };
 }
 
 export async function getCurrentCoordinates(): Promise<string> {

@@ -2,7 +2,6 @@ import * as Application from "expo-application";
 import * as Clipboard from "expo-clipboard";
 import * as Device from "expo-device";
 import * as LocalAuthentication from "expo-local-authentication";
-import * as Network from "expo-network";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
@@ -49,23 +48,6 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
       : "Running in simulator/emulator (Mock Supported for UI validation)",
     status: Device.isDevice ? "supported" : "limited",
   });
-
-  try {
-    const networkState = await Network.getNetworkStateAsync();
-    diagnostics.push({
-      id: "network",
-      title: "Network Reachability",
-      detail: `Connected: ${networkState.isConnected ? "yes" : "no"} • Type: ${networkState.type ?? "unknown"}`,
-      status: networkState.isConnected ? "supported" : "limited",
-    });
-  } catch (error) {
-    diagnostics.push({
-      id: "network",
-      title: "Network Reachability",
-      detail: `Failed to read network state: ${toMessage(error)}`,
-      status: "error",
-    });
-  }
 
   try {
     const [hasHardware, enrolledLevel] = await Promise.all([

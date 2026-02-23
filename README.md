@@ -342,7 +342,6 @@ A new **Device** tab runs native readiness checks that only work in Expo develop
 
 - Build/runtime metadata (`expo-application`)
 - Device identity (`expo-device`)
-- Reachability + transport type (`expo-network`)
 - Biometric hardware/enrollment (`expo-local-authentication`)
 - Encrypted keychain/keystore probe (`expo-secure-store`)
 - Clipboard export for bug reports (`expo-clipboard`)
