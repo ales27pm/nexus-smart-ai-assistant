@@ -12,6 +12,8 @@ expo-env.d.ts
 # Native
 ios/
 android/
+!modules/expo-coreml-llm/ios/
+!modules/expo-coreml-llm/ios/**
 *.orig.*
 *.jks
 *.p8
