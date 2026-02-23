@@ -1,14 +1,14 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  Image,
-  Linking,
-  Platform,
   Alert,
+  Linking,
+  Image,
   TouchableOpacity,
 } from "react-native";
+import Markdown from "react-native-markdown-display";
 import Colors from "@/constants/colors";
 import { getDisplayHost, getSafeExternalUrl } from "@/utils/urlSafety";
 
@@ -17,172 +17,8 @@ interface ChatBubbleProps {
   text: string;
 }
 
-interface TextSegment {
-  type:
-    | "text"
-    | "bold"
-    | "italic"
-    | "bolditalic"
-    | "code"
-    | "link"
-    | "header"
-    | "listItem"
-    | "blockquote";
-  content: string;
-  url?: string;
-  level?: number;
-}
-
-interface ParsedBlock {
-  type:
-    | "paragraph"
-    | "code"
-    | "image"
-    | "header"
-    | "listItem"
-    | "blockquote"
-    | "divider";
-  content: string;
-  language?: string;
-  level?: number;
-  ordered?: boolean;
-  index?: number;
-}
-
-function parseBlocks(text: string): ParsedBlock[] {
-  const blocks: ParsedBlock[] = [];
-  const lines = text.split("\n");
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    if (line.startsWith("```")) {
-      const lang = line.slice(3).trim();
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      blocks.push({
-        type: "code",
-        content: codeLines.join("\n"),
-        language: lang || undefined,
-      });
-      i++;
-      continue;
-    }
-
-    if (/^!\[.*?\]\(.*?\)/.test(line)) {
-      const match = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
-      if (match) {
-        blocks.push({ type: "image", content: match[2] });
-        i++;
-        continue;
-      }
-    }
-
-    const headerMatch = line.match(/^(#{1,6})\s+(.+)/);
-    if (headerMatch) {
-      blocks.push({
-        type: "header",
-        content: headerMatch[2],
-        level: headerMatch[1].length,
-      });
-      i++;
-      continue;
-    }
-
-    if (/^---+$/.test(line.trim()) || /^\*\*\*+$/.test(line.trim())) {
-      blocks.push({ type: "divider", content: "" });
-      i++;
-      continue;
-    }
-
-    const ulMatch = line.match(/^\s*[-*+]\s+(.+)/);
-    if (ulMatch) {
-      blocks.push({ type: "listItem", content: ulMatch[1], ordered: false });
-      i++;
-      continue;
-    }
-
-    const olMatch = line.match(/^\s*(\d+)\.\s+(.+)/);
-    if (olMatch) {
-      blocks.push({
-        type: "listItem",
-        content: olMatch[2],
-        ordered: true,
-        index: parseInt(olMatch[1], 10),
-      });
-      i++;
-      continue;
-    }
-
-    const bqMatch = line.match(/^>\s*(.*)/);
-    if (bqMatch) {
-      blocks.push({ type: "blockquote", content: bqMatch[1] });
-      i++;
-      continue;
-    }
-
-    if (line.trim() === "") {
-      i++;
-      continue;
-    }
-
-    blocks.push({ type: "paragraph", content: line });
-    i++;
-  }
-
-  return blocks;
-}
-
-function parseInline(text: string): TextSegment[] {
-  const segments: TextSegment[] = [];
-  const regex =
-    /(\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|__(.+?)__|_(.+?)_|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\))/g;
-
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      segments.push({
-        type: "text",
-        content: text.slice(lastIndex, match.index),
-      });
-    }
-
-    if (match[2]) {
-      segments.push({ type: "bolditalic", content: match[2] });
-    } else if (match[3]) {
-      segments.push({ type: "bold", content: match[3] });
-    } else if (match[4]) {
-      segments.push({ type: "italic", content: match[4] });
-    } else if (match[5]) {
-      segments.push({ type: "bold", content: match[5] });
-    } else if (match[6]) {
-      segments.push({ type: "italic", content: match[6] });
-    } else if (match[7]) {
-      segments.push({ type: "code", content: match[7] });
-    } else if (match[8] && match[9]) {
-      segments.push({ type: "link", content: match[8], url: match[9] });
-    }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    segments.push({ type: "text", content: text.slice(lastIndex) });
-  }
-
-  return segments.length === 0 ? [{ type: "text", content: text }] : segments;
-}
-
 function openExternalLink(rawUrl: string) {
   const safeUrl = getSafeExternalUrl(rawUrl);
-
   if (!safeUrl) {
     Alert.alert("Blocked link", "Only valid HTTPS links can be opened.");
     return;
@@ -201,362 +37,112 @@ function openExternalLink(rawUrl: string) {
   ]);
 }
 
-function InlineText({ text, isUser }: { text: string; isUser: boolean }) {
-  const segments = useMemo(() => parseInline(text), [text]);
-  const baseColor = isUser ? Colors.dark.text : Colors.dark.text;
-
-  return (
-    <Text style={{ color: baseColor, fontSize: 15, lineHeight: 22 }} selectable>
-      {segments.map((seg, i) => {
-        switch (seg.type) {
-          case "bold":
-            return (
-              <Text key={i} style={styles.bold}>
-                {seg.content}
-              </Text>
-            );
-          case "italic":
-            return (
-              <Text key={i} style={styles.italic}>
-                {seg.content}
-              </Text>
-            );
-          case "bolditalic":
-            return (
-              <Text key={i} style={styles.boldItalic}>
-                {seg.content}
-              </Text>
-            );
-          case "code":
-            return (
-              <Text key={i} style={styles.inlineCode}>
-                {seg.content}
-              </Text>
-            );
-          case "link":
-            return (
-              <Text
-                key={i}
-                style={styles.link}
-                onPress={() => {
-                  if (seg.url) {
-                    openExternalLink(seg.url);
-                  }
-                }}
-              >
-                {seg.content}
-              </Text>
-            );
-          default:
-            return <Text key={i}>{seg.content}</Text>;
-        }
-      })}
-    </Text>
-  );
-}
-
 function SafeRemoteImage({ url }: { url: string }) {
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [hasError, setHasError] = useState(false);
-  const safeUrl = useMemo(() => getSafeExternalUrl(url), [url]);
-
+  const safeUrl = getSafeExternalUrl(url);
   if (!safeUrl) {
     return (
-      <Text style={styles.blockedImageText}>Blocked non-HTTPS image URL.</Text>
+      <Text style={styles.blockedImage}>
+        Blocked image URL for safety. HTTPS required.
+      </Text>
     );
   }
 
-  if (!isLoaded) {
-    const host = getDisplayHost(safeUrl);
-
-    return (
-      <TouchableOpacity
-        style={styles.loadImageButton}
-        onPress={() => {
-          setHasError(false);
-          setIsLoaded(true);
-        }}
-      >
-        <Text style={styles.loadImageButtonText}>
-          {hasError
-            ? `Failed to load image. Tap to retry loading from ${host}`
-            : `Load image from ${host}`}
-        </Text>
+  return (
+    <View style={styles.imageWrap}>
+      <Image
+        source={{ uri: safeUrl }}
+        style={styles.image}
+        resizeMode="cover"
+      />
+      <TouchableOpacity onPress={() => openExternalLink(safeUrl)}>
+        <Text style={styles.imageCaption}>{getDisplayHost(safeUrl)}</Text>
       </TouchableOpacity>
-    );
-  }
-
-  return (
-    <Image
-      source={{ uri: safeUrl }}
-      style={styles.inlineImage}
-      resizeMode="contain"
-      onLoad={() => setHasError(false)}
-      onError={() => {
-        setHasError(true);
-        setIsLoaded(false);
-      }}
-    />
-  );
-}
-
-function RenderedContent({ text, isUser }: { text: string; isUser: boolean }) {
-  const blocks = useMemo(() => parseBlocks(text), [text]);
-
-  return (
-    <View>
-      {blocks.map((block, i) => {
-        switch (block.type) {
-          case "code":
-            return (
-              <View key={i} style={styles.codeBlock}>
-                {block.language ? (
-                  <Text style={styles.codeLang}>{block.language}</Text>
-                ) : null}
-                <Text style={styles.codeText} selectable>
-                  {block.content}
-                </Text>
-              </View>
-            );
-
-          case "image":
-            return (
-              <View key={i} style={styles.imageWrap}>
-                <SafeRemoteImage url={block.content} />
-              </View>
-            );
-
-          case "header": {
-            const headerSize =
-              block.level === 1
-                ? 20
-                : block.level === 2
-                  ? 18
-                  : block.level === 3
-                    ? 16
-                    : 15;
-            return (
-              <Text
-                key={i}
-                style={[
-                  styles.header,
-                  { fontSize: headerSize, marginTop: i > 0 ? 10 : 0 },
-                ]}
-                selectable
-              >
-                {block.content}
-              </Text>
-            );
-          }
-
-          case "listItem": {
-            const bullet = block.ordered ? `${block.index ?? i + 1}.` : "•";
-            return (
-              <View key={i} style={styles.listRow}>
-                <Text style={styles.listBullet}>{bullet}</Text>
-                <View style={styles.listContent}>
-                  <InlineText text={block.content} isUser={isUser} />
-                </View>
-              </View>
-            );
-          }
-
-          case "blockquote":
-            return (
-              <View key={i} style={styles.blockquote}>
-                <InlineText text={block.content} isUser={isUser} />
-              </View>
-            );
-
-          case "divider":
-            return <View key={i} style={styles.divider} />;
-
-          default:
-            return (
-              <View key={i} style={i > 0 ? styles.paragraphSpacing : undefined}>
-                <InlineText text={block.content} isUser={isUser} />
-              </View>
-            );
-        }
-      })}
     </View>
   );
 }
 
-export default React.memo(function ChatBubble({ role, text }: ChatBubbleProps) {
+export default function ChatBubble({ role, text }: ChatBubbleProps) {
   const isUser = role === "user";
-  const needsRichRender =
-    !isUser && (/[*_`#\[\]!>-]/.test(text) || /^\s*\d+\.\s/m.test(text));
+  const markdownText = useMemo(() => text || "", [text]);
 
   return (
-    <View style={[styles.row, isUser && styles.rowUser]}>
+    <View style={[styles.row, isUser ? styles.userRow : styles.assistantRow]}>
       <View
         style={[
           styles.bubble,
-          isUser ? styles.bubbleUser : styles.bubbleAssistant,
+          isUser ? styles.userBubble : styles.assistantBubble,
         ]}
       >
-        {needsRichRender ? (
-          <RenderedContent text={text} isUser={isUser} />
-        ) : (
-          <Text
-            style={[
-              styles.text,
-              isUser ? styles.textUser : styles.textAssistant,
-            ]}
-            selectable
-          >
-            {text}
-          </Text>
-        )}
+        <Markdown
+          style={markdownStyles}
+          rules={{
+            link: (node, children, parent, styles) => (
+              <Text
+                key={node.key}
+                style={styles.link}
+                onPress={() => openExternalLink(node.attributes.href)}
+              >
+                {children}
+              </Text>
+            ),
+            image: (node) => (
+              <SafeRemoteImage key={node.key} url={node.attributes.src} />
+            ),
+          }}
+        >
+          {markdownText}
+        </Markdown>
       </View>
     </View>
   );
+}
+
+const markdownStyles = StyleSheet.create({
+  body: { color: Colors.dark.text, fontSize: 15, lineHeight: 22 },
+  text: { color: Colors.dark.text },
+  heading1: { color: Colors.dark.text, fontWeight: "700" },
+  heading2: { color: Colors.dark.text, fontWeight: "700" },
+  heading3: { color: Colors.dark.text, fontWeight: "700" },
+  code_inline: {
+    backgroundColor: "rgba(15, 23, 42, 0.45)",
+    color: "#E2E8F0",
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
+  code_block: {
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    color: "#E2E8F0",
+    borderRadius: 10,
+    padding: 10,
+  },
+  fence: {
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    color: "#E2E8F0",
+    borderRadius: 10,
+    padding: 10,
+  },
+  link: { color: "#7DD3FC", textDecorationLine: "underline" },
+  bullet_list: { marginVertical: 4 },
+  ordered_list: { marginVertical: 4 },
+  table: { borderWidth: 1, borderColor: "#334155" },
+  th: { borderWidth: 1, borderColor: "#334155", padding: 6 },
+  td: { borderWidth: 1, borderColor: "#334155", padding: 6 },
 });
 
 const styles = StyleSheet.create({
-  row: {
-    paddingHorizontal: 16,
-    marginVertical: 3,
-    flexDirection: "row",
-    justifyContent: "flex-start",
+  row: { paddingHorizontal: 12, marginVertical: 4 },
+  userRow: { alignItems: "flex-end" },
+  assistantRow: { alignItems: "flex-start" },
+  bubble: { maxWidth: "92%", borderRadius: 16, padding: 12 },
+  userBubble: { backgroundColor: Colors.dark.userBubble },
+  assistantBubble: { backgroundColor: "#1E293B" },
+  imageWrap: { marginVertical: 6 },
+  image: {
+    width: 240,
+    height: 160,
+    borderRadius: 12,
+    backgroundColor: "#0F172A",
   },
-  rowUser: {
-    justifyContent: "flex-end",
-  },
-  bubble: {
-    maxWidth: "82%",
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  bubbleUser: {
-    backgroundColor: Colors.dark.userBubble,
-    borderBottomRightRadius: 4,
-  },
-  bubbleAssistant: {
-    backgroundColor: Colors.dark.assistantBubble,
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: Colors.dark.borderSubtle,
-  },
-  text: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  textUser: {
-    color: Colors.dark.text,
-  },
-  textAssistant: {
-    color: Colors.dark.text,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  bold: {
-    fontWeight: "700" as const,
-  },
-  italic: {
-    fontStyle: "italic" as const,
-  },
-  boldItalic: {
-    fontWeight: "700" as const,
-    fontStyle: "italic" as const,
-  },
-  inlineCode: {
-    backgroundColor: Colors.dark.surface,
-    color: Colors.dark.cyan,
-    fontSize: 13,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  link: {
-    color: Colors.dark.info,
-    textDecorationLine: "underline" as const,
-  },
-  header: {
-    color: Colors.dark.text,
-    fontWeight: "700" as const,
-    marginBottom: 4,
-  },
-  listRow: {
-    flexDirection: "row",
-    marginVertical: 2,
-    paddingRight: 4,
-  },
-  listBullet: {
-    color: Colors.dark.accent,
-    fontSize: 14,
-    width: 18,
-    fontWeight: "600" as const,
-  },
-  listContent: {
-    flex: 1,
-  },
-  blockquote: {
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.dark.accent,
-    paddingLeft: 10,
-    marginVertical: 4,
-    opacity: 0.85,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.dark.border,
-    marginVertical: 8,
-  },
-  paragraphSpacing: {
-    marginTop: 6,
-  },
-  codeBlock: {
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 8,
-    padding: 10,
-    marginVertical: 6,
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-  },
-  codeLang: {
-    fontSize: 10,
-    color: Colors.dark.textTertiary,
-    fontWeight: "600" as const,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
-    marginBottom: 6,
-  },
-  codeText: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.dark.accent,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-  },
-  imageWrap: {
-    marginVertical: 6,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  inlineImage: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 10,
-    backgroundColor: Colors.dark.surface,
-  },
-  loadImageButton: {
-    borderWidth: 1,
-    borderColor: Colors.dark.border,
-    backgroundColor: Colors.dark.surface,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-  },
-  loadImageButtonText: {
-    color: Colors.dark.info,
-    textAlign: "center",
-    fontWeight: "600" as const,
-  },
-  blockedImageText: {
-    color: Colors.dark.warning,
-    fontSize: 13,
-  },
+  imageCaption: { marginTop: 6, fontSize: 12, color: "#93C5FD" },
+  blockedImage: { color: "#FCA5A5", fontSize: 12 },
 });

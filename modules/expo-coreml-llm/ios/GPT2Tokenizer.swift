@@ -207,11 +207,8 @@ final class GPT2BPETokenizer: Tokenizer {
   }
 
   private static func gpt2RegexTokens(_ text: String) -> [String] {
-    // A pragmatic GPT-2-like tokenizer regex:
-    // - splits on words, numbers, punctuation, whitespace
-    // Not 100% identical to python regex, but compatible enough for real BPE vocab/merges.
-    //
-    // If you need exact parity, we can implement the full OpenAI regex.
+    // Official GPT-2 regex used by OpenAI tokenizer implementation.
+    // Equivalent to: r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
     let pattern = #"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"#
     let ns = text as NSString
     do {

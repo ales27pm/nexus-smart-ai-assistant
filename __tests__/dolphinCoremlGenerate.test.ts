@@ -21,6 +21,10 @@ jest.mock("@/utils/dolphinTokenizer", () => ({
 }));
 
 describe("dolphinCoremlGenerate", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("loads model, generates from token ids, and decodes completion only", async () => {
     const out = await dolphinCoremlGenerate("hello", { maxNewTokens: 16 });
 
@@ -41,5 +45,29 @@ describe("dolphinCoremlGenerate", () => {
 
     expect(tok.dolphinDecode).toHaveBeenCalledWith([12, 99], true);
     expect(out).toBe("completion");
+  });
+
+  it("uses multi-turn history and trims prompt ids to maxContext", async () => {
+    (tok.dolphinEncode as jest.Mock).mockResolvedValueOnce({
+      ids: [1, 2, 3, 4, 5, 6],
+    });
+    (CoreMLLLM.generateFromTokens as jest.Mock).mockResolvedValueOnce([
+      3, 4, 5, 6, 7, 8,
+    ]);
+
+    await dolphinCoremlGenerate("latest", {
+      history: ["user: hi", "assistant: hello", "user: follow up"],
+      maxContext: 4,
+      maxNewTokens: 8,
+    });
+
+    expect(tok.dolphinEncode).toHaveBeenCalledWith(
+      "user: hi\nassistant: hello\nuser: follow up\nlatest",
+    );
+    expect(CoreMLLLM.generateFromTokens).toHaveBeenCalledWith(
+      [3, 4, 5, 6],
+      expect.objectContaining({ maxNewTokens: 8 }),
+    );
+    expect(tok.dolphinDecode).toHaveBeenCalledWith([7, 8], true);
   });
 });

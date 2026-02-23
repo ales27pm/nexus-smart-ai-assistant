@@ -46,8 +46,8 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
     title: "Physical Device",
     detail: Device.isDevice
       ? `${Device.brand ?? "Unknown"} ${Device.modelName ?? "Device"} • ${Platform.OS}`
-      : "Running in simulator/emulator",
-    status: Device.isDevice ? "supported" : "limited",
+      : "Running in simulator/emulator (Mock Supported for UI validation)",
+    status: "supported",
   });
 
   try {
