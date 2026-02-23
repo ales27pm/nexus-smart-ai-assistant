@@ -69,7 +69,7 @@ enum Types {
     }
   }
 
-  struct GenerateOptions {
+  struct SamplingOptions {
     let maxNewTokens: Int
     let temperature: Float
     let topK: Int
@@ -77,9 +77,8 @@ enum Types {
     let repetitionPenalty: Float
     let stopTokenIds: [Int]
     let seed: Int?
-    let tokenizer: [String: Any]?
 
-    init(from dict: [String: Any]) throws {
+    init(from dict: [String: Any]) {
       self.maxNewTokens = (dict["maxNewTokens"] as? Int) ?? 128
       self.temperature = Float((dict["temperature"] as? Double) ?? 0.8)
       self.topK = (dict["topK"] as? Int) ?? 40
@@ -87,28 +86,25 @@ enum Types {
       self.repetitionPenalty = Float((dict["repetitionPenalty"] as? Double) ?? 1.0)
       self.stopTokenIds = (dict["stopTokenIds"] as? [Int]) ?? []
       self.seed = dict["seed"] as? Int
+    }
+  }
+
+  struct GenerateOptions {
+    let sampling: SamplingOptions
+    let tokenizer: [String: Any]?
+
+    init(from dict: [String: Any]) throws {
+      self.sampling = SamplingOptions(from: dict)
       self.tokenizer = dict["tokenizer"] as? [String: Any]
     }
   }
 
   struct GenerateFromTokensOptions {
-    let maxNewTokens: Int
-    let temperature: Float
-    let topK: Int
-    let topP: Float
-    let repetitionPenalty: Float
-    let stopTokenIds: [Int]
-    let seed: Int?
+    let sampling: SamplingOptions
     let maxContext: Int?
 
     init(from dict: [String: Any]) throws {
-      self.maxNewTokens = (dict["maxNewTokens"] as? Int) ?? 128
-      self.temperature = Float((dict["temperature"] as? Double) ?? 0.8)
-      self.topK = (dict["topK"] as? Int) ?? 40
-      self.topP = Float((dict["topP"] as? Double) ?? 0.95)
-      self.repetitionPenalty = Float((dict["repetitionPenalty"] as? Double) ?? 1.0)
-      self.stopTokenIds = (dict["stopTokenIds"] as? [Int]) ?? []
-      self.seed = dict["seed"] as? Int
+      self.sampling = SamplingOptions(from: dict)
       self.maxContext = dict["maxContext"] as? Int
     }
   }

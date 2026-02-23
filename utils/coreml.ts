@@ -27,7 +27,7 @@ export type CoreMLGenerateOptions = {
   stopTokenIds?: number[];
   seed?: number;
   tokenizer?: {
-    kind?: "none" | "gpt2_bpe";
+    kind: "none" | "gpt2_bpe";
     vocabJsonAssetPath?: string;
     mergesTxtAssetPath?: string;
     eosTokenId?: number;
@@ -37,12 +37,10 @@ export type CoreMLGenerateOptions = {
 
 export const DEFAULT_COREML_MODEL_FILE =
   "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage";
-export const DEFAULT_COREML_EOS_TOKEN_ID = 50256;
+export const DEFAULT_COREML_EOS_TOKEN_ID = 128256;
 
 export const DEFAULT_COREML_TOKENIZER = {
-  kind: "gpt2_bpe",
-  vocabJsonAssetPath: "module:tokenizers/gpt2/vocab.json",
-  mergesTxtAssetPath: "module:tokenizers/gpt2/merges.txt",
+  kind: "none",
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
 } as const;
 

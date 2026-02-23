@@ -25,7 +25,7 @@ export type LoadModelOptions = {
 };
 
 type TokenizerConfig = {
-  kind?: "none" | "gpt2_bpe";
+  kind: "none" | "gpt2_bpe";
   vocabJsonAssetPath?: string;
   mergesTxtAssetPath?: string;
   bosTokenId?: number;
@@ -91,16 +91,35 @@ function getNativeModule(): NativeModuleShape {
   }
 }
 
+function normalizeTokenizer(
+  tokenizer?: TokenizerConfig,
+): TokenizerConfig | undefined {
+  if (!tokenizer) return undefined;
+  const normalized: TokenizerConfig = {
+    ...tokenizer,
+    kind: tokenizer.kind ?? "gpt2_bpe",
+  };
+  if (normalized.kind === "none") {
+    throw new Error(
+      "tokenizer.kind='none' is invalid for tokenize/decode/generate paths that require a tokenizer.",
+    );
+  }
+  return normalized;
+}
+
 export const CoreMLLLM = {
   loadModel: (opts: LoadModelOptions) => getNativeModule().loadModelAsync(opts),
   unloadModel: () => getNativeModule().unloadModelAsync(),
   isLoaded: () => getNativeModule().isLoadedAsync(),
   tokenize: (prompt: string, tokenizer: TokenizerConfig) =>
-    getNativeModule().tokenizeAsync(prompt, tokenizer),
+    getNativeModule().tokenizeAsync(prompt, normalizeTokenizer(tokenizer)!),
   decode: (tokenIds: number[], tokenizer: TokenizerConfig) =>
-    getNativeModule().decodeAsync(tokenIds, tokenizer),
+    getNativeModule().decodeAsync(tokenIds, normalizeTokenizer(tokenizer)!),
   generate: (prompt: string, opts: GenerateOptions) =>
-    getNativeModule().generateAsync(prompt, opts),
+    getNativeModule().generateAsync(prompt, {
+      ...opts,
+      tokenizer: normalizeTokenizer(opts.tokenizer),
+    }),
   generateFromTokens: (
     tokenIds: number[],
     opts: GenerateFromTokensOptions = {},

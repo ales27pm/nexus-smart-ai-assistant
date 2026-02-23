@@ -74,7 +74,13 @@ final class GPT2BPETokenizer: Tokenizer {
     let tokens = GPT2BPETokenizer.gpt2RegexTokens(text)
     for tok in tokens {
       let bytes = Array(tok.utf8)
-      let transformed = bytes.map { byteEncoder[$0]! }.joined()
+      // Invariant: buildByteMaps() must populate all 0...255 byte mappings.
+      let transformed = bytes.map { b -> String in
+        guard let mapped = byteEncoder[b] else {
+          preconditionFailure("byteEncoder missing mapping for \(b); buildByteMaps() must populate 0...255")
+        }
+        return mapped
+      }.joined()
       let bpeTokens = bpe(transformed)
       for bt in bpeTokens {
         if let id = encoder[bt] {
@@ -99,6 +105,8 @@ final class GPT2BPETokenizer: Tokenizer {
       if let eos = eosTokenId, id == eos { continue }
       if let piece = decoder[id] {
         text += piece
+      } else {
+        text += "�"
       }
     }
     // Byte-level decode: each scalar in `text` maps to a single byte via GPT-2 byte decoder.
@@ -110,7 +118,10 @@ final class GPT2BPETokenizer: Tokenizer {
         bytes.append(b)
       }
     }
-    return String(decoding: bytes, as: UTF8.self)
+    if let decoded = String(bytes: bytes, encoding: .utf8) {
+      return decoded
+    }
+    return "�"
   }
 
   // MARK: BPE

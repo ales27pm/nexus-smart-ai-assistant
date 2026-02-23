@@ -96,9 +96,4 @@ struct SeededGenerator: RandomNumberGenerator {
     state = x
     return x &* 2685821657736338717
   }
-
-  mutating func nextUnitFloat() -> Float {
-    let bits = next() >> 40 // top 24 bits
-    return Float(bits) / Float(1 << 24)
-  }
 }
