@@ -6,13 +6,16 @@ export type CoreMLBridge = {
 };
 
 export type CoreMLLoadModelOptions = {
+  modelFile?: string;
   modelName?: string;
   modelPath?: string;
   inputIdsName?: string;
   attentionMaskName?: string;
+  cachePositionName?: string;
   logitsName?: string;
   computeUnits?: "all" | "cpuOnly" | "cpuAndGPU" | "cpuAndNeuralEngine";
   eosTokenId?: number;
+  maxContext?: number;
 };
 
 export type CoreMLGenerateOptions = {
@@ -21,27 +24,31 @@ export type CoreMLGenerateOptions = {
   topK?: number;
   topP?: number;
   repetitionPenalty?: number;
+  stopTokenIds?: number[];
+  seed?: number;
   tokenizer?: {
-    vocabJsonAssetPath: string;
-    mergesTxtAssetPath: string;
+    kind: "none" | "gpt2_bpe";
+    vocabJsonAssetPath?: string;
+    mergesTxtAssetPath?: string;
     eosTokenId?: number;
     bosTokenId?: number;
   };
 };
 
-export const DEFAULT_COREML_MODEL_NAME = "MyLLM";
-export const DEFAULT_COREML_EOS_TOKEN_ID = 50256;
+export const DEFAULT_COREML_MODEL_FILE =
+  "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage";
+export const DEFAULT_COREML_EOS_TOKEN_ID = 128256;
 
 export const DEFAULT_COREML_TOKENIZER = {
-  vocabJsonAssetPath: "module:tokenizers/gpt2/vocab.json",
-  mergesTxtAssetPath: "module:tokenizers/gpt2/merges.txt",
+  kind: "none",
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
 } as const;
 
 export const DEFAULT_COREML_LOAD_OPTIONS: CoreMLLoadModelOptions = {
-  modelName: DEFAULT_COREML_MODEL_NAME,
+  modelFile: DEFAULT_COREML_MODEL_FILE,
   inputIdsName: "input_ids",
   attentionMaskName: "attention_mask",
+  cachePositionName: "cache_position",
   logitsName: "logits",
   computeUnits: "all",
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
