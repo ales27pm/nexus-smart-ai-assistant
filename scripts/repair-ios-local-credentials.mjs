@@ -401,24 +401,9 @@ for (const cert of certNodes) {
   try {
     repackP12Legacy(origP12, password, fixedP12);
   } catch (e) {
-    if (t1.ok)
-      return {
-        ok: true,
-        repaired: false,
-        fingerprint: fp,
-        repairAvailable: false,
-      };
-      return {
-        ok: true,
-        repaired: false,
-        fingerprint: fp2,
-        repairAvailable: true,
-      };
-    if (result.repairAvailable) {
-      console.log(
-        `ℹ️ Repairable P12 validated for fingerprint ${result.fingerprint}; run with --repair to apply changes.`,
-      );
-    } else if (result.fingerprint) {
+    rmrf(tmp);
+    fail(`Failed to repack distribution certificate as legacy P12: ${e.message}`);
+  }
 
   const fp2 = getP12Fingerprint(fixedP12, password);
   const t2 = keychainImportAndFindIdentity(fixedP12, password, fp2);
