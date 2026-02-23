@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { memo, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -42,6 +42,8 @@ function openExternalLink(rawUrl?: string | null) {
 }
 
 function SafeRemoteImage({ url }: { url: string }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const safeUrl = getSafeExternalUrl(url);
   if (!safeUrl) {
     return (
@@ -57,7 +59,22 @@ function SafeRemoteImage({ url }: { url: string }) {
         source={{ uri: safeUrl }}
         style={styles.image}
         resizeMode="cover"
+        onLoadStart={() => {
+          setHasError(false);
+          setIsLoading(true);
+        }}
+        onLoadEnd={() => setIsLoading(false)}
+        onError={() => {
+          setIsLoading(false);
+          setHasError(true);
+        }}
       />
+      {isLoading ? (
+        <Text style={styles.imageStatus}>Loading image…</Text>
+      ) : null}
+      {hasError ? (
+        <Text style={styles.blockedImage}>Image failed to load.</Text>
+      ) : null}
       <TouchableOpacity onPress={() => openExternalLink(safeUrl)}>
         <Text style={styles.imageCaption}>{getDisplayHost(safeUrl)}</Text>
       </TouchableOpacity>
@@ -65,7 +82,7 @@ function SafeRemoteImage({ url }: { url: string }) {
   );
 }
 
-export default function ChatBubble({ role, text }: ChatBubbleProps) {
+function ChatBubble({ role, text }: ChatBubbleProps) {
   const isUser = role === "user";
   const markdownText = useMemo(() => text || "", [text]);
 
@@ -149,6 +166,7 @@ const markdownStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  imageStatus: { marginTop: 6, fontSize: 12, color: "#CBD5E1" },
   row: { paddingHorizontal: 12, marginVertical: 4 },
   userRow: { alignItems: "flex-end" },
   assistantRow: { alignItems: "flex-start" },
@@ -165,3 +183,8 @@ const styles = StyleSheet.create({
   imageCaption: { marginTop: 6, fontSize: 12, color: "#93C5FD" },
   blockedImage: { color: "#FCA5A5", fontSize: 12 },
 });
+
+export default memo(
+  ChatBubble,
+  (prev, next) => prev.role === next.role && prev.text === next.text,
+);

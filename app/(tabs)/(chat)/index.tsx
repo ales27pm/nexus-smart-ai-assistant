@@ -118,6 +118,7 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractionRef = useRef(false);
+  const messagesCountRef = useRef(0);
 
   useEffect(() => {
     if (!activeId) {
@@ -130,9 +131,13 @@ export default function ChatScreen() {
   const runWebSearch = useCallback(async (query: string): Promise<string> => {
     console.log("[NEXUS] Web search:", query);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
       const response = await fetch(
         `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+        { signal: controller.signal },
       );
+      clearTimeout(timeout);
       const data = await response.json();
       const results: string[] = [];
       if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
@@ -142,27 +147,41 @@ export default function ChatScreen() {
         }
       }
       return results.length > 0
-        ? `Search results for "${query}":\n\n${results.join("\n")}`
+        ? `Search results for "${query}":
+
+${results.join("\n")}`
         : `No structured results for "${query}". Answer from knowledge and note limitations.`;
-    } catch {
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        return `Search timeout for "${query}". Answer from knowledge and note limitations.`;
+      }
       return `Search failed for "${query}". Answer from knowledge.`;
     }
   }, []);
 
   const runCognitiveAnalysis = useCallback(
-    async (problem: string): Promise<string> => {
-      const memories = await loadMemories();
+    async (
+      problem: string,
+      preloadedMemories?: MemoryEntry[],
+    ): Promise<string> => {
+      const memories = preloadedMemories ?? (await loadMemories());
       const relevant = searchMemories(memories, problem, {
         maxResults: 5,
       });
-      const meta = assessMetacognition(problem, 0);
+      const meta = assessMetacognition(problem, messagesCountRef.current);
       const tree = buildThoughtTree(problem, relevant, meta);
       const branches = tree.branches
         .filter((b) => !b.pruned)
         .slice(0, 4)
         .map((b) => `[${(b.confidence * 100).toFixed(0)}%] ${b.hypothesis}`)
         .join("\n");
-      return `## Analysis\nProblem: "${problem}"\nComplexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\n${branches}\n\nExplore highest-confidence paths and synthesize.`;
+      return `## Analysis
+Problem: "${problem}"
+Complexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%
+
+${branches}
+
+Explore highest-confidence paths and synthesize.`;
     },
     [],
   );
@@ -331,9 +350,10 @@ export default function ChatScreen() {
               "Opportunities",
               "Threats",
             ];
+            const memories = await loadMemories();
             const branchAnalyses = await Promise.all(
               dimensions.map((dimension) =>
-                runCognitiveAnalysis(`${input.topic} — ${dimension}`),
+                runCognitiveAnalysis(`${input.topic} — ${dimension}`, memories),
               ),
             );
             return `## Deep Analysis: SWOT
@@ -349,9 +369,10 @@ ${branchAnalyses[idx]}`,
 
           if (framework === "pros_cons") {
             const dimensions = ["Pros", "Cons"];
+            const memories = await loadMemories();
             const branchAnalyses = await Promise.all(
               dimensions.map((dimension) =>
-                runCognitiveAnalysis(`${input.topic} — ${dimension}`),
+                runCognitiveAnalysis(`${input.topic} — ${dimension}`, memories),
               ),
             );
             return `## Deep Analysis: Pros/Cons
@@ -617,6 +638,10 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
   });
+
+  useEffect(() => {
+    messagesCountRef.current = messages.length;
+  }, [messages.length]);
 
   useEffect(() => {
     if (error) {

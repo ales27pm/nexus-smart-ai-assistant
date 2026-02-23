@@ -1,6 +1,6 @@
 import ExpoHfTokenizers from "@naveen521kk/expo-hf-tokenizers";
 import { sha256 } from "js-sha256";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 const HF_COMMIT = "392a6f57223e7ccfe6ef4ebdb2ff101a42d57364";
 const HF_BASE = `https://huggingface.co/dphn/Dolphin3.0-Llama3.2-3B/resolve/${HF_COMMIT}`;
@@ -30,9 +30,7 @@ let pendingTokenizerDownload: Promise<string> | null = null;
 
 function getTokenizerDir() {
   if (tokenizerDirCache) return tokenizerDirCache;
-  const cacheDirectory = (FileSystem as any).cacheDirectory as
-    | string
-    | undefined;
+  const cacheDirectory = FileSystem.cacheDirectory;
   if (!cacheDirectory) {
     throw new Error(
       "FileSystem.cacheDirectory is null - tokenizer cannot be stored",
@@ -51,7 +49,7 @@ async function ensureDir(path: string) {
 
 async function verifySha256(path: string, expectedHash: string) {
   const contents = await FileSystem.readAsStringAsync(path, {
-    encoding: (FileSystem as any).EncodingType.UTF8,
+    encoding: FileSystem.EncodingType.UTF8,
   });
   const digest = sha256(contents);
   if (digest.toLowerCase() !== expectedHash.toLowerCase()) {
@@ -97,9 +95,6 @@ async function ensureTokenizerFilesDownloaded(): Promise<string> {
         await verifySha256(toFile, expectedHash);
       }),
     );
-
-    const tokenizerJson = `${tokenizerDir}/tokenizer.json`;
-    await verifySha256(tokenizerJson, TOKENIZER_SHA256["tokenizer.json"]);
 
     return tokenizerDir;
   })();

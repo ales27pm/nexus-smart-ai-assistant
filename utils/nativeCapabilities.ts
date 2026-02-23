@@ -97,26 +97,30 @@ export async function searchVectorDocuments(
     query_vector AS (
       SELECT CAST(value AS REAL) AS q_value, key AS idx
       FROM json_each(?)
+    ),
+    query_norm AS (
+      SELECT SQRT(SUM(q_value * q_value)) AS value
+      FROM query_vector
     )
     SELECT
       d.id AS id,
       d.content AS content,
       CASE
-        WHEN norm.doc_norm = 0 OR norm.query_norm = 0 THEN 0
-        ELSE norm.dot_product / (norm.doc_norm * norm.query_norm)
+        WHEN norm.doc_norm = 0 OR qn.value = 0 THEN 0
+        ELSE norm.dot_product / (norm.doc_norm * qn.value)
       END AS score
     FROM recent_docs d
     JOIN (
       SELECT
         vd.id,
         SUM(CAST(doc.value AS REAL) * q.q_value) AS dot_product,
-        SQRT(SUM(CAST(doc.value AS REAL) * CAST(doc.value AS REAL))) AS doc_norm,
-        SQRT(SUM(q.q_value * q.q_value)) AS query_norm
+        SQRT(SUM(CAST(doc.value AS REAL) * CAST(doc.value AS REAL))) AS doc_norm
       FROM recent_docs vd
       JOIN json_each(vd.embedding) doc
       JOIN query_vector q ON q.idx = doc.key
       GROUP BY vd.id
     ) norm ON norm.id = d.id
+    CROSS JOIN query_norm qn
     ORDER BY score DESC
     LIMIT ?;`,
     candidateLimit,
