@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   TextInput,
@@ -10,16 +10,15 @@ import {
   Image,
   Alert,
   ActivityIndicator,
-  Text,
-} from 'react-native';
-import { Send, Plus, Mic, X, MicOff, AudioLines } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
-import Colors from '@/constants/colors';
+} from "react-native";
+import { Send, Plus, Mic, X, MicOff, AudioLines } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { Audio } from "expo-av";
+import Colors from "@/constants/colors";
 
 export interface ChatFile {
-  type: 'file';
+  type: "file";
   mimeType: string;
   uri: string;
 }
@@ -30,10 +29,14 @@ interface ChatInputProps {
   onOpenVoiceMode?: () => void;
 }
 
-const STT_URL = 'https://toolkit.rork.com/stt/transcribe/';
+const STT_URL = "https://toolkit.rork.com/stt/transcribe/";
 
-export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInputProps) {
-  const [text, setText] = useState('');
+export default function ChatInput({
+  onSend,
+  disabled,
+  onOpenVoiceMode,
+}: ChatInputProps) {
+  const [text, setText] = useState("");
   const [attachedImages, setAttachedImages] = useState<ChatFile[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -50,57 +53,77 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
     if ((!trimmed && attachedImages.length === 0) || disabled) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 0.85, duration: 80, useNativeDriver: true }),
-      Animated.timing(scaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
+      Animated.timing(scaleAnim, {
+        toValue: 0.85,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 80,
+        useNativeDriver: true,
+      }),
     ]).start();
     const files = attachedImages.length > 0 ? [...attachedImages] : undefined;
     onSend(trimmed, files);
-    setText('');
+    setText("");
     setAttachedImages([]);
   }, [text, attachedImages, disabled, onSend, scaleAnim]);
 
   const handlePickImage = useCallback(async () => {
     try {
-      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permResult.granted) {
-        Alert.alert('Permission needed', 'Please allow access to your photo library to attach images.');
+        Alert.alert(
+          "Permission needed",
+          "Please allow access to your photo library to attach images.",
+        );
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
+        mediaTypes: ["images"],
         quality: 0.8,
         base64: true,
         allowsMultipleSelection: false,
       });
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        const mimeType = asset.mimeType ?? 'image/jpeg';
+        const mimeType = asset.mimeType ?? "image/jpeg";
         let uri: string;
         if (asset.base64) {
           uri = `data:${mimeType};base64,${asset.base64}`;
         } else {
           uri = asset.uri;
         }
-        setAttachedImages(prev => [...prev, { type: 'file', mimeType, uri }]);
+        setAttachedImages((prev) => [...prev, { type: "file", mimeType, uri }]);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        console.log('[ChatInput] Image attached:', mimeType);
+        console.log("[ChatInput] Image attached:", mimeType);
       }
     } catch (e) {
-      console.log('[ChatInput] Image picker error:', e);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
+      console.log("[ChatInput] Image picker error:", e);
+      Alert.alert("Error", "Failed to pick image. Please try again.");
     }
   }, []);
 
   const removeImage = useCallback((index: number) => {
-    setAttachedImages(prev => prev.filter((_, i) => i !== index));
+    setAttachedImages((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
   const startPulse = useCallback(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 600, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
-      ])
+        Animated.timing(pulseAnim, {
+          toValue: 1.15,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 600,
+          useNativeDriver: true,
+        }),
+      ]),
     );
     pulseLoopRef.current = loop;
     loop.start();
@@ -118,23 +141,23 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
     setIsTranscribing(true);
     try {
       const response = await fetch(STT_URL, {
-        method: 'POST',
+        method: "POST",
         body: formData,
       });
       if (!response.ok) {
-        console.log('[ChatInput] STT error:', response.status);
-        Alert.alert('Error', 'Speech recognition failed. Please try again.');
+        console.log("[ChatInput] STT error:", response.status);
+        Alert.alert("Error", "Speech recognition failed. Please try again.");
         return;
       }
       const data = await response.json();
       if (data.text) {
-        setText(prev => (prev ? prev + ' ' + data.text : data.text));
+        setText((prev) => (prev ? prev + " " + data.text : data.text));
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        console.log('[ChatInput] Transcribed:', data.text.substring(0, 60));
+        console.log("[ChatInput] Transcribed:", data.text.substring(0, 60));
       }
     } catch (e) {
-      console.log('[ChatInput] Transcription error:', e);
-      Alert.alert('Error', 'Failed to transcribe audio. Please try again.');
+      console.log("[ChatInput] Transcription error:", e);
+      Alert.alert("Error", "Failed to transcribe audio. Please try again.");
     } finally {
       setIsTranscribing(false);
     }
@@ -144,7 +167,10 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
     try {
       const perm = await Audio.requestPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('Permission needed', 'Please allow microphone access for voice input.');
+        Alert.alert(
+          "Permission needed",
+          "Please allow microphone access for voice input.",
+        );
         return;
       }
       await Audio.setAudioModeAsync({
@@ -154,7 +180,7 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         ios: {
-          extension: '.wav',
+          extension: ".wav",
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,
           audioQuality: Audio.IOSAudioQuality.HIGH,
           sampleRate: 44100,
@@ -164,6 +190,14 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
           linearPCMIsBigEndian: false,
           linearPCMIsFloat: false,
         },
+        android: {
+          extension: ".m4a",
+          outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+          audioEncoder: Audio.AndroidAudioEncoder.AAC,
+          sampleRate: 44100,
+          numberOfChannels: 1,
+          bitRate: 128000,
+        },
         web: {},
       });
       await recording.startAsync();
@@ -171,10 +205,10 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       setIsRecording(true);
       startPulse();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('[ChatInput] Recording started (native)');
+      console.log("[ChatInput] Recording started (native)");
     } catch (e) {
-      console.log('[ChatInput] Recording start error:', e);
-      Alert.alert('Error', 'Failed to start recording.');
+      console.log("[ChatInput] Recording start error:", e);
+      Alert.alert("Error", "Failed to start recording.");
     }
   }, [startPulse]);
 
@@ -188,9 +222,9 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       recordingRef.current = null;
       setIsRecording(false);
       stopPulse();
-      console.log('[ChatInput] Recording stopped, uri:', uri);
+      console.log("[ChatInput] Recording stopped, uri:", uri);
       if (!uri) return;
-      const uriParts = uri.split('.');
+      const uriParts = uri.split(".");
       const fileType = uriParts[uriParts.length - 1];
       const formData = new FormData();
       const audioFile = {
@@ -198,10 +232,10 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
         name: `recording.${fileType}`,
         type: `audio/${fileType}`,
       };
-      formData.append('audio', audioFile as any);
+      formData.append("audio", audioFile as any);
       await transcribeAudio(formData);
     } catch (e) {
-      console.log('[ChatInput] Recording stop error:', e);
+      console.log("[ChatInput] Recording stop error:", e);
       setIsRecording(false);
       stopPulse();
     }
@@ -212,7 +246,9 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       chunksRef.current = [];
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: "audio/webm",
+      });
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -221,10 +257,10 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       setIsRecording(true);
       startPulse();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('[ChatInput] Recording started (web)');
+      console.log("[ChatInput] Recording started (web)");
     } catch (e) {
-      console.log('[ChatInput] Web recording error:', e);
-      Alert.alert('Error', 'Failed to access microphone.');
+      console.log("[ChatInput] Web recording error:", e);
+      Alert.alert("Error", "Failed to access microphone.");
     }
   }, [startPulse]);
 
@@ -234,24 +270,26 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
       if (!mediaRecorder) return;
       return new Promise<void>((resolve) => {
         mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+          const blob = new Blob(chunksRef.current, { type: "audio/webm" });
           if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current.getTracks().forEach((track) => track.stop());
             streamRef.current = null;
           }
           mediaRecorderRef.current = null;
           setIsRecording(false);
           stopPulse();
-          const file = new File([blob], 'recording.webm', { type: 'audio/webm' });
+          const file = new File([blob], "recording.webm", {
+            type: "audio/webm",
+          });
           const formData = new FormData();
-          formData.append('audio', file);
+          formData.append("audio", file);
           await transcribeAudio(formData);
           resolve();
         };
         mediaRecorder.stop();
       });
     } catch (e) {
-      console.log('[ChatInput] Web stop error:', e);
+      console.log("[ChatInput] Web stop error:", e);
       setIsRecording(false);
       stopPulse();
     }
@@ -260,19 +298,27 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
   const toggleRecording = useCallback(async () => {
     if (disabled || isTranscribing) return;
     if (isRecording) {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         await stopRecordingWeb();
       } else {
         await stopRecordingNative();
       }
     } else {
-      if (Platform.OS === 'web') {
+      if (Platform.OS === "web") {
         await startRecordingWeb();
       } else {
         await startRecordingNative();
       }
     }
-  }, [isRecording, disabled, isTranscribing, startRecordingNative, stopRecordingNative, startRecordingWeb, stopRecordingWeb]);
+  }, [
+    isRecording,
+    disabled,
+    isTranscribing,
+    startRecordingNative,
+    stopRecordingNative,
+    startRecordingWeb,
+    stopRecordingWeb,
+  ]);
 
   const handleOpenVoiceMode = useCallback(() => {
     if (onOpenVoiceMode && !disabled && !isTranscribing) {
@@ -285,18 +331,15 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
     >
       <View style={styles.container}>
         {attachedImages.length > 0 && (
           <View style={styles.previewRow}>
             {attachedImages.map((img, idx) => (
               <View key={idx} style={styles.previewItem}>
-                <Image
-                  source={{ uri: img.uri }}
-                  style={styles.previewImage}
-                />
+                <Image source={{ uri: img.uri }} style={styles.previewImage} />
                 <TouchableOpacity
                   style={styles.removeBtn}
                   onPress={() => removeImage(idx)}
@@ -317,14 +360,27 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
             disabled={disabled}
             testID="attach-button"
           >
-            <Plus size={18} color={disabled ? Colors.dark.textTertiary : Colors.dark.textSecondary} />
+            <Plus
+              size={18}
+              color={
+                disabled ? Colors.dark.textTertiary : Colors.dark.textSecondary
+              }
+            />
           </TouchableOpacity>
           <TextInput
             style={styles.input}
             value={text}
             onChangeText={setText}
-            placeholder={isRecording ? 'Listening...' : isTranscribing ? 'Transcribing...' : 'Ask anything...'}
-            placeholderTextColor={isRecording ? Colors.dark.error : Colors.dark.textTertiary}
+            placeholder={
+              isRecording
+                ? "Listening..."
+                : isTranscribing
+                  ? "Transcribing..."
+                  : "Ask anything..."
+            }
+            placeholderTextColor={
+              isRecording ? Colors.dark.error : Colors.dark.textTertiary
+            }
             multiline
             maxLength={4000}
             editable={!disabled && !isRecording}
@@ -341,7 +397,10 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
                 activeOpacity={0.7}
                 testID="send-button"
               >
-                <Send size={16} color={disabled ? Colors.dark.textTertiary : '#fff'} />
+                <Send
+                  size={16}
+                  color={disabled ? Colors.dark.textTertiary : "#fff"}
+                />
               </TouchableOpacity>
             </Animated.View>
           ) : isTranscribing ? (
@@ -357,9 +416,14 @@ export default function ChatInput({ onSend, disabled, onOpenVoiceMode }: ChatInp
                 disabled={disabled}
                 testID="voice-mode-button"
               >
-                <AudioLines size={16} color={disabled ? Colors.dark.textTertiary : Colors.dark.cyan} />
+                <AudioLines
+                  size={16}
+                  color={disabled ? Colors.dark.textTertiary : Colors.dark.cyan}
+                />
               </TouchableOpacity>
-              <Animated.View style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}>
+              <Animated.View
+                style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}
+              >
                 <TouchableOpacity
                   style={[styles.actionBtn, isRecording && styles.recordingBtn]}
                   activeOpacity={0.6}
@@ -391,13 +455,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.background,
   },
   previewRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 8,
     marginBottom: 8,
     paddingHorizontal: 4,
   },
   previewItem: {
-    position: 'relative',
+    position: "relative",
   },
   previewImage: {
     width: 56,
@@ -406,19 +470,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.surfaceElevated,
   },
   removeBtn: {
-    position: 'absolute',
+    position: "absolute",
     top: -4,
     right: -4,
     width: 18,
     height: 18,
     borderRadius: 9,
     backgroundColor: Colors.dark.error,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+    flexDirection: "row",
+    alignItems: "flex-end",
     backgroundColor: Colors.dark.inputBackground,
     borderRadius: 22,
     borderWidth: 1,
@@ -431,20 +495,20 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   micRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 0,
   },
   voiceModeBtn: {
     width: 32,
     height: 36,
     borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   recordingBtn: {
     backgroundColor: Colors.dark.errorDim,
@@ -463,8 +527,8 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     backgroundColor: Colors.dark.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   sendBtnDisabled: {
     backgroundColor: Colors.dark.surfaceHover,
