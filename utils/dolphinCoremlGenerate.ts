@@ -12,6 +12,8 @@ type GenOpts = {
   topK?: number;
   topP?: number;
   repetitionPenalty?: number;
+  history?: string[];
+  maxContext?: number;
 };
 
 let modelLoaded = false;
@@ -60,7 +62,6 @@ async function getStopTokenIds(): Promise<readonly [number, number]> {
     stopTokenIdsCache = resolved;
     return resolved;
   } catch (error) {
-    // Do not cache rejection; allow later retries.
     stopTokenIdsInFlight = null;
     throw error;
   } finally {
@@ -101,12 +102,19 @@ export async function dolphinCoremlGenerate(
 ) {
   await ensureModelLoaded();
 
-  const enc = await dolphinEncode(prompt);
-  const promptLen = enc.ids.length;
+  const joinedPrompt = opts.history?.length
+    ? `${opts.history.join("\n")}\n${prompt}`
+    : prompt;
+  const enc = await dolphinEncode(joinedPrompt);
+  const contextMax =
+    opts.maxContext ?? DEFAULT_COREML_LOAD_OPTIONS.maxContext ?? 2048;
+  const trimmedIds =
+    enc.ids.length > contextMax ? enc.ids.slice(-contextMax) : enc.ids;
+  const promptLen = trimmedIds.length;
 
   const [eot, eos] = await getStopTokenIds();
 
-  const outIds: number[] = await CoreMLLLM.generateFromTokens(enc.ids, {
+  const outIds: number[] = await CoreMLLLM.generateFromTokens(trimmedIds, {
     maxNewTokens: opts.maxNewTokens ?? 192,
     temperature: opts.temperature ?? 0.7,
     topK: opts.topK ?? 40,

@@ -25,7 +25,6 @@ import Colors from "@/constants/colors";
 import {
   DEFAULT_COREML_EOS_TOKEN_ID,
   DEFAULT_COREML_LOAD_OPTIONS,
-  DEFAULT_COREML_TOKENIZER,
   buildCoreMLChatPrompt,
   CoreMLBridge,
 } from "@/utils/coreml";
@@ -209,10 +208,10 @@ export default function DeviceNativeHubScreen() {
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.vocabJsonAssetPath as string,
+    "ios/resources/tokenizers/gpt2/vocab.json",
   );
   const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER.mergesTxtAssetPath as string,
+    "ios/resources/tokenizers/gpt2/merges.txt",
   );
 
   const runSafely = useSafeAction(setStatus);
@@ -284,6 +283,7 @@ export default function DeviceNativeHubScreen() {
           topP: 0.95,
           repetitionPenalty: 1.05,
           tokenizer: {
+            kind: "gpt2_bpe",
             vocabJsonAssetPath: coreMLVocabPath,
             mergesTxtAssetPath: coreMLMergesPath,
             eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
