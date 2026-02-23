@@ -176,11 +176,11 @@ function keychainImportAndFindIdentity(p12Path, password, fingerprint) {
 
     const lines = String(ids.stdout).split("\n");
     const hashes = lines
-      .map((l) => l.match(/\)\s*([A-F0-9]{40})\s*"/))
+      .map((l) => l.match(/\)\s*([A-Fa-f0-9]{40})\s*"/))
       .filter(Boolean)
-      .map((m) => m[1]);
+      .map((m) => m[1].toLowerCase());
 
-    const ok = hashes.includes(fingerprint);
+    const ok = hashes.includes(fingerprint.toLowerCase());
     return ok
       ? { ok: true }
       : {
