@@ -4,6 +4,7 @@ import * as tok from "@/utils/dolphinTokenizer";
 
 jest.mock("@/modules/expo-coreml-llm", () => ({
   CoreMLLLM: {
+    isLoaded: jest.fn().mockResolvedValue(false),
     loadModel: jest.fn().mockResolvedValue(undefined),
     generateFromTokens: jest.fn().mockResolvedValue([10, 11, 12, 99]),
   },

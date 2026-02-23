@@ -26,8 +26,6 @@ describe("coreml utils", () => {
     expect(DEFAULT_COREML_LOAD_OPTIONS.modelFile).toBe(
       "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
     );
-    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.vocabJsonAssetPath).toBe(
-      "module:tokenizers/gpt2/vocab.json",
-    );
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.kind).toBe("none");
   });
 });

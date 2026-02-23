@@ -15,10 +15,7 @@ final class CoreMLLLMRunner {
   private var maxContext: Int?
 
   private var expectsSingleToken: Bool = false
-
   private var hasState: Bool = false
-  @available(iOS 18.0, *)
-  private var state: MLState?
 
   private let lock = NSLock()
 
@@ -28,8 +25,9 @@ final class CoreMLLLMRunner {
   func unload() {
     lock.lock(); defer { lock.unlock() }
     model = nil
-    if #available(iOS 18.0, *) { state = nil }
     isLoaded = false
+    expectsSingleToken = false
+    hasState = false
     tokenizerCacheKey = nil
     tokenizerCache = nil
   }
@@ -45,45 +43,55 @@ final class CoreMLLLMRunner {
     )
     let loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
 
+    let inDesc = loaded.modelDescription.inputDescriptionsByName[options.inputIdsName]
+    let shape = inDesc?.multiArrayConstraint?.shape.map { $0.intValue } ?? []
+    let detectedSingleToken = (shape.count == 2 && shape[1] == 1) || shape == [1, 1]
+
+    let detectedHasState: Bool
+    if #available(iOS 18.0, *) {
+      detectedHasState = !loaded.modelDescription.stateDescriptionsByName.isEmpty
+    } else {
+      detectedHasState = false
+    }
+
+    lock.lock()
     self.inputIdsName = options.inputIdsName
     self.attentionMaskName = options.attentionMaskName
     self.cachePositionName = options.cachePositionName
     self.logitsName = options.logitsName
     self.eosTokenId = options.eosTokenId
     self.maxContext = options.maxContext
-
-    let inDesc = loaded.modelDescription.inputDescriptionsByName[self.inputIdsName]
-    let shape = inDesc?.multiArrayConstraint?.shape.map { $0.intValue } ?? []
-    self.expectsSingleToken = (shape.count == 2 && shape[1] == 1) || shape == [1, 1]
-
-    if #available(iOS 18.0, *) {
-      self.hasState = !loaded.modelDescription.stateDescriptionsByName.isEmpty
-    } else {
-      self.hasState = false
-    }
-
+    self.expectsSingleToken = detectedSingleToken
+    self.hasState = detectedHasState
     self.model = loaded
     self.isLoaded = true
+    lock.unlock()
 
     return Types.ModelInfo(
       loaded: true,
       modelURL: modelURL.absoluteString,
       computeUnits: options.computeUnits,
-      expectsSingleToken: self.expectsSingleToken,
-      hasState: self.hasState,
-      inputIdsName: self.inputIdsName,
-      attentionMaskName: self.attentionMaskName,
-      cachePositionName: self.cachePositionName,
-      logitsName: self.logitsName,
-      eosTokenId: self.eosTokenId,
-      maxContext: self.maxContext
+      expectsSingleToken: detectedSingleToken,
+      hasState: detectedHasState,
+      inputIdsName: options.inputIdsName,
+      attentionMaskName: options.attentionMaskName,
+      cachePositionName: options.cachePositionName,
+      logitsName: options.logitsName,
+      eosTokenId: options.eosTokenId,
+      maxContext: options.maxContext
     )
   }
 
   func getTokenizer(configDict: [String: Any]) throws -> Tokenizer {
     let cfg = try Types.TokenizerConfig(from: configDict)
     let key = "\(cfg.kind.rawValue)||\(cfg.vocabJsonAssetPath ?? "")||\(cfg.mergesTxtAssetPath ?? "")||\(cfg.bosTokenId ?? -1)||\(cfg.eosTokenId ?? -1)"
-    if let k = tokenizerCacheKey, k == key, let tok = tokenizerCache { return tok }
+
+    lock.lock()
+    if let k = tokenizerCacheKey, k == key, let tok = tokenizerCache {
+      lock.unlock()
+      return tok
+    }
+    lock.unlock()
 
     let tok: Tokenizer
     switch cfg.kind {
@@ -92,13 +100,22 @@ final class CoreMLLLMRunner {
         NSLocalizedDescriptionKey: "tokenizer.kind=none not supported for token-mode models."
       ])
     case .gpt2_bpe:
-      let vocabURL = try ResourceResolver.resolveModuleAssetPath(cfg.vocabJsonAssetPath!)
-      let mergesURL = try ResourceResolver.resolveModuleAssetPath(cfg.mergesTxtAssetPath!)
+      guard let vocabPath = cfg.vocabJsonAssetPath,
+            let mergesPath = cfg.mergesTxtAssetPath else {
+        throw NSError(domain: "ExpoCoreMLLLM", code: 121, userInfo: [
+          NSLocalizedDescriptionKey: "Missing GPT2 BPE asset path: vocabJsonAssetPath/mergesTxtAssetPath"
+        ])
+      }
+      let vocabURL = try ResourceResolver.resolveModuleAssetPath(vocabPath)
+      let mergesURL = try ResourceResolver.resolveModuleAssetPath(mergesPath)
       tok = try GPT2BPETokenizer(vocabURL: vocabURL, mergesURL: mergesURL, bosTokenId: cfg.bosTokenId, eosTokenId: cfg.eosTokenId)
     }
 
+    lock.lock()
     tokenizerCacheKey = key
     tokenizerCache = tok
+    lock.unlock()
+
     return tok
   }
 
@@ -113,18 +130,17 @@ final class CoreMLLLMRunner {
     let tokenizer = try getTokenizer(configDict: tokDict)
     let tokens = tokenizer.encode(prompt)
 
+    lock.lock()
+    let localMaxContext = maxContext
+    let localEos = eosTokenId
+    lock.unlock()
+
     let outTokens = try generateFromTokensInternal(
       model: m,
       initialTokens: tokens,
-      maxNewTokens: options.maxNewTokens,
-      temperature: options.temperature,
-      topK: options.topK,
-      topP: options.topP,
-      repetitionPenalty: options.repetitionPenalty,
-      stopTokenIds: options.stopTokenIds,
-      seed: options.seed,
-      maxContext: self.maxContext,
-      eosTokenId: self.eosTokenId ?? tokenizer.eosTokenId
+      sampling: options.sampling,
+      maxContext: localMaxContext,
+      eosTokenId: localEos ?? tokenizer.eosTokenId
     )
 
     return tokenizer.decode(outTokens)
@@ -135,54 +151,53 @@ final class CoreMLLLMRunner {
       throw NSError(domain: "ExpoCoreMLLLM", code: 100, userInfo: [NSLocalizedDescriptionKey: "Model not loaded. Call loadModelAsync first."])
     }
 
+    lock.lock()
+    let localMaxContext = maxContext
+    let localEos = eosTokenId
+    lock.unlock()
+
     return try generateFromTokensInternal(
       model: m,
       initialTokens: initialTokens,
-      maxNewTokens: options.maxNewTokens,
-      temperature: options.temperature,
-      topK: options.topK,
-      topP: options.topP,
-      repetitionPenalty: options.repetitionPenalty,
-      stopTokenIds: options.stopTokenIds,
-      seed: options.seed,
-      maxContext: options.maxContext ?? self.maxContext,
-      eosTokenId: self.eosTokenId
+      sampling: options.sampling,
+      maxContext: options.maxContext ?? localMaxContext,
+      eosTokenId: localEos
     )
   }
 
   private func generateFromTokensInternal(
     model: MLModel,
     initialTokens: [Int],
-    maxNewTokens: Int,
-    temperature: Float,
-    topK: Int,
-    topP: Float,
-    repetitionPenalty: Float,
-    stopTokenIds: [Int],
-    seed: Int?,
+    sampling: Types.SamplingOptions,
     maxContext: Int?,
     eosTokenId: Int?
   ) throws -> [Int] {
-    var rng = SeededGenerator(seed: seed ?? Int.random(in: Int.min...Int.max))
+    var rng = SeededGenerator(seed: sampling.seed ?? Int.random(in: Int.min...Int.max))
 
     var tokens = initialTokens
-    let stopSet = Set(stopTokenIds)
+    let stopSet = Set(sampling.stopTokenIds)
 
-    lock.lock(); defer { lock.unlock() }
+    lock.lock()
+    let localHasState = hasState
+    let localSingleToken = expectsSingleToken
+    lock.unlock()
 
-    if #available(iOS 18.0, *) {
-      if hasState {
-        self.state = try model.makeState()
-      } else {
-        self.state = nil
-      }
+    var localState: MLState?
+    if #available(iOS 18.0, *), localHasState {
+      localState = try model.makeState()
     }
 
-    if expectsSingleToken {
+    if localSingleToken {
       var pos = 0
       var lastLogits: [Float]? = nil
       for t in tokens {
-        lastLogits = try predictSingleToken(model: model, tokenId: t, position: pos)
+        let cachePosition = clampCachePosition(pos, maxContext: maxContext)
+        lastLogits = try predictSingleToken(
+          model: model,
+          tokenId: t,
+          position: cachePosition,
+          state: localState
+        )
         pos += 1
       }
 
@@ -192,7 +207,7 @@ final class CoreMLLLMRunner {
         ])
       }
 
-      for _ in 0..<maxNewTokens {
+      for _ in 0..<sampling.maxNewTokens {
         let ctx: [Int]
         if let mc = maxContext, mc > 0, tokens.count > mc {
           ctx = Array(tokens.suffix(mc))
@@ -201,11 +216,11 @@ final class CoreMLLLMRunner {
         }
 
         var logitsMutable = logits
-        Sampling.applyRepetitionPenalty(&logitsMutable, tokenIds: ctx, penalty: repetitionPenalty)
+        Sampling.applyRepetitionPenalty(&logitsMutable, tokenIds: ctx, penalty: sampling.repetitionPenalty)
 
-        var probs = Sampling.softmax(logitsMutable, temperature: temperature)
-        if topK > 0 { Sampling.topKFilter(&probs, k: topK) }
-        if topP < 1.0 { Sampling.topPFilter(&probs, p: topP) }
+        var probs = Sampling.softmax(logitsMutable, temperature: sampling.temperature)
+        if sampling.topK > 0 { Sampling.topKFilter(&probs, k: sampling.topK) }
+        if sampling.topP < 1.0 { Sampling.topPFilter(&probs, p: sampling.topP) }
 
         let next = Sampling.sample(probs: probs, rng: &rng)
         tokens.append(next)
@@ -213,7 +228,13 @@ final class CoreMLLLMRunner {
         if stopSet.contains(next) { break }
         if let eos = eosTokenId, next == eos { break }
 
-        logits = try predictSingleToken(model: model, tokenId: next, position: pos)
+        let cachePosition = clampCachePosition(pos, maxContext: maxContext)
+        logits = try predictSingleToken(
+          model: model,
+          tokenId: next,
+          position: cachePosition,
+          state: localState
+        )
         pos += 1
       }
 
@@ -225,28 +246,47 @@ final class CoreMLLLMRunner {
     ])
   }
 
-  private func predictSingleToken(model: MLModel, tokenId: Int, position: Int) throws -> [Float] {
+  private func clampCachePosition(_ position: Int, maxContext: Int?) -> Int {
+    if let mc = maxContext, mc > 0 {
+      return min(position, mc - 1)
+    }
+    return position
+  }
+
+  private func predictSingleToken(
+    model: MLModel,
+    tokenId: Int,
+    position: Int,
+    state: MLState?
+  ) throws -> [Float] {
     let inputIds = try makeInt32MultiArray2D(value: tokenId)
     let attnMask = try makeInt32MultiArray2D(value: 1)
     let cachePos = try makeInt32MultiArray1D(value: position)
 
+    lock.lock()
+    let inputName = inputIdsName
+    let maskName = attentionMaskName
+    let cacheName = cachePositionName
+    let outName = logitsName
+    lock.unlock()
+
     let features: [String: Any] = [
-      inputIdsName: inputIds,
-      attentionMaskName: attnMask,
-      cachePositionName: cachePos,
+      inputName: inputIds,
+      maskName: attnMask,
+      cacheName: cachePos,
     ]
 
     let provider = try MLDictionaryFeatureProvider(dictionary: features.mapValues { $0 as Any })
     let opts = MLPredictionOptions()
 
     let out: MLFeatureProvider
-    if #available(iOS 18.0, *), hasState, let st = state {
+    if #available(iOS 18.0, *), let st = state {
       out = try model.prediction(from: provider, using: st, options: opts)
     } else {
       out = try model.prediction(from: provider, options: opts)
     }
 
-    guard let mv = out.featureValue(for: logitsName)?.multiArrayValue else {
+    guard let mv = out.featureValue(for: outName)?.multiArrayValue else {
       for n in out.featureNames {
         if let mm = out.featureValue(for: n)?.multiArrayValue {
           return try extractLogits(mm)

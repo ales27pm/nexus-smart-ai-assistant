@@ -1,6 +1,6 @@
 import Foundation
 
-final class ResourceResolver {
+enum ResourceResolver {
   static func resourceBundle() -> Bundle? {
     let moduleBundle = Bundle(for: ExpoCoreMLLLMModule.self)
 

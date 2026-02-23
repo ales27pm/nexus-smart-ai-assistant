@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import {
   buildCoreMLChatPrompt,
@@ -51,25 +51,34 @@ export function useCoreMLChat() {
     };
   }, []);
 
-  async function generate(systemPrompt: string, userText: string) {
-    if (!coreML) {
-      throw new Error(
-        "CoreML module not linked. Do: npm i, then npx expo prebuild --clean, pod install, and build/run an iOS dev client containing this native module.",
+  const generate = useCallback(
+    async (systemPrompt: string, userText: string) => {
+      if (!coreML) {
+        throw new Error(
+          "CoreML module not linked. Do: npm i, then npx expo prebuild --clean, pod install, and build/run an iOS dev client containing this native module.",
+        );
+      }
+
+      const loaded = await coreML.isLoaded();
+      if (!loaded) {
+        await coreML.loadModel(DEFAULT_COREML_LOAD_OPTIONS);
+      }
+
+      const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
+      const rawOutput = await coreML.generate(
+        prompt,
+        DEFAULT_COREML_GENERATE_OPTIONS,
       );
-    }
-
-    const loaded = await coreML.isLoaded();
-    if (!loaded) {
-      await coreML.loadModel(DEFAULT_COREML_LOAD_OPTIONS);
-    }
-
-    const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-    const rawOutput = await coreML.generate(
-      prompt,
+      return cleanCoreMLOutput(rawOutput, prompt);
+    },
+    [
+      coreML,
+      DEFAULT_COREML_LOAD_OPTIONS,
       DEFAULT_COREML_GENERATE_OPTIONS,
-    );
-    return cleanCoreMLOutput(rawOutput, prompt);
-  }
+      buildCoreMLChatPrompt,
+      cleanCoreMLOutput,
+    ],
+  );
 
   return { coreML, isAvailable, generate };
 }

@@ -30,14 +30,22 @@ TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/dolphin_llama3_2_3b"
 
 mkdir -p "$MODEL_DEST" "$TOK_DEST"
 
+# Safer install path (no curl|bash). Prefer pipx, then pip --user.
 if ! command -v hf >/dev/null 2>&1; then
-  echo "[i] Installing hf CLI..."
-  curl -LsSf https://hf.co/cli/install.sh | bash
-  export PATH="$HOME/.local/bin:$PATH"
+  echo "[i] 'hf' CLI not found; attempting safe installation via pipx/pip..."
+  if command -v pipx >/dev/null 2>&1; then
+    pipx install 'huggingface_hub[cli]' || true
+    export PATH="$HOME/.local/bin:$PATH"
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -m pip install --user 'huggingface_hub[cli]' || true
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
 fi
 
 if ! command -v hf >/dev/null 2>&1; then
-  echo "[!] hf CLI still not found. Try opening a new terminal or run:"
+  echo "[!] hf CLI still not found. Install manually with one of:"
+  echo "    pipx install 'huggingface_hub[cli]'"
+  echo "    python3 -m pip install --user 'huggingface_hub[cli]'"
   echo "    export PATH=\"$HOME/.local/bin:\$PATH\""
   exit 3
 fi
@@ -47,6 +55,7 @@ HF_ARGS=(download "$COREML_REPO" --include "$MODEL_FILE/**" --include "$MODEL_FI
 if [[ -n "${HF_TOKEN:-}" ]]; then HF_ARGS+=(--token "$HF_TOKEN"); fi
 hf "${HF_ARGS[@]}"
 
+: "${MODEL_FILE:?MODEL_FILE cannot be empty}"
 rm -rf "$MODEL_DEST/$MODEL_FILE"
 cp -R "$ROOT_DIR/.hf_models/Dolphin3.0-CoreML/$MODEL_FILE" "$MODEL_DEST/$MODEL_FILE"
 
