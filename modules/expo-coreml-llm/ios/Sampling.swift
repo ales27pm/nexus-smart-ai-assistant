@@ -70,6 +70,7 @@ struct Sampling {
   }
 
   static func sample(probs: [Float], randomValue: Float) -> Int {
+    guard !probs.isEmpty else { return 0 }  // or preconditionFailure("probs must not be empty")
     let r = min(max(randomValue, 0), 0.999_999_94)
     var cum: Float = 0
     for (i, p) in probs.enumerated() {
