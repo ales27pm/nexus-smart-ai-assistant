@@ -118,10 +118,7 @@ final class GPT2BPETokenizer: Tokenizer {
         bytes.append(b)
       }
     }
-    if let decoded = String(bytes: bytes, encoding: .utf8) {
-      return decoded
-    }
-    return "�"
+    return String(decoding: bytes, as: UTF8.self)
   }
 
   // MARK: BPE
@@ -215,7 +212,7 @@ final class GPT2BPETokenizer: Tokenizer {
     // Not 100% identical to python regex, but compatible enough for real BPE vocab/merges.
     //
     // If you need exact parity, we can implement the full OpenAI regex.
-    let pattern = #"'s|'t|'re|'ve|'m|'ll|'d| ?[A-Za-z]+| ?\d+| ?[^A-Za-z\s]+|\s+(?!\S)|\s+"#
+    let pattern = #"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"#
     let ns = text as NSString
     do {
       let re = try NSRegularExpression(pattern: pattern, options: [])

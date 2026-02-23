@@ -15,6 +15,7 @@ type GenOpts = {
 };
 
 let modelLoaded = false;
+let modelLoadInFlight: Promise<void> | null = null;
 let stopTokenIdsCache: readonly [number, number] | null = null;
 let stopTokenIdsInFlight: Promise<readonly [number, number]> | null = null;
 
@@ -71,15 +72,27 @@ async function getStopTokenIds(): Promise<readonly [number, number]> {
 
 async function ensureModelLoaded() {
   if (modelLoaded) return;
-  const loaded = await CoreMLLLM.isLoaded();
-  if (!loaded) {
-    await CoreMLLLM.loadModel({
-      ...DEFAULT_COREML_LOAD_OPTIONS,
-      modelFile: "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
-      computeUnits: "cpuAndNeuralEngine",
-    });
+  if (modelLoadInFlight) {
+    await modelLoadInFlight;
+    return;
   }
-  modelLoaded = true;
+
+  modelLoadInFlight = (async () => {
+    const loaded = await CoreMLLLM.isLoaded();
+    if (!loaded) {
+      await CoreMLLLM.loadModel({
+        ...DEFAULT_COREML_LOAD_OPTIONS,
+        computeUnits: "cpuAndNeuralEngine",
+      });
+    }
+    modelLoaded = true;
+  })();
+
+  try {
+    await modelLoadInFlight;
+  } finally {
+    modelLoadInFlight = null;
+  }
 }
 
 export async function dolphinCoremlGenerate(
