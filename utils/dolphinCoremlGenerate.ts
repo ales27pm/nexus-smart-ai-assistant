@@ -15,10 +15,59 @@ type GenOpts = {
 };
 
 let modelLoaded = false;
-const STOP_TOKEN_IDS_PROMISE = Promise.all([
-  dolphinTokenId("<|eot_id|>"),
-  dolphinTokenId("<|end_of_text|>"),
-]);
+let stopTokenIdsCache: readonly [number, number] | null = null;
+let stopTokenIdsInFlight: Promise<readonly [number, number]> | null = null;
+
+async function sleep(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchStopTokenIdsWithRetry(
+  maxAttempts = 3,
+): Promise<readonly [number, number]> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const [eot, eos] = await Promise.all([
+        dolphinTokenId("<|eot_id|>"),
+        dolphinTokenId("<|end_of_text|>"),
+      ]);
+      return [eot, eos] as const;
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts) {
+        await sleep(150 * attempt);
+      }
+    }
+  }
+
+  throw new Error(
+    `Failed to resolve stop token IDs after ${maxAttempts} attempts: ${String(lastError)}`,
+  );
+}
+
+async function getStopTokenIds(): Promise<readonly [number, number]> {
+  if (stopTokenIdsCache) return stopTokenIdsCache;
+
+  if (!stopTokenIdsInFlight) {
+    stopTokenIdsInFlight = fetchStopTokenIdsWithRetry();
+  }
+
+  try {
+    const resolved = await stopTokenIdsInFlight;
+    stopTokenIdsCache = resolved;
+    return resolved;
+  } catch (error) {
+    // Do not cache rejection; allow later retries.
+    stopTokenIdsInFlight = null;
+    throw error;
+  } finally {
+    if (stopTokenIdsCache) {
+      stopTokenIdsInFlight = null;
+    }
+  }
+}
 
 async function ensureModelLoaded() {
   if (modelLoaded) return;
@@ -42,7 +91,7 @@ export async function dolphinCoremlGenerate(
   const enc = await dolphinEncode(prompt);
   const promptLen = enc.ids.length;
 
-  const [eot, eos] = await STOP_TOKEN_IDS_PROMISE;
+  const [eot, eos] = await getStopTokenIds();
 
   const outIds: number[] = await CoreMLLLM.generateFromTokens(enc.ids, {
     maxNewTokens: opts.maxNewTokens ?? 192,
