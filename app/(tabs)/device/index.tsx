@@ -9,7 +9,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import {
   Brain,
   CalendarDays,
@@ -29,7 +28,6 @@ import {
   CoreMLBridge,
 } from "@/utils/coreml";
 import {
-  buildRviCaptureCommands,
   createCalendarEvent,
   getCurrentCoordinates,
   getNetworkSnapshot,
@@ -72,7 +70,6 @@ function DeviceNativeHubNetworkSection({
   setStatus: React.Dispatch<React.SetStateAction<string>>;
 }) {
   const [networkSummary, setNetworkSummary] = useState("Not checked");
-  const [captureUdid, setCaptureUdid] = useState("");
 
   const runNetworkSnapshot = useCallback(async () => {
     await runSafely("Network snapshot", async () => {
@@ -84,40 +81,16 @@ function DeviceNativeHubNetworkSection({
     });
   }, [runSafely, setStatus]);
 
-  const copyCaptureCommands = useCallback(async () => {
-    await runSafely("Copy capture commands", async () => {
-      if (!captureUdid.trim()) {
-        throw new Error("Enter a device UDID before copying capture commands");
-      }
-
-      const commands = buildRviCaptureCommands(captureUdid);
-      await Clipboard.setStringAsync(commands.join("\n"));
-      setStatus("rvictl/tcpdump commands copied to clipboard");
-    });
-  }, [captureUdid, runSafely, setStatus]);
-
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Wifi size={14} color={Colors.dark.info} />
-        <Text style={styles.sectionTitle}>
-          Network diagnostics + tethered capture
-        </Text>
+        <Text style={styles.sectionTitle}>Network diagnostics</Text>
       </View>
       <TouchableOpacity style={styles.button} onPress={runNetworkSnapshot}>
         <Text style={styles.buttonText}>Capture network snapshot</Text>
       </TouchableOpacity>
       <Text style={styles.result}>{networkSummary}</Text>
-      <TextInput
-        value={captureUdid}
-        onChangeText={setCaptureUdid}
-        placeholder="Physical iPhone UDID for rvictl"
-        placeholderTextColor={Colors.dark.textTertiary}
-        style={styles.input}
-      />
-      <TouchableOpacity style={styles.button} onPress={copyCaptureCommands}>
-        <Text style={styles.buttonText}>Copy rvictl + tcpdump commands</Text>
-      </TouchableOpacity>
     </View>
   );
 }

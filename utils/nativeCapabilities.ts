@@ -31,24 +31,6 @@ export type NetworkSnapshot = {
   isInternetReachable: boolean | null;
 };
 
-export function buildRviCaptureCommands(udid: string): string[] {
-  const normalizedUdid = udid.trim();
-
-  if (!normalizedUdid) {
-    throw new Error("UDID is required for rvictl capture instructions");
-  }
-
-  if (!/^[a-fA-F0-9-]+$/.test(normalizedUdid)) {
-    throw new Error("UDID must contain only hexadecimal characters and dashes");
-  }
-
-  return [
-    `rvictl -s ${normalizedUdid}`,
-    "tcpdump -i rvi0 -n -s 0 -w capture.pcap",
-    `rvictl -x ${normalizedUdid}`,
-  ];
-}
-
 async function getDb() {
   if (cachedDb) {
     return cachedDb;
