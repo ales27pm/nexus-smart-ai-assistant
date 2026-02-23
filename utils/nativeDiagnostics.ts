@@ -38,7 +38,7 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
     id: "build",
     title: "App Build Context",
     detail: `Native runtime: ${Application.nativeApplicationVersion ?? "unknown"} (${Application.nativeBuildVersion ?? "unknown"})`,
-    status: "supported",
+    status: Device.isDevice ? "supported" : "limited",
   });
 
   diagnostics.push({
@@ -47,7 +47,7 @@ export async function runNativeDiagnostics(): Promise<NativeDiagnosticItem[]> {
     detail: Device.isDevice
       ? `${Device.brand ?? "Unknown"} ${Device.modelName ?? "Device"} • ${Platform.OS}`
       : "Running in simulator/emulator (Mock Supported for UI validation)",
-    status: "supported",
+    status: Device.isDevice ? "supported" : "limited",
   });
 
   try {

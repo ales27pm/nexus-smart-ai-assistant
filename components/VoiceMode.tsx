@@ -186,6 +186,9 @@ export default function VoiceMode({
   const speechCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const lastWebMeteringErrorAtRef = useRef(0);
+  const errorTextRef = useRef("");
+  const hasNativeMeteringFatalErrorRef = useRef(false);
 
   useEffect(() => {
     voiceStateRef.current = voiceState;
@@ -193,6 +196,10 @@ export default function VoiceMode({
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    errorTextRef.current = errorText;
+  }, [errorText]);
 
   useEffect(() => {
     if (visible) {
@@ -770,7 +777,6 @@ export default function VoiceMode({
         recordingRef.current.stopAndUnloadAsync().catch(() => {});
       } catch (error) {
         console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-        setErrorText("Voice operation failed. Please retry.");
       }
       recordingRef.current = null;
     }
@@ -782,7 +788,6 @@ export default function VoiceMode({
         mediaRecorderRef.current.stop();
       } catch (error) {
         console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-        setErrorText("Voice operation failed. Please retry.");
       }
       mediaRecorderRef.current = null;
     }
@@ -791,7 +796,6 @@ export default function VoiceMode({
         audioContextRef.current.close();
       } catch (error) {
         console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-        setErrorText("Voice operation failed. Please retry.");
       }
       audioContextRef.current = null;
       analyserRef.current = null;
@@ -1205,7 +1209,6 @@ export default function VoiceMode({
             audioContextRef.current.close();
           } catch (error) {
             console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-            setErrorText("Voice operation failed. Please retry.");
           }
           audioContextRef.current = null;
           analyserRef.current = null;
@@ -1218,7 +1221,6 @@ export default function VoiceMode({
           mediaRecorder.stop();
         } catch (error) {
           console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-          setErrorText("Voice operation failed. Please retry.");
         }
         mediaRecorderRef.current = null;
         if (isActiveRef.current) {
@@ -1238,7 +1240,6 @@ export default function VoiceMode({
               audioContextRef.current.close();
             } catch (error) {
               console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-              setErrorText("Voice operation failed. Please retry.");
             }
             audioContextRef.current = null;
             analyserRef.current = null;
@@ -1295,6 +1296,7 @@ export default function VoiceMode({
 
       await configureAudioForRecording();
 
+      hasNativeMeteringFatalErrorRef.current = false;
       const recording = new Audio.Recording();
       await recording.prepareToRecordAsync({
         isMeteringEnabled: true,
@@ -1375,8 +1377,16 @@ export default function VoiceMode({
             consecutiveSilentFrames = 0;
           }
         } catch (error) {
+          if (meteringIntervalRef.current) {
+            clearInterval(meteringIntervalRef.current);
+            meteringIntervalRef.current = null;
+          }
           console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-          setErrorText("Voice operation failed. Please retry.");
+          if (!hasNativeMeteringFatalErrorRef.current) {
+            hasNativeMeteringFatalErrorRef.current = true;
+            setErrorText("Voice operation failed. Please retry.");
+          }
+          setVoiceState("idle");
         }
       }, METERING_INTERVAL);
       console.log("[VoiceMode] Native recording started");
@@ -1477,7 +1487,14 @@ export default function VoiceMode({
           }
         } catch (error) {
           console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
-          setErrorText("Voice operation failed. Please retry.");
+          const now = Date.now();
+          if (
+            !errorTextRef.current &&
+            now - lastWebMeteringErrorAtRef.current >= METERING_INTERVAL
+          ) {
+            lastWebMeteringErrorAtRef.current = now;
+            setErrorText("Voice operation failed. Please retry.");
+          }
         }
       }, METERING_INTERVAL);
       console.log("[VoiceMode] Web recording started");

@@ -241,9 +241,16 @@ final class CoreMLLLMRunner {
       return tokens
     }
 
+    let prefillTokens: [Int]
+    if let mc = maxContext, mc > 0, tokens.count > mc {
+      prefillTokens = Array(tokens.suffix(mc))
+    } else {
+      prefillTokens = tokens
+    }
+
     var logits = try predictTokenBatch(
       model: model,
-      tokenIds: tokens,
+      tokenIds: prefillTokens,
       startPosition: 0,
       state: localState,
       maxContext: maxContext
@@ -332,12 +339,7 @@ final class CoreMLLLMRunner {
       out = try model.prediction(from: provider, options: opts)
     }
 
-    guard let mv = out.featureValue(for: outName)?.multiArrayValue else {
-      for n in out.featureNames {
-        if let mm = out.featureValue(for: n)?.multiArrayValue {
-          return try extractLogits(mm)
-        }
-      }
+    guard let mv = firstLogitsMultiArray(from: out, preferredOutputName: outName) else {
       throw NSError(domain: "ExpoCoreMLLLM", code: 200, userInfo: [
         NSLocalizedDescriptionKey: "No MLMultiArray logits found. Available outputs: \(Array(out.featureNames))"
       ])
@@ -386,18 +388,32 @@ final class CoreMLLLMRunner {
       out = try model.prediction(from: provider, options: opts)
     }
 
-    guard let mv = out.featureValue(for: outName)?.multiArrayValue else {
-      for n in out.featureNames {
-        if let mm = out.featureValue(for: n)?.multiArrayValue {
-          return try extractLogits(mm)
-        }
-      }
+    guard let mv = firstLogitsMultiArray(from: out, preferredOutputName: outName) else {
       throw NSError(domain: "ExpoCoreMLLLM", code: 200, userInfo: [
         NSLocalizedDescriptionKey: "No MLMultiArray logits found. Available outputs: \(Array(out.featureNames))"
       ])
     }
 
     return try extractLogits(mv)
+  }
+
+
+  private func firstLogitsMultiArray(
+    from output: MLFeatureProvider,
+    preferredOutputName: String
+  ) -> MLMultiArray? {
+    if let preferred = output.featureValue(for: preferredOutputName)?.multiArrayValue {
+      return preferred
+    }
+
+    let sortedNames = output.featureNames.sorted()
+    for name in sortedNames {
+      if let mm = output.featureValue(for: name)?.multiArrayValue {
+        return mm
+      }
+    }
+
+    return nil
   }
 
   private func extractLogits(_ logits: MLMultiArray) throws -> [Float] {
@@ -436,6 +452,12 @@ final class CoreMLLLMRunner {
     return out
   }
 
+
+  private func safeInt32(_ value: Int) -> Int32 {
+    let clamped = min(max(Int64(value), Int64(Int32.min)), Int64(Int32.max))
+    return Int32(clamped)
+  }
+
   private func makeInt32MultiArray2D(value: Int) throws -> MLMultiArray {
     return try makeInt32MultiArray2D(values: [value])
   }
@@ -443,7 +465,7 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray2D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      arr[[0, NSNumber(value: idx)]] = NSNumber(value: Int32(value))
+      arr[[0, NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
     }
     return arr
   }
@@ -455,7 +477,7 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray1D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      arr[NSNumber(value: idx)] = NSNumber(value: Int32(value))
+      arr[NSNumber(value: idx)] = NSNumber(value: safeInt32(value))
     }
     return arr
   }
