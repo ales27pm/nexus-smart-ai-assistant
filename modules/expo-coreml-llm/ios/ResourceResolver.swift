@@ -18,8 +18,9 @@ enum ResourceResolver {
   }
 
   static func resolveModuleAssetPath(_ path: String) throws -> URL {
-    if path.hasPrefix("file://"), let url = URL(string: path) {
-      return url
+    if path.hasPrefix("file://") {
+      let filePath = String(path.dropFirst("file://".count))
+      return URL(fileURLWithPath: filePath)
     }
 
     if path.hasPrefix("/") {
