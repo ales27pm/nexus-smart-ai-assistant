@@ -1,9 +1,11 @@
 const ALLOWED_SCHEMES = new Set(["https"]);
 
-function parseSafeUrl(rawUrl: string): URL | null {
+function parseSafeUrl(rawUrl: unknown): URL | null {
   if (typeof URL !== "function") {
     return null;
   }
+
+  if (typeof rawUrl !== "string") return null;
 
   const trimmed = rawUrl.trim();
   if (!trimmed) {
@@ -24,12 +26,12 @@ function parseSafeUrl(rawUrl: string): URL | null {
   }
 }
 
-export function getSafeExternalUrl(rawUrl: string): string | null {
+export function getSafeExternalUrl(rawUrl: unknown): string | null {
   const parsed = parseSafeUrl(rawUrl);
   return parsed ? parsed.toString() : null;
 }
 
-export function getDisplayHost(rawUrl: string): string {
+export function getDisplayHost(rawUrl: unknown): string {
   const safeUrl = getSafeExternalUrl(rawUrl);
   if (!safeUrl || typeof URL !== "function") {
     return "unknown host";

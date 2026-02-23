@@ -13,6 +13,7 @@ import { computeEmbedding, cosineSimilarity } from "@/utils/vectorUtils";
 
 const VECTOR_DB_NAME = "native_vectors.db";
 const STORAGE_KEY = "native_lab_last_note";
+const VECTOR_SEARCH_CANDIDATE_LIMIT = 400;
 let cachedDb: SQLite.SQLiteDatabase | null = null;
 
 export { computeEmbedding, cosineSimilarity };
@@ -85,8 +86,15 @@ export async function searchVectorDocuments(
   const queryVector = computeEmbedding(query);
   const queryVectorJson = JSON.stringify(queryVector);
 
+  const candidateLimit = Math.max(limit, VECTOR_SEARCH_CANDIDATE_LIMIT);
   const rows = await db.getAllAsync<VectorSearchResult>(
-    `WITH query_vector AS (
+    `WITH recent_docs AS (
+      SELECT id, content, embedding
+      FROM vector_docs
+      ORDER BY created_at DESC
+      LIMIT ?
+    ),
+    query_vector AS (
       SELECT CAST(value AS REAL) AS q_value, key AS idx
       FROM json_each(?)
     )
@@ -97,20 +105,21 @@ export async function searchVectorDocuments(
         WHEN norm.doc_norm = 0 OR norm.query_norm = 0 THEN 0
         ELSE norm.dot_product / (norm.doc_norm * norm.query_norm)
       END AS score
-    FROM vector_docs d
+    FROM recent_docs d
     JOIN (
       SELECT
         vd.id,
         SUM(CAST(doc.value AS REAL) * q.q_value) AS dot_product,
         SQRT(SUM(CAST(doc.value AS REAL) * CAST(doc.value AS REAL))) AS doc_norm,
         SQRT(SUM(q.q_value * q.q_value)) AS query_norm
-      FROM vector_docs vd
+      FROM recent_docs vd
       JOIN json_each(vd.embedding) doc
       JOIN query_vector q ON q.idx = doc.key
       GROUP BY vd.id
     ) norm ON norm.id = d.id
     ORDER BY score DESC
     LIMIT ?;`,
+    candidateLimit,
     queryVectorJson,
     limit,
   );
