@@ -181,14 +181,26 @@ function keychainImportAndFindIdentity(p12Path, password, fingerprint) {
       .map((m) => m[1].toLowerCase());
 
     const ok = hashes.includes(fingerprint.toLowerCase());
-    return ok
-      ? { ok: true }
-      : {
-          ok: false,
-          reason:
-            `Imported, but fingerprint not found in keychain identities.\n` +
-            `Found identities:\n${lines.filter((l) => l.includes('"')).join("\n")}`,
-        };
+    if (!ok) {
+      const certs = run("security", ["find-certificate", "-a", keychain]);
+      const keys = run("security", ["find-key", "-a", keychain]);
+      const certCount = (String(certs.stdout).match(/keychain:/g) || []).length;
+      const keyCount = (String(keys.stdout).match(/keychain:/g) || []).length;
+
+      const hint =
+        certCount > 0 && keyCount === 0
+          ? "\nHint: this P12 appears to contain certificate(s) but no private key."
+          : "";
+
+      return {
+        ok: false,
+        reason:
+          `Imported, but fingerprint not found in keychain identities.${hint}\n` +
+          `Found identities:\n${lines.filter((l) => l.includes('"')).join("\n")}`,
+      };
+    }
+
+    return { ok: true };
   } finally {
     try {
       run("security", ["delete-keychain", keychain]);
@@ -197,6 +209,42 @@ function keychainImportAndFindIdentity(p12Path, password, fingerprint) {
     }
     rmrf(tmp);
   }
+}
+
+function p12ContainsPrivateKey(p12Path, password) {
+  const info = run("openssl", [
+    "pkcs12",
+    "-in",
+    p12Path,
+    "-passin",
+    `pass:${password}`,
+    "-info",
+    "-noout",
+    "-legacy",
+  ]);
+  const fallbackInfo =
+    info.status === 0
+      ? info
+      : run("openssl", [
+          "pkcs12",
+          "-in",
+          p12Path,
+          "-passin",
+          `pass:${password}`,
+          "-info",
+          "-noout",
+        ]);
+
+  if (toolMissing(fallbackInfo)) fail("openssl not found on PATH.");
+  if (fallbackInfo.status !== 0) {
+    return { ok: false, error: String(fallbackInfo.stderr).trim() };
+  }
+
+  const text = `${fallbackInfo.stdout}\n${fallbackInfo.stderr}`;
+  return {
+    ok: true,
+    hasKey: /Shrouded Keybag|Key bag/i.test(text),
+  };
 }
 
 function repackP12Legacy(originalP12Path, password, outP12Path) {
@@ -402,17 +450,27 @@ for (const cert of certNodes) {
     repackP12Legacy(origP12, password, fixedP12);
   } catch (e) {
     rmrf(tmp);
-    fail(`Failed to repack distribution certificate as legacy P12: ${e.message}`);
+    fail(
+      `Failed to repack distribution certificate as legacy P12: ${e.message}`,
+    );
   }
 
   const fp2 = getP12Fingerprint(fixedP12, password);
   const t2 = keychainImportAndFindIdentity(fixedP12, password, fp2);
   if (!t2.ok) {
+    const keyInfo = p12ContainsPrivateKey(fixedP12, password);
+    const keyHint =
+      keyInfo.ok && !keyInfo.hasKey
+        ? "\nDetected issue: the P12 does not include a private key (cert-only export)."
+        : "";
+
     rmrf(tmp);
     fail(
       `Repacked legacy P12 STILL fails to import.\n` +
+        `${keyHint}\n` +
         `This usually means the P12/private key is broken or mismatched.\n` +
-        `Fix: create/export the .p12 on macOS Keychain Access (not Windows/OpenSSL), then regenerate the provisioning profile accordingly.`,
+        `Fix: create/export the .p12 on macOS Keychain Access (not Windows/OpenSSL), ensuring "Allow export" private key is selected, then regenerate the provisioning profile accordingly.\n` +
+        `Debug: openssl pkcs12 -in your.p12 -info -noout | grep -Ei 'Keybag|friendlyName'`,
     );
   }
 
