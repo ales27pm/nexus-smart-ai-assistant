@@ -76,29 +76,44 @@ async function ensureTokenizerFilesDownloaded() {
       if (res.status !== 200) {
         throw new Error(`Failed to download ${file} (HTTP ${res.status})`);
       }
-      await verifySha256(toFile, expectedHash);
-    }),
-  );
+let pendingTokenizerDownload: Promise<string> | null = null;
 
-  const tok = await FileSystem.getInfoAsync(`${tokenizerDir}/tokenizer.json`);
-  if (!tok.exists || !tok.size || tok.size < 1024) {
-    throw new Error("tokenizer.json missing or suspiciously small");
+async function ensureTokenizerFilesDownloaded(): Promise<string> {
+  if (pendingTokenizerDownload) {
+    return pendingTokenizerDownload;
   }
 
-  return tokenizerDir;
-}
+  pendingTokenizerDownload = (async () => {
+    await ensureDir(TOKENIZER_DIR);
 
-function extractFirstTokenId(
-  encoded: any,
-  tokenText: string,
-  method: "encode" | "encodeWithExtra",
-): number {
-  if (!encoded || !Array.isArray(encoded.ids) || encoded.ids.length === 0) {
-    throw new Error(
-      `Tokenizer ${method} returned no ids for token '${tokenText}'.`,
+    await Promise.all(
+      TOKENIZER_FILES.map(async (file) => {
+        const toFile = `${TOKENIZER_DIR}/${file}`;
+        const exists = await FileSystem.getInfoAsync(toFile);
+        if (exists.exists && exists.size && exists.size > 0) return;
+
+        const url = `${HF_BASE}/${file}`;
+        const res = await FileSystem.downloadAsync(url, toFile);
+        if (res.status !== 200) {
+          throw new Error(`Failed to download ${file} (HTTP ${res.status})`);
+        }
+      }),
     );
+
+    const tok = await FileSystem.getInfoAsync(`${TOKENIZER_DIR}/tokenizer.json`);
+    if (!tok.exists || !tok.size || tok.size < 1024) {
+      throw new Error("tokenizer.json missing or suspiciously small");
+    }
+
+    return TOKENIZER_DIR;
+  })();
+
+  try {
+    return await pendingTokenizerDownload;
+  } finally {
+    // Allow future calls to re-check the filesystem and re-download if needed.
+    pendingTokenizerDownload = null;
   }
-  return Number(encoded.ids[0]);
 }
 
 export type Encoded = {
