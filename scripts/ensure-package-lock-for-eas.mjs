@@ -34,7 +34,7 @@ try {
   fail("package-lock.json exists but could not be parsed as JSON.");
 }
 
-if (!lockfile.lockfileVersion || lockfile.lockfileVersion < 1) {
+if (!Number.isInteger(lockfile.lockfileVersion) || lockfile.lockfileVersion < 1) {
   fail("package-lock.json is present but has an unsupported lockfileVersion.");
 }
 
