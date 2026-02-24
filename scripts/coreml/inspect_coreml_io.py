@@ -4,54 +4,79 @@ import sys
 from pathlib import Path
 
 
-def _shape_from_type(arr_type):
-    shape = []
-    if hasattr(arr_type, "shape"):
-        shape = [int(x) for x in arr_type.shape]
-    return shape
+def _shape_from_multiarray(ma):
+    # ma.shape is repeated int64; flexible shapes appear elsewhere.
+    try:
+        return list(ma.shape)
+    except Exception:
+        return []
 
 
-def _dump_feature(feature):
-    kind = feature.type.WhichOneof("Type")
-    out = {"name": feature.name, "type": kind}
-    if kind == "multiArrayType":
-      arr = feature.type.multiArrayType
-      out["dataType"] = int(arr.dataType)
-      out["shape"] = _shape_from_type(arr)
-    return out
+def _feature_type(ft):
+    which = ft.WhichOneof("Type")
+    if which is None:
+        return "unknown"
+    if which == "multiArrayType":
+        return "multiArrayType"
+    return which
 
 
-def _state_list(desc):
-    states = []
-    if hasattr(desc, "state"):
-        for s in desc.state:
-            states.append({"name": s.name, "type": s.type.WhichOneof("Type")})
-    return states
-
-
-def main():
+def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python3 scripts/coreml/inspect_coreml_io.py <model.mlpackage|model.mlmodelc>")
-        sys.exit(2)
+        print("Usage: inspect_coreml_io.py /path/to/model.mlpackage", file=sys.stderr)
+        return 2
 
     model_path = Path(sys.argv[1]).expanduser().resolve()
     if not model_path.exists():
-        print(f"Path not found: {model_path}", file=sys.stderr)
-        sys.exit(1)
+        print(f"❌ Not found: {model_path}", file=sys.stderr)
+        return 3
 
-    import coremltools as ct
+    try:
+        import coremltools as ct
+    except Exception as e:
+        print("❌ Missing dependency: coremltools", file=sys.stderr)
+        print("   Install: python3 -m pip install -U coremltools", file=sys.stderr)
+        print(f"   Import error: {e}", file=sys.stderr)
+        return 4
 
-    spec = ct.utils.load_spec(str(model_path))
+    try:
+        mlmodel = ct.models.MLModel(str(model_path))
+        spec = mlmodel.get_spec()
+    except Exception as e:
+        print("❌ Failed to load CoreML model.", file=sys.stderr)
+        print(f"   Path: {model_path}", file=sys.stderr)
+        print(f"   Error: {e}", file=sys.stderr)
+        return 5
+
     desc = spec.description
 
     out = {
         "model_type": spec.WhichOneof("Type"),
-        "inputs": [_dump_feature(i) for i in desc.input],
-        "outputs": [_dump_feature(o) for o in desc.output],
-        "states": _state_list(desc),
+        "inputs": [],
+        "outputs": [],
+        "metadata": {
+            "shortDescription": getattr(desc, "shortDescription", ""),
+            "versionString": getattr(desc, "versionString", ""),
+        },
     }
+
+    for f in desc.input:
+        t = _feature_type(f.type)
+        entry = {"name": f.name, "type": t, "shape": []}
+        if t == "multiArrayType":
+            entry["shape"] = _shape_from_multiarray(f.type.multiArrayType)
+        out["inputs"].append(entry)
+
+    for f in desc.output:
+        t = _feature_type(f.type)
+        entry = {"name": f.name, "type": t, "shape": []}
+        if t == "multiArrayType":
+            entry["shape"] = _shape_from_multiarray(f.type.multiArrayType)
+        out["outputs"].append(entry)
+
     print(json.dumps(out, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
