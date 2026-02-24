@@ -19,18 +19,19 @@ def main() -> int:
 
     try:
         from huggingface_hub import snapshot_download
-    except Exception as e:
+    except ImportError as e:
         print("❌ Missing dependency: huggingface_hub", file=sys.stderr)
         print("   Install: python3 -m pip install -U huggingface_hub", file=sys.stderr)
         print(f"   Import error: {e}", file=sys.stderr)
         return 1
 
-    out_dir = Path(args.out).resolve()
+    out_dir = Path(args.out).expanduser().resolve()
+    subdir = args.subdir.strip("/")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # IMPORTANT: huggingface_hub uses fnmatch; '*' matches '/' too in practice here.
     # We allow only the selected mlpackage folder.
-    allow = [f"{args.subdir}/*"]
+    allow = [f"{subdir}/*"]
 
     print(f"[i] snapshot_download repo={args.repo}")
     print(f"[i] allow_patterns={allow}")

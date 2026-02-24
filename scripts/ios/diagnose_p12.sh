@@ -45,8 +45,21 @@ fi
 LEAF_CERT="$TMP_DIR/leaf_cert.pem"
 PRIV_KEY="$TMP_DIR/private_key.pem"
 
-"$OPENSSL_BIN" pkcs12 $LEGACY_FLAG -in "$P12_PATH" -passin "pass:$P12_PASSWORD" -clcerts -nokeys -out "$LEAF_CERT" >/dev/null 2>&1
-"$OPENSSL_BIN" pkcs12 $LEGACY_FLAG -in "$P12_PATH" -passin "pass:$P12_PASSWORD" -nocerts -nodes -out "$PRIV_KEY" >/dev/null 2>&1
+CERT_EXTRACT_ERR="$TMP_DIR/openssl_extract_cert.err"
+KEY_EXTRACT_ERR="$TMP_DIR/openssl_extract_key.err"
+
+"$OPENSSL_BIN" pkcs12 $LEGACY_FLAG -in "$P12_PATH" -passin "pass:$P12_PASSWORD" -clcerts -nokeys -out "$LEAF_CERT" 2>"$CERT_EXTRACT_ERR" || {
+  echo "❌ Failed to extract certificate from P12." >&2
+  echo "   P12: $P12_PATH" >&2
+  sed -e 's/^/   openssl: /' "$CERT_EXTRACT_ERR" >&2 || true
+  exit 2
+}
+"$OPENSSL_BIN" pkcs12 $LEGACY_FLAG -in "$P12_PATH" -passin "pass:$P12_PASSWORD" -nocerts -nodes -out "$PRIV_KEY" 2>"$KEY_EXTRACT_ERR" || {
+  echo "❌ Failed to extract private key from P12." >&2
+  echo "   P12: $P12_PATH" >&2
+  sed -e 's/^/   openssl: /' "$KEY_EXTRACT_ERR" >&2 || true
+  exit 2
+}
 
 echo "=============================="
 echo "[i] P12: $P12_PATH"
@@ -81,7 +94,9 @@ if command -v "$OPENSSL_BIN" >/dev/null 2>&1; then
 else
   KC_PASS="$(dd if=/dev/urandom bs=18 count=1 2>/dev/null | base64)"
 fi
-KC_PATH="$(mktemp -u /tmp/p12diag-keychain.XXXXXX.keychain-db)"
+KC_PATH="$(mktemp /tmp/p12diag-keychain.XXXXXX.keychain-db)"
+rm -f "$KC_PATH"
+trap 'rm -rf "$TMP_DIR" 2>/dev/null || true; security delete-keychain "$KC_PATH" >/dev/null 2>&1 || true' EXIT
 
 security create-keychain -p "$KC_PASS" "$KC_PATH" >/dev/null
 security set-keychain-settings -lut 21600 "$KC_PATH" >/dev/null
@@ -103,5 +118,3 @@ echo "=============================="
 security find-identity -v -p codesigning "$KC_PATH" || true
 
 echo
-echo "[i] Cleaning up temp keychain"
-security delete-keychain "$KC_PATH" >/dev/null 2>&1 || true

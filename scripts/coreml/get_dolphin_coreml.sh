@@ -32,7 +32,7 @@ esac
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEST_DIR="${DEST_DIR:-$PROJECT_ROOT/modules/expo-coreml-llm/ios/resources/models}"
 STAGING_DIR="${STAGING_DIR:-$PROJECT_ROOT/.hf_models/$REPO_ID}"
-INSPECT="${INSPECT:-1}"
+INSPECT="${INSPECT:-0}"
 
 mkdir -p "$DEST_DIR"
 mkdir -p "$STAGING_DIR"
@@ -98,24 +98,30 @@ if [[ "$FILE_COUNT" -lt 20 || "$SIZE_MB" -lt 200 ]]; then
   exit 3
 fi
 
-# Replace destination atomically-ish.
+# Stage into temp path first so existing installation stays intact on copy failure.
+TMP_PATH="${DST_PATH}.tmp.$$"
+rm -rf "$TMP_PATH"
+trap 'rm -rf "$TMP_PATH" 2>/dev/null || true' EXIT
+
+echo "[i] Copying to temporary destination..."
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --delete "$SRC_PATH/" "$TMP_PATH/"
+else
+  cp -R "$SRC_PATH" "$TMP_PATH"
+fi
+
 if [[ -d "$DST_PATH" ]]; then
   echo "[i] Removing existing destination: $DST_PATH"
   rm -rf "$DST_PATH"
 fi
-
-echo "[i] Copying to destination..."
-# rsync is faster + preserves structure
-if command -v rsync >/dev/null 2>&1; then
-  rsync -a --delete "$SRC_PATH/" "$DST_PATH/"
-else
-  cp -R "$SRC_PATH" "$DST_PATH"
-fi
+mv "$TMP_PATH" "$DST_PATH"
 
 echo "✅ Installed: $DST_PATH"
 
 if [[ "$INSPECT" == "1" ]]; then
   echo
   echo "[next] Inspect IO:"
-  python3 "$PROJECT_ROOT/scripts/coreml/inspect_coreml_io.py" "$DST_PATH"
+  if ! python3 "$PROJECT_ROOT/scripts/coreml/inspect_coreml_io.py" "$DST_PATH"; then
+    echo "⚠️ inspect_coreml_io.py failed; continuing." >&2
+  fi
 fi
