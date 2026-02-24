@@ -38,10 +38,9 @@ def main() -> int:
         print("   Install: python3 -m pip install -U coremltools", file=sys.stderr)
         print(f"   Import error: {e}", file=sys.stderr)
         return 4
-
     try:
         spec = ct.utils.load_spec(str(model_path))
-    except Exception as e:  # noqa: BLE001 - model parsing raises backend-specific exceptions
+    except Exception as e:
         print("❌ Failed to load CoreML model.", file=sys.stderr)
         print(f"   Path: {model_path}", file=sys.stderr)
         print(f"   Error: {e}", file=sys.stderr)
