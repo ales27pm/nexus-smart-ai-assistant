@@ -40,8 +40,7 @@ def main() -> int:
         return 4
 
     try:
-        mlmodel = ct.models.MLModel(str(model_path))
-        spec = mlmodel.get_spec()
+        spec = ct.utils.load_spec(str(model_path))
     except Exception as e:
         print("❌ Failed to load CoreML model.", file=sys.stderr)
         print(f"   Path: {model_path}", file=sys.stderr)

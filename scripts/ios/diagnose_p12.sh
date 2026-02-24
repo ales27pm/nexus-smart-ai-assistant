@@ -62,7 +62,7 @@ echo "[i] SHA1 fingerprint:"
 "$OPENSSL_BIN" x509 -in "$LEAF_CERT" -noout -fingerprint -sha1
 echo
 echo "[i] Extended Key Usage (EKU):"
-EKU_LINE="$("$OPENSSL_BIN" x509 -in "$LEAF_CERT" -noout -text | awk '
+EKU_LINE="$($OPENSSL_BIN x509 -in "$LEAF_CERT" -noout -text | awk '
   BEGIN{found=0}
   /X509v3 Extended Key Usage/ {found=1; getline; gsub(/^[ \t]+/, "", $0); print; exit}
 ')"
@@ -76,11 +76,11 @@ if [[ "${EKU_LINE}" != *"Code Signing"* ]]; then
 fi
 
 # Create a temp keychain and import
-KC_PASS="$(python3 - <<'PY'
-import secrets
-print(secrets.token_urlsafe(18))
-PY
-)"
+if command -v "$OPENSSL_BIN" >/dev/null 2>&1; then
+  KC_PASS="$("$OPENSSL_BIN" rand -base64 24)"
+else
+  KC_PASS="$(dd if=/dev/urandom bs=18 count=1 2>/dev/null | base64)"
+fi
 KC_PATH="$(mktemp -u /tmp/p12diag-keychain.XXXXXX.keychain-db)"
 
 security create-keychain -p "$KC_PASS" "$KC_PATH" >/dev/null

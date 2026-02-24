@@ -49,15 +49,13 @@ if (!fs.existsSync(absProf))
 
 const json = {
   ios: {
-    provisioningProfilePath: p12Path, // relative paths are fine; use your original relative
+    provisioningProfilePath: profPath,
     distributionCertificate: {
       path: p12Path,
       password: process.env.P12_PASSWORD,
     },
   },
 };
-
-json.ios.provisioningProfilePath = profPath;
 
 fs.writeFileSync(outPath, JSON.stringify(json, null, 2));
 console.log(`✅ Wrote ${outPath}`);
