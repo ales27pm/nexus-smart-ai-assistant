@@ -4,23 +4,11 @@ set -euo pipefail
 # Automate iOS local credential sync (Apple Developer -> local files) using fastlane.
 #
 # What this does:
-#   1) Ensures an Apple Distribution certificate exists (creates/downloads via fastlane cert)
-#   2) Exports the matching certificate + private key to a .p12
-#   3) Downloads a provisioning profile for a bundle id via fastlane sigh
-#   4) Writes credentials.json for Expo local credentials
-#
-# Requirements:
-#   - macOS (uses keychain + security CLI)
-#   - fastlane installed and authenticated (FASTLANE_SESSION or interactive Apple login)
-#   - OpenSSL
-#   - Existing app id on Apple Developer account
-#
-# Example:
-#   P12_PASSWORD='strong-pass' ./scripts/ios/sync_apple_credentials_fastlane.sh \
-#     --bundle-id com.example.app \
-#     --apple-id dev@example.com \
-#     --team-id 1A2BC3D4E5 \
-#     --type appstore
+#   1) Ensures an Apple Distribution/Development certificate exists (via fastlane cert)
+#   2) Selects a matching identity from the chosen keychain (optionally constrained by TEAM_ID)
+#   3) Exports the matching cert + private key to a .p12 (key matched by public key fingerprint)
+#   4) Downloads a provisioning profile for a bundle id via fastlane sigh
+#   5) Writes credentials.json for Expo local credentials
 
 usage() {
   cat <<'USAGE'
@@ -37,10 +25,6 @@ Usage:
 Env:
   P12_PASSWORD      Required. Password used for exported .p12.
   FASTLANE_SESSION  Optional. Reuse authenticated fastlane session to avoid prompts.
-
-Notes:
-  - Apple does not let you download an existing private key for old certs.
-    If private key is missing locally, this script creates/renews cert via fastlane.
 USAGE
 }
 
@@ -84,19 +68,26 @@ case "$PROFILE_TYPE" in
   *) fail "--type must be one of: appstore | adhoc | development" ;;
 esac
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  fail "This script requires macOS (security/keychain tooling)."
-fi
+[[ "$(uname -s)" == "Darwin" ]] || fail "This script requires macOS (security/keychain tooling)."
 
 command -v fastlane >/dev/null 2>&1 || fail "fastlane not found. Install with: brew install fastlane"
 command -v security >/dev/null 2>&1 || fail "security CLI missing"
 command -v openssl >/dev/null 2>&1 || fail "openssl missing"
 command -v node >/dev/null 2>&1 || fail "node missing"
+command -v shasum >/dev/null 2>&1 || fail "shasum missing"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_DIR_ABS="$(cd "$PROJECT_ROOT" && mkdir -p "$OUT_DIR" && cd "$OUT_DIR" && pwd)"
 P12_PATH="$OUT_DIR_ABS/dist-cert.p12"
 PROFILE_PATH="$OUT_DIR_ABS/profile.mobileprovision"
+
+TMP_DIR="$(mktemp -d /tmp/ios-cred-sync.XXXXXX)"
+trap 'rm -rf "$TMP_DIR" 2>/dev/null || true' EXIT
+
+CERT_PEM="$TMP_DIR/cert.pem"
+ALL_KEYS_PEM="$TMP_DIR/all-keys.pem"
+MATCH_KEY_PEM="$TMP_DIR/matching-key.pem"
+IDENTITIES_TXT="$TMP_DIR/identities.txt"
 
 info "Project root: $PROJECT_ROOT"
 info "Bundle ID:    $BUNDLE_ID"
@@ -117,8 +108,10 @@ if [[ -n "$TEAM_ID" ]]; then
 fi
 
 CERT_TYPE_ARG="development:false"
+IDENTITY_LABEL="Apple Distribution:"
 if [[ "$PROFILE_TYPE" == "development" ]]; then
   CERT_TYPE_ARG="development:true"
+  IDENTITY_LABEL="Apple Development:"
 fi
 
 info "[1/4] Ensuring signing certificate via fastlane cert..."
@@ -130,40 +123,74 @@ fastlane run cert \
   "${TEAM_ARGS[@]}" \
   "${FASTLANE_COMMON[@]}"
 
-info "[2/4] Discovering signing identity in keychain..."
-IDENTITY_SHA1="$({ security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true; } | awk '/Apple (Distribution|Development):/ {print $2; exit}')"
-[[ -n "$IDENTITY_SHA1" ]] || fail "No Apple Distribution/Development identity found in $KEYCHAIN_PATH"
+info "[2/4] Selecting signing identity from keychain..."
+security find-identity -v -p codesigning "$KEYCHAIN_PATH" >"$IDENTITIES_TXT" 2>/dev/null || true
 
-info "Found identity SHA1: $IDENTITY_SHA1"
+IDENTITY_SHA1=""
+while read -r sha; do
+  [[ -n "$sha" ]] || continue
+  security find-certificate -Z -a -p "$KEYCHAIN_PATH" | awk -v target="$sha" '
+    BEGIN {want=0}
+    /^SHA-1 hash:/ {gsub(/^SHA-1 hash: /, "", $0); gsub(/ /, "", $0); want=(toupper($0)==toupper(target)); next}
+    want {print}
+  ' >"$CERT_PEM"
 
-TMP_DIR="$(mktemp -d /tmp/ios-cred-sync.XXXXXX)"
-trap 'rm -rf "$TMP_DIR" 2>/dev/null || true' EXIT
+  [[ -s "$CERT_PEM" ]] || continue
 
-CERT_PEM="$TMP_DIR/cert.pem"
-KEY_PEM="$TMP_DIR/key.pem"
+  subject="$(openssl x509 -in "$CERT_PEM" -noout -subject 2>/dev/null || true)"
+  [[ "$subject" == *"$IDENTITY_LABEL"* ]] || continue
 
+  if [[ -n "$TEAM_ID" ]]; then
+    [[ "$subject" == *"OU = $TEAM_ID"* || "$subject" == *"OU=$TEAM_ID"* ]] || continue
+  fi
+
+  IDENTITY_SHA1="$sha"
+  break
+done < <(awk '/Apple (Distribution|Development):/ {print $2}' "$IDENTITIES_TXT")
+
+[[ -n "$IDENTITY_SHA1" ]] || fail "No matching identity found in $KEYCHAIN_PATH (label=$IDENTITY_LABEL team=${TEAM_ID:-any})"
+info "Selected identity SHA1: $IDENTITY_SHA1"
+
+# re-extract selected cert pem for downstream usage
 security find-certificate -Z -a -p "$KEYCHAIN_PATH" | awk -v target="$IDENTITY_SHA1" '
   BEGIN {want=0}
   /^SHA-1 hash:/ {gsub(/^SHA-1 hash: /, "", $0); gsub(/ /, "", $0); want=(toupper($0)==toupper(target)); next}
   want {print}
-' > "$CERT_PEM"
-
+' >"$CERT_PEM"
 [[ -s "$CERT_PEM" ]] || fail "Unable to extract certificate PEM for identity $IDENTITY_SHA1"
 
-info "Exporting private key from keychain (may prompt for keychain access)..."
-security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$KEY_PEM" >/dev/null 2>&1 || \
-  fail "Could not export private key. Approve keychain prompt or ensure private key exists locally."
+info "Exporting private keys from keychain for matching..."
+security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1 || \
+  fail "Could not export private keys. Approve keychain prompt or ensure private key exists locally."
+[[ -s "$ALL_KEYS_PEM" ]] || fail "Private key export yielded empty file"
 
-[[ -s "$KEY_PEM" ]] || fail "Private key export yielded empty file"
+cert_pub_hash="$(openssl x509 -in "$CERT_PEM" -pubkey -noout | openssl pkey -pubin -outform DER | shasum -a 256 | awk '{print $1}')"
+[[ -n "$cert_pub_hash" ]] || fail "Failed computing certificate public key fingerprint"
+
+awk '
+  /-----BEGIN PRIVATE KEY-----/ {in_key=1; file=sprintf("%s/key_%04d.pem", ENVIRON["TMP_DIR"], ++n); print > file; next}
+  /-----END PRIVATE KEY-----/   {if (in_key) {print >> file; close(file)}; in_key=0; next}
+  in_key {print >> file}
+' "$ALL_KEYS_PEM"
+
+for key_file in "$TMP_DIR"/key_*.pem; do
+  [[ -f "$key_file" ]] || continue
+  key_pub_hash="$(openssl pkey -in "$key_file" -pubout -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+  if [[ "$key_pub_hash" == "$cert_pub_hash" ]]; then
+    cp "$key_file" "$MATCH_KEY_PEM"
+    break
+  fi
+done
+
+[[ -s "$MATCH_KEY_PEM" ]] || fail "Could not find private key matching selected certificate $IDENTITY_SHA1"
 
 info "Building P12: $P12_PATH"
 openssl pkcs12 -export \
-  -inkey "$KEY_PEM" \
+  -inkey "$MATCH_KEY_PEM" \
   -in "$CERT_PEM" \
   -name "Apple Signing" \
   -passout "pass:$P12_PASSWORD" \
   -out "$P12_PATH" >/dev/null 2>&1
-
 [[ -f "$P12_PATH" ]] || fail "Failed to create $P12_PATH"
 
 info "[3/4] Downloading provisioning profile via fastlane sigh..."
