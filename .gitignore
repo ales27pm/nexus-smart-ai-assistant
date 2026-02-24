@@ -50,3 +50,9 @@ node_modules
 # EAS local credentials
 credentials.json
 credentials/
+
+!scripts/ios/
+!scripts/ios/**
+scripts/ios/*.p12
+scripts/ios/*.key
+scripts/ios/*.mobileprovision
