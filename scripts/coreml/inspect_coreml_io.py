@@ -1,55 +1,42 @@
 #!/usr/bin/env python3
+import argparse
 import json
 import sys
 from pathlib import Path
 
-
-def _shape_from_multiarray(ma):
-    # ma.shape is repeated int64; flexible shapes appear elsewhere.
+def _shape_to_list(shape):
     try:
-        return list(ma.shape)
-    except Exception:  # noqa: BLE001 - best-effort shape probe from CoreML proto
+        return [int(x) for x in shape]
+    except Exception:
         return []
 
+def main():
+    ap = argparse.ArgumentParser(description="Inspect CoreML model inputs/outputs (mlpackage).")
+    ap.add_argument("model_path", help="Path to .mlpackage or .mlmodel")
+    args = ap.parse_args()
 
-def _feature_type(ft):
-    which = ft.WhichOneof("Type")
-    if which is None:
-        return "unknown"
-    if which == "multiArrayType":
-        return "multiArrayType"
-    return which
-
-
-def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: inspect_coreml_io.py /path/to/model.mlpackage", file=sys.stderr)
-        return 2
-
-    model_path = Path(sys.argv[1]).expanduser().resolve()
-    if not model_path.exists():
-        print(f"❌ Not found: {model_path}", file=sys.stderr)
-        return 3
+    p = Path(args.model_path).expanduser().resolve()
+    if not p.exists():
+        print(f"❌ Not found: {p}", file=sys.stderr)
+        sys.exit(1)
 
     try:
         import coremltools as ct
-    except Exception as e:  # noqa: BLE001 - dependency import may fail in non-CoreML envs
-        print("❌ Missing dependency: coremltools", file=sys.stderr)
-        print("   Install: python3 -m pip install -U coremltools", file=sys.stderr)
-        print(f"   Import error: {e}", file=sys.stderr)
-        return 4
+    except Exception:
+        print("❌ coremltools not installed. Install with:", file=sys.stderr)
+        print("   python3 -m pip install --upgrade coremltools", file=sys.stderr)
+        sys.exit(1)
+
     try:
-        spec = ct.utils.load_spec(str(model_path))
+        mlmodel = ct.models.MLModel(str(p))
+        spec = mlmodel.get_spec()
     except Exception as e:
-        print("❌ Failed to load CoreML model.", file=sys.stderr)
-        print(f"   Path: {model_path}", file=sys.stderr)
-        print(f"   Error: {e}", file=sys.stderr)
-        return 5
+        print(f"❌ Failed to load model: {e}", file=sys.stderr)
+        sys.exit(1)
 
     desc = spec.description
-
     out = {
-        "model_type": spec.WhichOneof("Type"),
+        "model_type": "mlProgram" if spec.WhichOneof("Type") == "mlProgram" else spec.WhichOneof("Type"),
         "inputs": [],
         "outputs": [],
         "metadata": {
@@ -58,23 +45,27 @@ def main() -> int:
         },
     }
 
-    for f in desc.input:
-        t = _feature_type(f.type)
-        entry = {"name": f.name, "type": t, "shape": []}
+    for inp in desc.input:
+        entry = {"name": inp.name}
+        t = inp.type.WhichOneof("Type")
+        entry["type"] = t
         if t == "multiArrayType":
-            entry["shape"] = _shape_from_multiarray(f.type.multiArrayType)
+            mat = inp.type.multiArrayType
+            entry["shape"] = list(mat.shape) if len(mat.shape) else []
+            entry["dataType"] = str(mat.dataType)
         out["inputs"].append(entry)
 
-    for f in desc.output:
-        t = _feature_type(f.type)
-        entry = {"name": f.name, "type": t, "shape": []}
+    for o in desc.output:
+        entry = {"name": o.name}
+        t = o.type.WhichOneof("Type")
+        entry["type"] = t
         if t == "multiArrayType":
-            entry["shape"] = _shape_from_multiarray(f.type.multiArrayType)
+            mat = o.type.multiArrayType
+            entry["shape"] = list(mat.shape) if len(mat.shape) else []
+            entry["dataType"] = str(mat.dataType)
         out["outputs"].append(entry)
 
     print(json.dumps(out, indent=2))
-    return 0
-
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
