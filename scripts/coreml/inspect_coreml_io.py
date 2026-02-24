@@ -8,7 +8,7 @@ def _shape_from_multiarray(ma):
     # ma.shape is repeated int64; flexible shapes appear elsewhere.
     try:
         return list(ma.shape)
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort shape probe from CoreML proto
         return []
 
 
@@ -33,7 +33,7 @@ def main() -> int:
 
     try:
         import coremltools as ct
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - dependency import may fail in non-CoreML envs
         print("❌ Missing dependency: coremltools", file=sys.stderr)
         print("   Install: python3 -m pip install -U coremltools", file=sys.stderr)
         print(f"   Import error: {e}", file=sys.stderr)
@@ -41,7 +41,7 @@ def main() -> int:
 
     try:
         spec = ct.utils.load_spec(str(model_path))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - model parsing raises backend-specific exceptions
         print("❌ Failed to load CoreML model.", file=sys.stderr)
         print(f"   Path: {model_path}", file=sys.stderr)
         print(f"   Error: {e}", file=sys.stderr)

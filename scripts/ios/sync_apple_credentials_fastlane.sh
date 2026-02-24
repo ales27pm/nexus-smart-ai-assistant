@@ -120,7 +120,7 @@ fastlane run cert \
   $CERT_TYPE_ARG \
   generate_apple_certs:true \
   keychain_path:"$KEYCHAIN_PATH" \
-  "${TEAM_ARGS[@]}" \
+  ${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"} \
   "${FASTLANE_COMMON[@]}"
 
 info "[2/4] Selecting signing identity from keychain..."
@@ -189,21 +189,29 @@ openssl pkcs12 -export \
   -inkey "$MATCH_KEY_PEM" \
   -in "$CERT_PEM" \
   -name "Apple Signing" \
-  -passout "pass:$P12_PASSWORD" \
+  -passout env:P12_PASSWORD \
   -out "$P12_PATH" >/dev/null 2>&1
 [[ -f "$P12_PATH" ]] || fail "Failed to create $P12_PATH"
 
+p12_pub_hash="$(openssl pkcs12 -in "$P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform DER | shasum -a 256 | awk '{print $1}')"
+[[ "$p12_pub_hash" == "$cert_pub_hash" ]] || fail "Generated P12 certificate does not match selected identity $IDENTITY_SHA1"
+
 info "[3/4] Downloading provisioning profile via fastlane sigh..."
+ADHOC_VAL="false"
+DEV_VAL="false"
+[[ "$PROFILE_TYPE" == "adhoc" ]] && ADHOC_VAL="true"
+[[ "$PROFILE_TYPE" == "development" ]] && DEV_VAL="true"
+
 fastlane run sigh \
   username:"$APPLE_ID" \
   app_identifier:"$BUNDLE_ID" \
-  adhoc:$([[ "$PROFILE_TYPE" == "adhoc" ]] && echo true || echo false) \
-  development:$([[ "$PROFILE_TYPE" == "development" ]] && echo true || echo false) \
+  "adhoc:$ADHOC_VAL" \
+  "development:$DEV_VAL" \
   skip_install:true \
   ignore_profiles_with_different_name:true \
   filename:"$(basename "$PROFILE_PATH")" \
   output_path:"$OUT_DIR_ABS" \
-  "${TEAM_ARGS[@]}" \
+  ${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"} \
   "${FASTLANE_COMMON[@]}"
 
 [[ -f "$PROFILE_PATH" ]] || fail "Provisioning profile not found at: $PROFILE_PATH"
