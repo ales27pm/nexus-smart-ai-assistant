@@ -1,13 +1,8 @@
-import * as Calendar from "expo-calendar";
-import * as Contacts from "expo-contacts";
-import * as Location from "expo-location";
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
 import * as Speech from "expo-speech";
 import { setAudioModeAsync } from "expo-audio";
-import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import { Linking, Platform } from "react-native";
-import { recognizeOnce } from "@/utils/speechRecognition";
 import { computeEmbedding, cosineSimilarity } from "@/utils/vectorUtils";
 
 const VECTOR_DB_NAME = "native_vectors.db";
@@ -114,6 +109,21 @@ export async function loadLocalNote(): Promise<string> {
 }
 
 export async function getCurrentCoordinates(): Promise<string> {
+  if (Platform.OS === "web") {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation not supported on this browser"));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve(`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`),
+        (err) => reject(new Error(`Location error: ${err.message}`)),
+        { enableHighAccuracy: false, timeout: 10000 },
+      );
+    });
+  }
+
+  const Location = await import("expo-location");
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== Location.PermissionStatus.GRANTED) {
     throw new Error("Location permission not granted");
@@ -126,6 +136,11 @@ export async function getCurrentCoordinates(): Promise<string> {
 }
 
 export async function createCalendarEvent(): Promise<string> {
+  if (Platform.OS === "web") {
+    throw new Error("Calendar is not available on web");
+  }
+
+  const Calendar = await import("expo-calendar");
   const { status } = await Calendar.requestCalendarPermissionsAsync();
   if (status !== Calendar.PermissionStatus.GRANTED) {
     throw new Error("Calendar permission denied");
@@ -135,7 +150,7 @@ export async function createCalendarEvent(): Promise<string> {
     Platform.OS === "ios"
       ? await Calendar.getDefaultCalendarAsync()
       : (await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)).find(
-          (calendar) => calendar.allowsModifications,
+          (calendar: { allowsModifications: boolean }) => calendar.allowsModifications,
         );
 
   if (!defaultCalendar) {
@@ -158,6 +173,11 @@ export async function createCalendarEvent(): Promise<string> {
 }
 
 export async function getPrimaryContactSummary(): Promise<string> {
+  if (Platform.OS === "web") {
+    throw new Error("Contacts are not available on web");
+  }
+
+  const Contacts = await import("expo-contacts");
   const { status } = await Contacts.requestPermissionsAsync();
   if (status !== Contacts.PermissionStatus.GRANTED) {
     throw new Error("Contacts permission denied");
@@ -188,6 +208,13 @@ export async function speakText(text: string): Promise<void> {
 }
 
 export async function transcribeSpeechOnce(): Promise<string> {
+  if (Platform.OS === "web") {
+    throw new Error("Speech recognition is not available on web");
+  }
+
+  const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
+  const { recognizeOnce } = await import("@/utils/speechRecognition");
+
   const module = ExpoSpeechRecognitionModule;
 
   if (!module.isRecognitionAvailable()) {
