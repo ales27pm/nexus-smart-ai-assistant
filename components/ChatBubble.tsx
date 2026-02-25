@@ -113,17 +113,16 @@ function ChatBubble({ role, text }: ChatBubbleProps) {
                 {children}
               </Text>
             ),
-            image: (node) =>
-              (() => {
+            image: (node) => {
                 const src = node.attributes?.src;
                 return typeof src === "string" ? (
                   <SafeRemoteImage key={node.key} url={src} />
                 ) : (
-                  <Text key={node.key} style={styles.blockedImage}>
+                  <Text key={node.key} style={markdownStyles.link}>
                     Blocked image URL for safety. HTTPS required.
                   </Text>
                 );
-              })(),
+              },
           }}
         >
           {markdownText}

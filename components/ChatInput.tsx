@@ -177,8 +177,7 @@ export default function ChatInput({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
-      const recording = new Audio.Recording();
-      await recording.prepareToRecordAsync({
+      const { recording } = await Audio.Recording.createAsync({
         ios: {
           extension: ".wav",
           outputFormat: Audio.IOSOutputFormat.LINEARPCM,
@@ -200,7 +199,6 @@ export default function ChatInput({
         },
         web: {},
       });
-      await recording.startAsync();
       recordingRef.current = recording;
       setIsRecording(true);
       startPulse();

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import createContextHook from '@nkzw/create-context-hook';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Conversation, MemoryEntry, MemoryCategory } from '@/types';
+import { Conversation, MemoryEntry } from '@/types';
 import {
   loadConversationList,
   upsertConversation,

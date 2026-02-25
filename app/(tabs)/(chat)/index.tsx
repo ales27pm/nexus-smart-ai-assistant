@@ -981,7 +981,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
                   const lastText = lastUserMsg?.parts?.find(
                     (p: any) => p.type === "text",
                   )?.text;
-                  if (lastText) sendMessage(lastText);
+                  if (lastText) handleSend(lastText);
                 }}
                 activeOpacity={0.7}
               >

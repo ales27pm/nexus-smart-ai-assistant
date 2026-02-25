@@ -71,13 +71,7 @@ export function useCoreMLChat() {
       );
       return cleanCoreMLOutput(rawOutput, prompt);
     },
-    [
-      coreML,
-      DEFAULT_COREML_LOAD_OPTIONS,
-      DEFAULT_COREML_GENERATE_OPTIONS,
-      buildCoreMLChatPrompt,
-      cleanCoreMLOutput,
-    ],
+    [coreML],
   );
 
   return { coreML, isAvailable, generate };
