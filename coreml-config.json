@@ -1,0 +1,9 @@
+{
+  "activeModel": "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
+  "tokenizerRepo": "dphn/Dolphin3.0-Llama3.2-3B",
+  "coremlRepo": "ales27pm/Dolphin3.0-CoreML",
+  "contextLimit": 2048,
+  "eosTokenId": 128256,
+  "stopTokenIds": [128009, 128001],
+  "computeUnits": "cpuAndNeuralEngine"
+}

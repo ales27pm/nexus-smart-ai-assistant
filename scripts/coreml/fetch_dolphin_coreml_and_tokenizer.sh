@@ -1,36 +1,42 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage:
-#   ./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh int4
-#   ./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh int8
-#   ./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh fp16
-#
+# Downloads CoreML model + tokenizer based on manifest in coreml-config.json
 # Optional env:
 #   HF_TOKEN=...  (only if a repo becomes gated/private)
 
-COREML_REPO="ales27pm/Dolphin3.0-CoreML"
-TOKENIZER_REPO="dphn/Dolphin3.0-Llama3.2-3B"
-VARIANT="${1:-int4}"
-
-case "$VARIANT" in
-  int4|int4-lut) MODEL_FILE="Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage" ;;
-  int8) MODEL_FILE="Dolphin3.0-Llama3.2-3B-int8.mlpackage" ;;
-  fp16) MODEL_FILE="Dolphin3.0-Llama3.2-3B-fp16.mlpackage" ;;
-  *)
-    echo "Unknown variant: $VARIANT"
-    echo "Use one of: int4 | int8 | fp16"
-    exit 2
-    ;;
-esac
-
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+MANIFEST_PATH="$ROOT_DIR/coreml-config.json"
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "[!] jq is required to read coreml-config.json"
+  echo "    brew install jq  # macOS"
+  echo "    sudo apt-get install jq  # Debian/Ubuntu"
+  exit 2
+fi
+
+COREML_REPO="$(jq -r '.coremlRepo' "$MANIFEST_PATH")"
+TOKENIZER_REPO="$(jq -r '.tokenizerRepo' "$MANIFEST_PATH")"
+MODEL_FILE="$(jq -r '.activeModel' "$MANIFEST_PATH")"
+
+if [ -z "$COREML_REPO" ] || [ "$COREML_REPO" = "null" ]; then
+  echo "[!] Invalid coremlRepo in $MANIFEST_PATH"
+  exit 4
+fi
+if [ -z "$TOKENIZER_REPO" ] || [ "$TOKENIZER_REPO" = "null" ]; then
+  echo "[!] Invalid tokenizerRepo in $MANIFEST_PATH"
+  exit 5
+fi
+if [ -z "$MODEL_FILE" ] || [ "$MODEL_FILE" = "null" ]; then
+  echo "[!] Invalid activeModel in $MANIFEST_PATH"
+  exit 6
+fi
+
 MODEL_DEST="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/models"
 TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/dolphin_llama3_2_3b"
 
 mkdir -p "$MODEL_DEST" "$TOK_DEST"
 
-# Safer install path (no curl|bash). Prefer pipx, then pip --user.
 if ! command -v hf >/dev/null 2>&1; then
   echo "[i] 'hf' CLI not found; attempting safe installation via pipx/pip..."
   if command -v pipx >/dev/null 2>&1; then
@@ -80,6 +86,3 @@ echo "    $TOK_DEST"
 echo
 echo "[next] Inspect CoreML IO:"
 echo "    python3 scripts/coreml/inspect_coreml_io.py \"$MODEL_DEST/$MODEL_FILE\""
-echo
-echo "[next] In-app tokenizer path you will use:"
-echo "    $TOK_DEST"
