@@ -197,20 +197,21 @@ p12_pub_hash="$(openssl pkcs12 -in "$P12_PATH" -passin env:P12_PASSWORD -clcerts
 [[ "$p12_pub_hash" == "$cert_pub_hash" ]] || fail "Generated P12 certificate does not match selected identity $IDENTITY_SHA1"
 
 info "[3/4] Downloading provisioning profile via fastlane sigh..."
-ADHOC_VAL="false"
-DEV_VAL="false"
-[[ "$PROFILE_TYPE" == "adhoc" ]] && ADHOC_VAL="true"
-[[ "$PROFILE_TYPE" == "development" ]] && DEV_VAL="true"
+SIGH_TYPE_ARGS=()
+if [[ "$PROFILE_TYPE" == "adhoc" ]]; then
+  SIGH_TYPE_ARGS+=(adhoc:true)
+elif [[ "$PROFILE_TYPE" == "development" ]]; then
+  SIGH_TYPE_ARGS+=(development:true)
+fi
 
 fastlane run sigh \
   username:"$APPLE_ID" \
   app_identifier:"$BUNDLE_ID" \
-  "adhoc:$ADHOC_VAL" \
-  "development:$DEV_VAL" \
   skip_install:true \
   ignore_profiles_with_different_name:true \
   filename:"$(basename "$PROFILE_PATH")" \
   output_path:"$OUT_DIR_ABS" \
+  ${SIGH_TYPE_ARGS[@]+"${SIGH_TYPE_ARGS[@]}"} \
   ${TEAM_ARGS[@]+"${TEAM_ARGS[@]}"} \
   "${FASTLANE_COMMON[@]}"
 
