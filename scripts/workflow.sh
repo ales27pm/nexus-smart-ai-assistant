@@ -350,7 +350,12 @@ step_apple_login() {
     return 1
   fi
 
-  "$SCRIPT_DIR/ios/apple_developer_credentials.sh"
+  local cred_script="$SCRIPT_DIR/ios/apple_developer_credentials.sh"
+  if [[ ! -f "$cred_script" ]]; then
+    fail "Credential script not found: $cred_script"
+    return 1
+  fi
+  "$cred_script"
 }
 
 # ─── Step 6: Build ───────────────────────────────────────────────────────────
