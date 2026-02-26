@@ -164,11 +164,16 @@ step_model() {
       TOKEN_ARG=(--token-env HF_TOKEN)
     fi
 
-    python3 "$SCRIPT_DIR/coreml/hf_snapshot_download.py" \
-      --repo "$COREML_REPO" \
-      --local-dir "$HF_STAGING" \
-      "${ALLOW_ARGS[@]}" \
-      "${TOKEN_ARG[@]}"
+    local PY_ARGS=(
+      "$SCRIPT_DIR/coreml/hf_snapshot_download.py"
+      --repo "$COREML_REPO"
+      --local-dir "$HF_STAGING"
+      "${ALLOW_ARGS[@]}"
+    )
+    if [[ -n "${HF_TOKEN:-}" ]]; then
+      PY_ARGS+=("${TOKEN_ARG[@]}")
+    fi
+    python3 "${PY_ARGS[@]}"
   elif command -v hf >/dev/null 2>&1; then
     info "Using hf CLI..."
     local HF_ARGS=(download "$COREML_REPO" --include "$MODEL_FILE/**" --include "$MODEL_FILE/*" --local-dir "$HF_STAGING")
