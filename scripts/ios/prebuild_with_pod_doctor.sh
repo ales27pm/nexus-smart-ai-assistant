@@ -38,7 +38,10 @@ get_user_gem_home() {
 ensure_cocoapods() {
   if ! command -v pod >/dev/null 2>&1; then
     log "pod is not available on PATH. Install CocoaPods before running this script."
-    exit 1
+    log "Warning: continuing without pod on PATH; downstream bootstrap can install CocoaPods."
+    export POD_MISSING=1
+    export POD_AVAILABLE=false
+    return
   fi
 
   local current_pod_version
