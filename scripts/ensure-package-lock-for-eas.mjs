@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const lockPath = path.resolve(process.cwd(), "package-lock.json");
+const extraLockfiles = ["bun.lock", "yarn.lock", "pnpm-lock.yaml"];
 
 const log = (message) => {
   console.log(`[ensure-package-lock-for-eas] ${message}`);
@@ -25,6 +26,18 @@ if (!fs.existsSync(lockPath)) {
   } catch {
     fail("Failed to generate package-lock.json before EAS npm ci step.");
   }
+}
+
+const foundExtraLockfiles = extraLockfiles.filter((file) =>
+  fs.existsSync(path.resolve(process.cwd(), file)),
+);
+
+if (foundExtraLockfiles.length > 0) {
+  fail(
+    `Found additional lockfile(s): ${foundExtraLockfiles.join(
+      ", ",
+    )}. Keep only package-lock.json to avoid inconsistent dependency resolution in EAS builds.`,
+  );
 }
 
 let lockfile;
@@ -52,7 +65,10 @@ try {
   }
 }
 
-if (!Number.isInteger(lockfile.lockfileVersion) || lockfile.lockfileVersion < 1) {
+if (
+  !Number.isInteger(lockfile.lockfileVersion) ||
+  lockfile.lockfileVersion < 1
+) {
   fail("package-lock.json is present but has an unsupported lockfileVersion.");
 }
 
