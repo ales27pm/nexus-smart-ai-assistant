@@ -15,10 +15,6 @@ export function useCoreMLChat() {
   const providerRef = useRef<ICoreMLProvider | null>(null);
 
   useEffect(() => {
-    providerRef.current = provider;
-  }, [provider]);
-
-  useEffect(() => {
     let disposed = false;
 
     async function boot() {
@@ -26,10 +22,10 @@ export function useCoreMLChat() {
 
       try {
         const instance = new NativeCoreMLProvider();
-        await instance.isLoaded();
         await instance.load();
 
         if (!disposed) {
+          providerRef.current = instance;
           setProvider(instance);
           setIsAvailable(true);
         } else {
@@ -38,6 +34,7 @@ export function useCoreMLChat() {
       } catch (error) {
         console.error("[CoreML] boot failed", error);
         if (!disposed) {
+          providerRef.current = null;
           setProvider(null);
           setIsAvailable(false);
         }
@@ -49,6 +46,7 @@ export function useCoreMLChat() {
     return () => {
       disposed = true;
       const latestProvider = providerRef.current;
+      providerRef.current = null;
       if (latestProvider) {
         latestProvider.unload().catch((error) => {
           console.warn("[CoreML] unload failed", error);

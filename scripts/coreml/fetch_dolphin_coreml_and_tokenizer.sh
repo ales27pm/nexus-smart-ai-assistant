@@ -19,6 +19,19 @@ COREML_REPO="$(jq -r '.coremlRepo' "$MANIFEST_PATH")"
 TOKENIZER_REPO="$(jq -r '.tokenizerRepo' "$MANIFEST_PATH")"
 MODEL_FILE="$(jq -r '.activeModel' "$MANIFEST_PATH")"
 
+if [ -z "$COREML_REPO" ] || [ "$COREML_REPO" = "null" ]; then
+  echo "[!] Invalid coremlRepo in $MANIFEST_PATH"
+  exit 4
+fi
+if [ -z "$TOKENIZER_REPO" ] || [ "$TOKENIZER_REPO" = "null" ]; then
+  echo "[!] Invalid tokenizerRepo in $MANIFEST_PATH"
+  exit 5
+fi
+if [ -z "$MODEL_FILE" ] || [ "$MODEL_FILE" = "null" ]; then
+  echo "[!] Invalid activeModel in $MANIFEST_PATH"
+  exit 6
+fi
+
 MODEL_DEST="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/models"
 TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/dolphin_llama3_2_3b"
 

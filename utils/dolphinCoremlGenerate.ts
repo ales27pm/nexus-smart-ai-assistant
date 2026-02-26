@@ -21,7 +21,6 @@ function buildPrompt(prompt: string, history?: string[]): string {
 
 function buildGenerationOptions(opts: GenOpts): CoreMLGenerateOptions {
   return {
-    ...DEFAULT_COREML_GENERATE_OPTIONS,
     maxNewTokens:
       opts.maxNewTokens ?? DEFAULT_COREML_GENERATE_OPTIONS.maxNewTokens,
     temperature:
@@ -31,6 +30,9 @@ function buildGenerationOptions(opts: GenOpts): CoreMLGenerateOptions {
     repetitionPenalty:
       opts.repetitionPenalty ??
       DEFAULT_COREML_GENERATE_OPTIONS.repetitionPenalty,
+    stopTokenIds: DEFAULT_COREML_GENERATE_OPTIONS.stopTokenIds,
+    tokenizer: DEFAULT_COREML_GENERATE_OPTIONS.tokenizer,
+    seed: DEFAULT_COREML_GENERATE_OPTIONS.seed,
   };
 }
 
@@ -44,5 +46,5 @@ export async function dolphinCoremlGenerate(
     joinedPrompt,
     buildGenerationOptions(opts),
   );
-  return cleanCoreMLOutput(rawOutput, joinedPrompt).trim();
+  return cleanCoreMLOutput(rawOutput, joinedPrompt);
 }
