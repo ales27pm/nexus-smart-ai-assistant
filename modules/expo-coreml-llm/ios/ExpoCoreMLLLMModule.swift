@@ -40,5 +40,9 @@ public final class ExpoCoreMLLLMModule: Module {
       let gopts = try Types.GenerateFromTokensOptions(from: opts)
       return try runner.generateFromTokens(initialTokens: tokenIds, options: gopts)
     }
+
+    AsyncFunction("cancelAsync") { () async throws -> Void in
+      runner.cancelGeneration()
+    }
   }
 }

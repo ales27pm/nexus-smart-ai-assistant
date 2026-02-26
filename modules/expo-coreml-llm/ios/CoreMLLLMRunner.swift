@@ -18,12 +18,14 @@ final class CoreMLLLMRunner {
   private var hasState: Bool = false
 
   private let lock = NSLock()
+  private var isCancelled: Bool = false
 
   private var tokenizerCacheKey: String?
   private var tokenizerCache: Tokenizer?
 
   func unload() {
     lock.lock(); defer { lock.unlock() }
+    isCancelled = true
     model = nil
     isLoaded = false
     expectsSingleToken = false
@@ -32,16 +34,50 @@ final class CoreMLLLMRunner {
     tokenizerCache = nil
   }
 
+  func cancelGeneration() {
+    lock.lock(); defer { lock.unlock() }
+    isCancelled = true
+  }
+
   func load(options: Types.LoadModelOptions) throws -> Types.ModelInfo {
     let cfg = MLModelConfiguration()
     cfg.computeUnits = computeUnits(from: options.computeUnits)
     cfg.allowLowPrecisionAccumulationOnGPU = true
 
-    let modelURL = try ResourceResolver.resolveModelURL(
-      modelFile: options.modelFile ?? options.modelName,
-      modelPath: options.modelPath
-    )
-    let loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
+    let modelURL: URL
+    do {
+      modelURL = try ResourceResolver.resolveModelURL(
+        modelFile: options.modelFile ?? options.modelName,
+        modelPath: options.modelPath
+      )
+    } catch {
+      throw NSError(domain: "ExpoCoreMLLLM", code: 101, userInfo: [
+        NSLocalizedDescriptionKey: "Missing CoreML model resource. Verify bundled .mlpackage exists.",
+        NSUnderlyingErrorKey: error,
+      ])
+    }
+
+    let loaded: MLModel
+    do {
+      loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
+    } catch {
+      let nsError = error as NSError
+      let memoryDomains = Set(["MLModelErrorDomain", "MPSKernelErrorDomain", "MTLCommandBufferErrorDomain"])
+      let knownMemoryCodes = Set([3, 8, 9, 10, 11, 12])
+
+      let domainLooksMemory = memoryDomains.contains(nsError.domain)
+      let codeLooksMemory = knownMemoryCodes.contains(nsError.code)
+      let message = String(describing: error).lowercased()
+      let messageLooksMemory = message.contains("memory") || message.contains("allocate")
+
+      if (domainLooksMemory && codeLooksMemory) || messageLooksMemory {
+        throw NSError(domain: "ExpoCoreMLLLM", code: 102, userInfo: [
+          NSLocalizedDescriptionKey: "Unable to allocate memory for CoreML model.",
+          NSUnderlyingErrorKey: error,
+        ])
+      }
+      throw error
+    }
 
     let inDesc = loaded.modelDescription.inputDescriptionsByName[options.inputIdsName]
     let shape = inDesc?.multiArrayConstraint?.shape.map { $0.intValue } ?? []
@@ -65,6 +101,7 @@ final class CoreMLLLMRunner {
     self.hasState = detectedHasState
     self.model = loaded
     self.isLoaded = true
+    self.isCancelled = false
     lock.unlock()
 
     return Types.ModelInfo(
@@ -172,6 +209,10 @@ final class CoreMLLLMRunner {
     maxContext: Int?,
     eosTokenId: Int?
   ) throws -> [Int] {
+    lock.lock()
+    isCancelled = false
+    lock.unlock()
+
     var rng = SeededGenerator(seed: sampling.seed ?? Int.random(in: Int.min...Int.max))
 
     var tokens = initialTokens
@@ -191,6 +232,11 @@ final class CoreMLLLMRunner {
       var pos = 0
       var lastLogits: [Float]? = nil
       for t in tokens {
+        if shouldCancelGeneration() {
+          throw NSError(domain: "ExpoCoreMLLLM", code: 103, userInfo: [
+            NSLocalizedDescriptionKey: "Generation cancelled"
+          ])
+        }
         let cachePosition = clampCachePosition(pos, maxContext: maxContext)
         lastLogits = try predictSingleToken(
           model: model,
@@ -208,6 +254,11 @@ final class CoreMLLLMRunner {
       }
 
       for _ in 0..<sampling.maxNewTokens {
+        if shouldCancelGeneration() {
+          throw NSError(domain: "ExpoCoreMLLLM", code: 103, userInfo: [
+            NSLocalizedDescriptionKey: "Generation cancelled"
+          ])
+        }
         let ctx: [Int]
         if let mc = maxContext, mc > 0, tokens.count > mc {
           ctx = Array(tokens.suffix(mc))
@@ -263,6 +314,11 @@ final class CoreMLLLMRunner {
     )
 
     for _ in 0..<sampling.maxNewTokens {
+      if shouldCancelGeneration() {
+        throw NSError(domain: "ExpoCoreMLLLM", code: 103, userInfo: [
+          NSLocalizedDescriptionKey: "Generation cancelled"
+        ])
+      }
       let ctx: [Int]
       if let mc = maxContext, mc > 0, tokens.count > mc {
         ctx = Array(tokens.suffix(mc))
@@ -495,5 +551,12 @@ final class CoreMLLLMRunner {
     case .cpuAndGPU: return .cpuAndGPU
     case .cpuAndNeuralEngine: return .cpuAndNeuralEngine
     }
+  }
+
+  private func shouldCancelGeneration() -> Bool {
+    lock.lock()
+    let value = isCancelled
+    lock.unlock()
+    return value
   }
 }
