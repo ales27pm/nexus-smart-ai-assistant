@@ -66,16 +66,16 @@ ensure_cocoapods() {
 }
 
 write_bundler_files() {
-  mkdir -p "${IOS_DIR}"
-
   cat > "${IOS_DIR}/.ruby-version" <<'RUBY'
 3.2.6
 RUBY
 
-  cat > "${IOS_DIR}/Gemfile" <<'GEMFILE'
+  cat > "${IOS_DIR}/Gemfile" <<GEMFILE
 source 'https://rubygems.org'
 
-gem 'cocoapods', '1.15.2'
+ruby File.read(File.join(__dir__, '.ruby-version')).strip
+
+gem 'cocoapods', '= ${PREFERRED_COCOAPODS_VERSION}'
 GEMFILE
 
   log "Wrote ios/.ruby-version and ios/Gemfile to pin CocoaPods for bundle exec pod install."
