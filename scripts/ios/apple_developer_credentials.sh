@@ -263,8 +263,8 @@ prompt_p12_password() {
   echo -ne "  ${BOLD}P12 export password (min 1 char):${RESET} "
   read -rs P12_PASSWORD
   echo
-  if [[ -z "$P12_PASSWORD" ]]; then
-    fail "P12 password is required."
+  if [[ -z "$P12_PASSWORD" || ${#P12_PASSWORD} -lt 1 ]]; then
+    fail "P12 password is required (must be at least 1 character)."
     return 1
   fi
   export P12_PASSWORD
@@ -363,6 +363,7 @@ export_p12() {
 
   local TMP_DIR
   TMP_DIR="$(mktemp -d /tmp/apple-cred-export.XXXXXX)"
+  chmod 700 "$TMP_DIR"
   trap 'rm -rf "$TMP_DIR" 2>/dev/null || true' RETURN
 
   local CERT_PEM="$TMP_DIR/cert.pem"
@@ -416,8 +417,20 @@ export_p12() {
   [[ -s "$CERT_PEM" ]] || { fail "Unable to extract certificate PEM."; return 1; }
 
   info "Exporting private keys from keychain (you may need to approve a prompt)..."
+  if ! security show-keychain-info "$KEYCHAIN_PATH" >/dev/null 2>&1; then
+    warn "Keychain appears locked. Attempting unlock..."
+    security unlock-keychain "$KEYCHAIN_PATH" 2>/dev/null || {
+      fail "Keychain is locked and could not be unlocked."
+      echo -e "  ${DIM}Unlock manually: security unlock-keychain ~/Library/Keychains/login.keychain-db${RESET}"
+      return 1
+    }
+  fi
   security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1 || {
-    fail "Could not export private keys. Approve the keychain access prompt and retry."
+    fail "Could not export private keys."
+    echo -e "  ${DIM}Possible causes:${RESET}"
+    echo -e "  ${DIM}  - Keychain is locked (unlock it first)${RESET}"
+    echo -e "  ${DIM}  - Keychain access prompt was denied${RESET}"
+    echo -e "  ${DIM}  - Private key does not exist in keychain${RESET}"
     return 1
   }
   [[ -s "$ALL_KEYS_PEM" ]] || { fail "Private key export yielded empty file."; return 1; }
@@ -426,9 +439,8 @@ export_p12() {
   cert_pub_hash="$(openssl x509 -in "$CERT_PEM" -pubkey -noout | openssl pkey -pubin -outform DER | shasum -a 256 | awk '{print $1}')"
   [[ -n "$cert_pub_hash" ]] || { fail "Failed computing cert public key fingerprint."; return 1; }
 
-  export TMP_DIR
-  awk '
-    /-----BEGIN .*PRIVATE KEY-----/ {in_key=1; file=sprintf("%s/key_%04d.pem", ENVIRON["TMP_DIR"], ++n); print > file; next}
+  awk -v tmp_dir="$TMP_DIR" '
+    /-----BEGIN .*PRIVATE KEY-----/ {in_key=1; file=sprintf("%s/key_%04d.pem", tmp_dir, ++n); print > file; next}
     /-----END .*PRIVATE KEY-----/   {if (in_key) {print >> file; close(file)}; in_key=0; next}
     in_key {print >> file}
   ' "$ALL_KEYS_PEM"
@@ -576,6 +588,7 @@ validate_credentials() {
   info "Validating P12 in temp keychain..."
   local TMP_DIR
   TMP_DIR="$(mktemp -d /tmp/cred-validate.XXXXXX)"
+  chmod 700 "$TMP_DIR"
   local KC_PATH="$TMP_DIR/validate.keychain-db"
   local KC_PASS="val-$(date +%s)-$RANDOM"
 
