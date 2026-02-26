@@ -255,7 +255,9 @@ final class CoreMLLLMRunner {
 
       for _ in 0..<sampling.maxNewTokens {
         if shouldCancelGeneration() {
-          break
+          throw NSError(domain: "ExpoCoreMLLLM", code: 103, userInfo: [
+            NSLocalizedDescriptionKey: "Generation cancelled"
+          ])
         }
         let ctx: [Int]
         if let mc = maxContext, mc > 0, tokens.count > mc {
@@ -313,7 +315,9 @@ final class CoreMLLLMRunner {
 
     for _ in 0..<sampling.maxNewTokens {
       if shouldCancelGeneration() {
-        break
+        throw NSError(domain: "ExpoCoreMLLLM", code: 103, userInfo: [
+          NSLocalizedDescriptionKey: "Generation cancelled"
+        ])
       }
       let ctx: [Int]
       if let mc = maxContext, mc > 0, tokens.count > mc {
