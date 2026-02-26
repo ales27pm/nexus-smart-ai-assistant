@@ -71,6 +71,10 @@
         "projectId": "fbf2d612-8c64-4b4c-9866-76c27abb4a0a"
       }
     },
-    "jsEngine": "jsc"
+    "jsEngine": "jsc",
+    "android": {
+      "newArchEnabled": true,
+      "jsEngine": "hermes"
+    }
   }
 }
