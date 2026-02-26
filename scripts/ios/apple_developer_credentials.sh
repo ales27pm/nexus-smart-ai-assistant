@@ -380,6 +380,7 @@ export_p12() {
   local CERT_PEM="$TMP_DIR/cert.pem"
   local ALL_KEYS_PEM="$TMP_DIR/all-keys.pem"
   local MATCH_KEY_PEM="$TMP_DIR/matching-key.pem"
+  local DIRECT_P12_PATH="$TMP_DIR/direct-export.p12"
   local IDENTITIES_TXT="$TMP_DIR/identities.txt"
 
   local IDENTITY_LABEL="Apple Distribution:"
@@ -427,20 +428,42 @@ export_p12() {
   ' > "$CERT_PEM"
   [[ -s "$CERT_PEM" ]] || { fail "Unable to extract certificate PEM."; return 1; }
 
-  info "Exporting private keys from keychain (you may need to approve a prompt)..."
-  if ! security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1; then
-    fail "Could not export private keys from keychain."
-    echo -e "  ${DIM}Possible causes:${RESET}"
-    echo -e "  ${DIM}  - Keychain is locked (unlock with: security unlock-keychain ~/Library/Keychains/login.keychain-db)${RESET}"
-    echo -e "  ${DIM}  - Keychain access prompt was denied${RESET}"
-    echo -e "  ${DIM}  - Private key does not exist in keychain${RESET}"
-    return 1
-  fi
-  [[ -s "$ALL_KEYS_PEM" ]] || { fail "Private key export yielded empty file."; return 1; }
-
   local cert_pub_hash
   cert_pub_hash="$(openssl x509 -in "$CERT_PEM" -pubkey -noout | openssl pkey -pubin -outform DER | shasum -a 256 | awk '{print $1}')"
   [[ -n "$cert_pub_hash" ]] || { fail "Failed computing cert public key fingerprint."; return 1; }
+
+  info "Exporting private keys from keychain (you may need to approve a prompt)..."
+  if ! security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1; then
+    warn "Could not export raw private keys. Trying direct identity export fallback..."
+    if ! security export -k "$KEYCHAIN_PATH" -t identities -f pkcs12 -P "$P12_PASSWORD" -o "$DIRECT_P12_PATH" >/dev/null 2>&1; then
+      fail "Could not export private keys from keychain."
+      echo -e "  ${DIM}Possible causes:${RESET}"
+      echo -e "  ${DIM}  - Keychain is locked (unlock with: security unlock-keychain ~/Library/Keychains/login.keychain-db)${RESET}"
+      echo -e "  ${DIM}  - Keychain access prompt was denied${RESET}"
+      echo -e "  ${DIM}  - Private key does not exist in keychain${RESET}"
+      return 1
+    fi
+
+    local direct_verify
+    direct_verify="$(openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys 2>/dev/null | openssl x509 -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+    if [[ "$direct_verify" != "$cert_pub_hash" ]]; then
+      fail "Fallback P12 export succeeded, but certificate does not match selected identity $IDENTITY_SHA1."
+      echo -e "  ${DIM}Try removing unrelated identities or set TEAM_ID to narrow identity selection.${RESET}"
+      return 1
+    fi
+
+    mkdir -p "$OUT_DIR"
+    cp "$DIRECT_P12_PATH" "$P12_PATH"
+    success "P12 exported via identity fallback: $P12_PATH"
+
+    local cert_subject cert_dates
+    cert_subject="$(openssl x509 -in "$CERT_PEM" -noout -subject 2>/dev/null || true)"
+    cert_dates="$(openssl x509 -in "$CERT_PEM" -noout -dates 2>/dev/null || true)"
+    echo -e "  ${DIM}$cert_subject${RESET}"
+    echo -e "  ${DIM}$cert_dates${RESET}"
+    return 0
+  fi
+  [[ -s "$ALL_KEYS_PEM" ]] || { fail "Private key export yielded empty file."; return 1; }
 
   export TMP_DIR
   awk '
