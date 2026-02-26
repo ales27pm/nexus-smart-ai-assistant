@@ -29,7 +29,8 @@ try {
 
 const r = run("node", [
   "./scripts/repair-ios-local-credentials.mjs",
-  "--check",
+  "--repair",
+  "--no-validate",
 ]);
 if (r.status !== 0) {
   console.error(r.stdout || "");

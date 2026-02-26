@@ -1,9 +1,6 @@
-# Check out https://docs.codemagic.io/yaml/building-a-react-native-app/ for more information
-# Please review and update values
-
 workflows:
-  react-native-ios:
-    name: React Native iOS
+  ios-production:
+    name: iOS Production Build
     max_build_duration: 120
     instance_type: mac_mini_m2
     integrations:
@@ -11,74 +8,73 @@ workflows:
     environment:
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: io.codemagic.expoapp
+        bundle_identifier: app.rork.smart-ai-assistant-slxh0fb
       vars:
-        XCODE_WORKSPACE: "ExpoApp.xcworkspace" # <-- Put the name of your Xcode workspace here
-        XCODE_SCHEME: "ExpoApp" # <-- Put the name of your Xcode scheme here
-        BUNDLE_ID: "io.codemagic.expoapp" # <-- Put your Bundle Id here e.g com.domain.myapp
-        APP_ID: 1616629701 # <-- Put the app id number here. This is found in App Store Connect > App > General > App Information
-      node: 16.14.2
-      xcode: 13.1
+        BUNDLE_ID: "app.rork.smart-ai-assistant-slxh0fb"
+        APP_NAME: "Smart AI Assistant"
+        MODEL_VARIANT: "int4"
+      node: 20
+      xcode: latest
       cocoapods: default
     triggering:
       events:
         - push
         - tag
-        - pull_request
       branch_patterns:
-        - pattern: develop
+        - pattern: main
           include: true
           source: true
     scripts:
-      - name: Install dependencies, Expo CLI and eject app
+      - name: Install dependencies
         script: |
-          yarn install
-          yarn global add expo-cli
-          expo eject
+          npm install
+
+      - name: Download CoreML model
+        script: |
+          python3 -m pip install --user huggingface_hub
+          export PATH="$HOME/.local/bin:$PATH"
+          ./scripts/workflow.sh --variant "$MODEL_VARIANT" --step model
+
+      - name: Expo prebuild
+        script: |
+          npx expo prebuild --platform ios --non-interactive --no-install
+
+      - name: Install CocoaPods
+        script: |
+          cd ios && pod install --repo-update
+
       - name: Set Info.plist values
         script: |
-          PLIST=$FCI_BUILD_DIR/$XCODE_SCHEME/Info.plist
-          PLIST_BUDDY=/usr/libexec/PlistBuddy
-          $PLIST_BUDDY -c "Add :ITSAppUsesNonExemptEncryption bool false" $PLIST
-      - name: Install CocoaPods dependencies
-        script: |
-          cd ios && pod install
+          PLIST=$CM_BUILD_DIR/ios/SmartAIAssistant/Info.plist
+          if [ -f "$PLIST" ]; then
+            /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" 2>/dev/null || true
+          fi
+
       - name: Increment build number
         script: |
           cd $CM_BUILD_DIR/ios
-          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_ID")
+          LATEST_BUILD_NUMBER=$(app-store-connect get-latest-app-store-build-number "$APP_ID" 2>/dev/null || echo "0")
           agvtool new-version -all $(($LATEST_BUILD_NUMBER + 1))
-      - name: Set up code signing settings on Xcode project
+
+      - name: Set up code signing
         script: |
           xcode-project use-profiles --warn-only
-      - name: Build ipa for distribution
+
+      - name: Build IPA
         script: |
+          WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' -type d -print | head -n 1)"
+          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" 2>/dev/null | ruby -e 'require "json"; puts JSON.parse(STDIN.read).dig("workspace","schemes")&.first')"
           xcode-project build-ipa \
-            --workspace "$CM_BUILD_DIR/ios/$XCODE_WORKSPACE" \
-            --scheme "$XCODE_SCHEME"
+            --workspace "$WORKSPACE" \
+            --scheme "$SCHEME"
+
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
-      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+
     publishing:
-      email:
-        recipients:
-          - user_1@example.com
-          - user_2@example.com
-        notify:
-          success: true
-          failure: false
       app_store_connect:
         auth: integration
-
-        # Configuration related to TestFlight (optional)
-        # Note: This action is performed during post-processing.
         submit_to_testflight: true
-        beta_groups: # Specify the names of beta tester groups that will get access to the build once it has passed beta review.
-          - group name 1
-          - group name 2
-
-        # Configuration related to App Store (optional)
-        # Note: This action is performed during post-processing.
         submit_to_app_store: false
