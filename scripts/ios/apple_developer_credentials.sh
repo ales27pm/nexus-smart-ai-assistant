@@ -436,7 +436,8 @@ export_p12() {
   if ! security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1; then
     warn "Could not export raw private keys. Trying direct identity export fallback..."
     if ! security export -k "$KEYCHAIN_PATH" -t identities -f pkcs12 -P "$P12_PASSWORD" -o "$DIRECT_P12_PATH" >/dev/null 2>&1; then
-      fail "Could not export private keys from keychain."
+      fail "Could not export identities as PKCS#12 from keychain."
+      echo -e "  ${DIM}Primary private-key export and fallback identity export both failed.${RESET}"
       echo -e "  ${DIM}Possible causes:${RESET}"
       echo -e "  ${DIM}  - Keychain is locked (unlock with: security unlock-keychain ~/Library/Keychains/login.keychain-db)${RESET}"
       echo -e "  ${DIM}  - Keychain access prompt was denied${RESET}"
@@ -444,10 +445,31 @@ export_p12() {
       return 1
     fi
 
-    local direct_verify
-    direct_verify="$(openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys 2>/dev/null | openssl x509 -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
-    if [[ "$direct_verify" != "$cert_pub_hash" ]]; then
-      fail "Fallback P12 export succeeded, but certificate does not match selected identity $IDENTITY_SHA1."
+    local certs_from_p12
+    certs_from_p12="$TMP_DIR/fallback-certs.pem"
+    openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys -nodes 2>/dev/null > "$certs_from_p12"
+    [[ -s "$certs_from_p12" ]] || { fail "Fallback P12 export succeeded, but no leaf certificates were found."; return 1; }
+
+    local p12_match=false
+    export TMP_DIR
+    awk '
+      /-----BEGIN CERTIFICATE-----/ {in_cert=1; file=sprintf("%s/fallback_cert_%04d.pem", ENVIRON["TMP_DIR"], ++n); print > file; next}
+      /-----END CERTIFICATE-----/   {if (in_cert) {print >> file; close(file)}; in_cert=0; next}
+      in_cert {print >> file}
+    ' "$certs_from_p12"
+
+    for cert_file in "$TMP_DIR"/fallback_cert_*.pem; do
+      [[ -f "$cert_file" ]] || continue
+      local cert_hash
+      cert_hash="$(openssl x509 -in "$cert_file" -pubkey -noout 2>/dev/null | openssl pkey -pubin -outform DER 2>/dev/null | shasum -a 256 | awk '{print $1}')"
+      if [[ "$cert_hash" == "$cert_pub_hash" ]]; then
+        p12_match=true
+        break
+      fi
+    done
+
+    if [[ "$p12_match" != true ]]; then
+      fail "Fallback P12 export succeeded, but no certificate in the PKCS#12 matches selected identity $IDENTITY_SHA1."
       echo -e "  ${DIM}Try removing unrelated identities or set TEAM_ID to narrow identity selection.${RESET}"
       return 1
     fi
