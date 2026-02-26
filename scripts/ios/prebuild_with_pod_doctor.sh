@@ -9,6 +9,16 @@ log() {
   echo "[ios-prebuild-doctor] $*"
 }
 
+get_user_gem_home() {
+  local user_gem_home
+  if ! user_gem_home="$(gem env user_gemhome 2>/dev/null)" || [[ -z "${user_gem_home}" ]]; then
+    log "Failed to resolve gem user_gemhome; ensure RubyGems is installed and configured."
+    exit 1
+  fi
+
+  printf '%s\n' "${user_gem_home}"
+}
+
 ensure_cocoapods() {
   if ! command -v pod >/dev/null 2>&1; then
     log "pod is not available on PATH. Install CocoaPods before running this script."
@@ -25,7 +35,7 @@ ensure_cocoapods() {
 
   log "Installing CocoaPods ${PREFERRED_COCOAPODS_VERSION} into user gems for reproducible prebuild runs."
   local user_gem_home
-  user_gem_home="$(gem env user_gemhome)"
+  user_gem_home="$(get_user_gem_home)"
   gem install cocoapods -v "${PREFERRED_COCOAPODS_VERSION}" --user-install --no-document >/dev/null
   export PATH="${user_gem_home}/bin:${PATH}"
 
@@ -43,7 +53,7 @@ write_bundler_files() {
   mkdir -p "${IOS_DIR}"
 
   cat > "${IOS_DIR}/.ruby-version" <<'RUBY'
-2.7.8
+3.2.6
 RUBY
 
   cat > "${IOS_DIR}/Gemfile" <<'GEMFILE'
@@ -69,7 +79,9 @@ run_prebuild_and_pod_install() {
   if ! command -v bundle >/dev/null 2>&1; then
     log "Bundler not found; installing bundler into user gems."
     gem install bundler --user-install --no-document >/dev/null
-    export PATH="$(gem env user_gemhome)/bin:${PATH}"
+    local user_gem_home
+    user_gem_home="$(get_user_gem_home)"
+    export PATH="${user_gem_home}/bin:${PATH}"
   fi
 
   log "Installing iOS Ruby gems via bundler."
