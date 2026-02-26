@@ -50,7 +50,15 @@
       "expo-calendar",
       "expo-contacts",
       "expo-audio",
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "privacyManifestAggregationEnabled": false
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
