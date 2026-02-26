@@ -557,17 +557,15 @@ export_p12() {
 download_provisioning_profile() {
   header "Downloading Provisioning Profile"
 
-  local ADHOC_VAL="false"
-  local DEV_VAL="false"
-  [[ "$PROFILE_TYPE" == "adhoc" ]] && ADHOC_VAL="true"
-  [[ "$PROFILE_TYPE" == "development" ]] && DEV_VAL="true"
-
   mkdir -p "$OUT_DIR"
 
   local FL_ARGS=()
   FL_ARGS+=(app_identifier:"$BUNDLE_ID")
-  FL_ARGS+=("adhoc:$ADHOC_VAL")
-  FL_ARGS+=("development:$DEV_VAL")
+  if [[ "$PROFILE_TYPE" == "adhoc" ]]; then
+    FL_ARGS+=(adhoc:true)
+  elif [[ "$PROFILE_TYPE" == "development" ]]; then
+    FL_ARGS+=(development:true)
+  fi
   FL_ARGS+=(skip_install:true)
   FL_ARGS+=(ignore_profiles_with_different_name:true)
   FL_ARGS+=(filename:"$(basename "$PROFILE_PATH")")
