@@ -17,7 +17,8 @@
     "build:prod:ios:local:repair": "./scripts/run-ios-local-eas-build.sh --profile production --clean-cache --repair-credentials",
     "check:ios:credentials": "node ./scripts/validate-ios-local-credentials.mjs",
     "eas-build-pre-install": "node ./scripts/ensure-package-lock-for-eas.mjs",
-    "build:prod:local:repair": "npm run build:prod:ios:local:repair"
+    "build:prod:local:repair": "npm run build:prod:ios:local:repair",
+    "android": "expo run:android"
   },
   "dependencies": {
     "@naveen521kk/expo-hf-tokenizers": "^0.1.0",
@@ -31,7 +32,7 @@
     "expo-audio": "^1.1.1",
     "expo-av": "~16.0.8",
     "expo-blur": "^15.0.8",
-    "expo-build-properties": "~1.0.9",
+    "expo-build-properties": "~1.0.10",
     "expo-calendar": "^15.0.8",
     "expo-clipboard": "^8.0.8",
     "expo-constants": "^18.0.13",
