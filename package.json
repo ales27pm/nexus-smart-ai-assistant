@@ -18,7 +18,8 @@
     "check:ios:credentials": "node ./scripts/validate-ios-local-credentials.mjs",
     "eas-build-pre-install": "node ./scripts/ensure-package-lock-for-eas.mjs",
     "build:prod:local:repair": "npm run build:prod:ios:local:repair",
-    "android": "expo run:android"
+    "android": "expo run:android",
+    "ios:prebuild:doctor": "./scripts/ios/prebuild_with_pod_doctor.sh"
   },
   "dependencies": {
     "@naveen521kk/expo-hf-tokenizers": "^0.1.0",
