@@ -7,7 +7,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "rork-app",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -70,6 +70,7 @@
       "eas": {
         "projectId": "fbf2d612-8c64-4b4c-9866-76c27abb4a0a"
       }
-    }
+    },
+    "jsEngine": "jsc"
   }
 }

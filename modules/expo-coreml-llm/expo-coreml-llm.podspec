@@ -19,7 +19,9 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/**/*.{h,m,mm,swift}'
   s.swift_version = '5.9'
 
+  # CocoaPods 1.15+ can fail when directory entries are added as PBX file refs.
+  # Match only files to avoid creating duplicate group references.
   s.resource_bundles = {
-    'ExpoCoreMLLLMResources' => ['ios/resources/**/*']
+    'ExpoCoreMLLLMResources' => ['ios/resources/**/*.*']
   }
 end
