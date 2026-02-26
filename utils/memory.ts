@@ -77,6 +77,24 @@ export async function pruneWeakAssociativeLinks(
   return removed;
 }
 
+export type MemoryExtractionPolicy = {
+  minUserChars?: number;
+  minAssistantChars?: number;
+};
+
+export function shouldExtractMemory(
+  userText: string,
+  assistantText: string,
+  policy: MemoryExtractionPolicy = {},
+): boolean {
+  const minUserChars = policy.minUserChars ?? 20;
+  const minAssistantChars = policy.minAssistantChars ?? 20;
+
+  return (
+    userText.trim().length >= minUserChars &&
+    assistantText.trim().length >= minAssistantChars
+  );
+}
 function migrateMemory(
   m: Partial<MemoryEntry> & { id: string; content: string },
 ): MemoryEntry {
