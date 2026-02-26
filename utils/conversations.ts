@@ -48,12 +48,8 @@ export async function clearAllConversations(): Promise<void> {
 }
 
 export async function saveMessages(convId: string, messages: unknown[]): Promise<void> {
-  try {
-    await AsyncStorage.setItem(MSG_PREFIX + convId, JSON.stringify(messages));
-    console.log('[NEXUS] Messages saved for:', convId, 'count:', messages.length);
-  } catch (e) {
-    console.log('[NEXUS] Failed to save messages:', e);
-  }
+  await AsyncStorage.setItem(MSG_PREFIX + convId, JSON.stringify(messages));
+  console.log('[NEXUS] Messages saved for:', convId, 'count:', messages.length);
 }
 
 export async function loadMessages(convId: string): Promise<unknown[]> {
