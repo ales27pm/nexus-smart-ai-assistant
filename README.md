@@ -55,6 +55,10 @@ bun run start -- --ios
 - Click the "Edit" button (pencil icon) at the top right of the file view.
 - Make your changes and commit the changes.
 
+## NEXUS Architecture Reference
+
+For a detailed specification of the NEXUS cognitive system architecture used in this project, see [`docs/NEXUS_COGNITIVE_FRAMEWORK_ARCHITECTURE.md`](docs/NEXUS_COGNITIVE_FRAMEWORK_ARCHITECTURE.md).
+
 ## What technologies are used for this project?
 
 This project is built with the most popular native mobile cross-platform technical stack:

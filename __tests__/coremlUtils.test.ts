@@ -1,3 +1,4 @@
+import { modelManifest } from "@/utils/modelManifest";
 import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
@@ -24,7 +25,7 @@ describe("coreml utils", () => {
 
   it("exposes stable default load and generation settings", () => {
     expect(DEFAULT_COREML_LOAD_OPTIONS.modelFile).toBe(
-      "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
+      modelManifest.activeModel,
     );
     expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.kind).toBe("none");
   });
