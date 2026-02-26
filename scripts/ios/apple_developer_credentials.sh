@@ -39,7 +39,22 @@ fail()    { echo -e "${RED}[✗]${RESET} $*" >&2; }
 header()  { echo -e "\n${BOLD}━━━ $* ━━━${RESET}\n"; }
 divider() { echo -e "${DIM}────────────────────────────────────────────────${RESET}"; }
 
-BUNDLE_ID="app.rork.smart-ai-assistant-slxh0fb"
+_GLOBAL_TMP_DIRS=()
+_global_cleanup() {
+  for d in "${_GLOBAL_TMP_DIRS[@]+"${_GLOBAL_TMP_DIRS[@]}"}"; do
+    rm -rf "$d" 2>/dev/null || true
+  done
+}
+trap '_global_cleanup' EXIT
+
+resolve_bundle_id() {
+  if command -v node >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/app.json" ]]; then
+    node -e "try { const c = JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/app.json','utf8')); console.log(c.expo.ios.bundleIdentifier || c.expo.slug || ''); } catch(e) { console.log(''); }" 2>/dev/null
+  fi
+}
+
+BUNDLE_ID_FROM_APP_JSON="$(resolve_bundle_id)"
+BUNDLE_ID="${BUNDLE_ID_FROM_APP_JSON:-app.rork.smart-ai-assistant-slxh0fb}"
 OUT_DIR="$PROJECT_ROOT/credentials/ios"
 CREDS_JSON="$PROJECT_ROOT/credentials.json"
 CONFIG_DIR="$PROJECT_ROOT/.apple-auth"
@@ -270,13 +285,6 @@ prompt_p12_password() {
   export P12_PASSWORD
 }
 
-build_fastlane_api_args() {
-  local args=""
-  args="api_key_path:$API_KEY_PATH"
-  args="$args api_key:'{\"key_id\":\"$API_KEY_ID\",\"issuer_id\":\"$API_KEY_ISSUER\",\"key_filepath\":\"$API_KEY_PATH\"}'"
-  echo "$args"
-}
-
 list_existing_certificates() {
   header "Checking Existing Certificates"
 
@@ -364,6 +372,7 @@ export_p12() {
   local TMP_DIR
   TMP_DIR="$(mktemp -d /tmp/apple-cred-export.XXXXXX)"
   chmod 700 "$TMP_DIR"
+  _GLOBAL_TMP_DIRS+=("$TMP_DIR")
   trap 'rm -rf "$TMP_DIR" 2>/dev/null || true' RETURN
 
   local CERT_PEM="$TMP_DIR/cert.pem"
@@ -417,30 +426,23 @@ export_p12() {
   [[ -s "$CERT_PEM" ]] || { fail "Unable to extract certificate PEM."; return 1; }
 
   info "Exporting private keys from keychain (you may need to approve a prompt)..."
-  if ! security show-keychain-info "$KEYCHAIN_PATH" >/dev/null 2>&1; then
-    warn "Keychain appears locked. Attempting unlock..."
-    security unlock-keychain "$KEYCHAIN_PATH" 2>/dev/null || {
-      fail "Keychain is locked and could not be unlocked."
-      echo -e "  ${DIM}Unlock manually: security unlock-keychain ~/Library/Keychains/login.keychain-db${RESET}"
-      return 1
-    }
-  fi
-  security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1 || {
-    fail "Could not export private keys."
+  if ! security export -k "$KEYCHAIN_PATH" -t priv -f pemseq -o "$ALL_KEYS_PEM" >/dev/null 2>&1; then
+    fail "Could not export private keys from keychain."
     echo -e "  ${DIM}Possible causes:${RESET}"
-    echo -e "  ${DIM}  - Keychain is locked (unlock it first)${RESET}"
+    echo -e "  ${DIM}  - Keychain is locked (unlock with: security unlock-keychain ~/Library/Keychains/login.keychain-db)${RESET}"
     echo -e "  ${DIM}  - Keychain access prompt was denied${RESET}"
     echo -e "  ${DIM}  - Private key does not exist in keychain${RESET}"
     return 1
-  }
+  fi
   [[ -s "$ALL_KEYS_PEM" ]] || { fail "Private key export yielded empty file."; return 1; }
 
   local cert_pub_hash
   cert_pub_hash="$(openssl x509 -in "$CERT_PEM" -pubkey -noout | openssl pkey -pubin -outform DER | shasum -a 256 | awk '{print $1}')"
   [[ -n "$cert_pub_hash" ]] || { fail "Failed computing cert public key fingerprint."; return 1; }
 
-  awk -v tmp_dir="$TMP_DIR" '
-    /-----BEGIN .*PRIVATE KEY-----/ {in_key=1; file=sprintf("%s/key_%04d.pem", tmp_dir, ++n); print > file; next}
+  export TMP_DIR
+  awk '
+    /-----BEGIN .*PRIVATE KEY-----/ {in_key=1; file=sprintf("%s/key_%04d.pem", ENVIRON["TMP_DIR"], ++n); print > file; next}
     /-----END .*PRIVATE KEY-----/   {if (in_key) {print >> file; close(file)}; in_key=0; next}
     in_key {print >> file}
   ' "$ALL_KEYS_PEM"
@@ -545,6 +547,13 @@ download_provisioning_profile() {
   fi
 }
 
+escape_json_string() {
+  local input="$1"
+  input="${input//\\/\\\\}"
+  input="${input//\"/\\\"}"
+  printf '%s' "$input"
+}
+
 write_credentials_json() {
   header "Writing credentials.json"
 
@@ -552,19 +561,45 @@ write_credentials_json() {
   rel_p12="$(python3 -c "import os.path; print(os.path.relpath('$P12_PATH', '$PROJECT_ROOT'))" 2>/dev/null || echo "$P12_PATH")"
   rel_profile="$(python3 -c "import os.path; print(os.path.relpath('$PROFILE_PATH', '$PROJECT_ROOT'))" 2>/dev/null || echo "$PROFILE_PATH")"
 
-  cat > "$CREDS_JSON" <<JSON
+  if command -v jq >/dev/null 2>&1; then
+    jq -n \
+      --arg profile "$rel_profile" \
+      --arg p12 "$rel_p12" \
+      --arg pass "$P12_PASSWORD" \
+      '{
+        ios: {
+          provisioningProfilePath: $profile,
+          distributionCertificate: {
+            path: $p12,
+            password: $pass
+          }
+        }
+      }' > "$CREDS_JSON"
+  else
+    local escaped_password
+    escaped_password="$(escape_json_string "$P12_PASSWORD")"
+
+    cat > "$CREDS_JSON" <<JSON
 {
   "ios": {
     "provisioningProfilePath": "$rel_profile",
     "distributionCertificate": {
       "path": "$rel_p12",
-      "password": "$P12_PASSWORD"
+      "password": "$escaped_password"
     }
   }
 }
 JSON
+  fi
 
   success "credentials.json written."
+  warn "credentials.json contains sensitive data — do NOT commit it to version control."
+  if [[ -f "$PROJECT_ROOT/.gitignore" ]]; then
+    if ! grep -q 'credentials\.json' "$PROJECT_ROOT/.gitignore" 2>/dev/null; then
+      echo "credentials.json" >> "$PROJECT_ROOT/.gitignore"
+      info "Added credentials.json to .gitignore"
+    fi
+  fi
   info "  provisioningProfilePath: $rel_profile"
   info "  distributionCertificate.path: $rel_p12"
 }
@@ -589,6 +624,7 @@ validate_credentials() {
   local TMP_DIR
   TMP_DIR="$(mktemp -d /tmp/cred-validate.XXXXXX)"
   chmod 700 "$TMP_DIR"
+  _GLOBAL_TMP_DIRS+=("$TMP_DIR")
   local KC_PATH="$TMP_DIR/validate.keychain-db"
   local KC_PASS="val-$(date +%s)-$RANDOM"
 
@@ -618,6 +654,7 @@ validate_credentials() {
     else
       fail "P12 imported but no valid signing identity found."
       echo -e "  ${DIM}$ident_out${RESET}"
+      security delete-keychain "$KC_PATH" 2>/dev/null || true
       rm -rf "$TMP_DIR" 2>/dev/null || true
       return 1
     fi

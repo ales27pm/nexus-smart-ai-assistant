@@ -39,7 +39,14 @@ header()  { echo -e "\n${BOLD}━━━ $* ━━━${RESET}\n"; }
 divider() { echo -e "${DIM}────────────────────────────────────────────────${RESET}"; }
 
 # ─── Defaults ─────────────────────────────────────────────────────────────────
-BUNDLE_ID="app.rork.smart-ai-assistant-slxh0fb"
+resolve_bundle_id() {
+  if command -v node >/dev/null 2>&1 && [[ -f "$PROJECT_ROOT/app.json" ]]; then
+    node -e "try { const c = JSON.parse(require('fs').readFileSync('$PROJECT_ROOT/app.json','utf8')); console.log(c.expo.ios.bundleIdentifier || c.expo.slug || ''); } catch(e) { console.log(''); }" 2>/dev/null
+  fi
+}
+
+BUNDLE_ID_FROM_APP_JSON="$(resolve_bundle_id)"
+BUNDLE_ID="${BUNDLE_ID_FROM_APP_JSON:-app.rork.smart-ai-assistant-slxh0fb}"
 APP_NAME="Smart AI Assistant"
 MODEL_VARIANT="${MODEL_VARIANT:-int4}"
 BUILD_PROFILE="${BUILD_PROFILE:-production}"
