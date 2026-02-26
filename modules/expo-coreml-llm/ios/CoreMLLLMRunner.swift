@@ -61,8 +61,16 @@ final class CoreMLLLMRunner {
     do {
       loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
     } catch {
+      let nsError = error as NSError
+      let memoryDomains = Set(["MLModelErrorDomain", "MPSKernelErrorDomain", "MTLCommandBufferErrorDomain"])
+      let knownMemoryCodes = Set([3, 8, 9, 10, 11, 12])
+
+      let domainLooksMemory = memoryDomains.contains(nsError.domain)
+      let codeLooksMemory = knownMemoryCodes.contains(nsError.code)
       let message = String(describing: error).lowercased()
-      if message.contains("memory") || message.contains("allocate") {
+      let messageLooksMemory = message.contains("memory") || message.contains("allocate")
+
+      if (domainLooksMemory && codeLooksMemory) || messageLooksMemory {
         throw NSError(domain: "ExpoCoreMLLLM", code: 102, userInfo: [
           NSLocalizedDescriptionKey: "Unable to allocate memory for CoreML model.",
           NSUnderlyingErrorKey: error,
