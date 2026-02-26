@@ -43,4 +43,16 @@ describe("detectSilence", () => {
     expect(result.shouldStop).toBe(true);
     expect(result.consecutiveSilentFrames).toBe(10);
   });
+
+  it("does not stop when no speech was detected", () => {
+    const result = detectSilence({
+      ...base,
+      hadSpeech: false,
+      consecutiveSilentFrames: 9,
+      level: -45,
+    });
+
+    expect(result.shouldStop).toBe(false);
+    expect(result.consecutiveSilentFrames).toBe(10);
+  });
 });

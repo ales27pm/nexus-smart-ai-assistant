@@ -17,6 +17,7 @@ enum Types {
   enum LLMError: Int {
     case modelMissing = 101
     case outOfMemory = 102
+    case tokenBasedModelMissingTokenizer = 122
   }
 
   struct LoadModelOptions {

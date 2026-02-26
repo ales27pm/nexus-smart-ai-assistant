@@ -161,7 +161,7 @@ final class CoreMLLLMRunner {
       throw NSError(domain: "ExpoCoreMLLLM", code: 100, userInfo: [NSLocalizedDescriptionKey: "Model not loaded. Call loadModelAsync first."])
     }
     guard let tokDict = options.tokenizer else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 122, userInfo: [NSLocalizedDescriptionKey: "This model is token-based; opts.tokenizer is required."])
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.tokenBasedModelMissingTokenizer.rawValue, userInfo: [NSLocalizedDescriptionKey: "This model is token-based; opts.tokenizer is required."])
     }
 
     let tokenizer = try getTokenizer(configDict: tokDict)
