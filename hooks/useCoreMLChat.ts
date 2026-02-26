@@ -1,31 +1,22 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import {
   CoreMLError,
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   DEFAULT_COREML_GENERATE_OPTIONS,
-  normalizeCoreMLError,
+  toActionableCoreMLError,
 } from "@/utils/coreml";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
-
-const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
-  101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
-  102: "CoreML memory pressure detected. Free up memory by closing apps and retry.",
-};
-
-function toActionableError(error: unknown): CoreMLError {
-  const normalized = normalizeCoreMLError(error);
-  if (!normalized.code) return normalized;
-
-  const hint = COREML_ACTIONABLE_ERRORS[normalized.code];
-  if (!hint) return normalized;
-  return new CoreMLError(`${normalized.message} (${hint})`, normalized.code);
-}
 
 export function useCoreMLChat() {
   const [provider, setProvider] = useState<ICoreMLProvider | null>(null);
   const [isAvailable, setIsAvailable] = useState(false);
+  const providerRef = useRef<ICoreMLProvider | null>(null);
+
+  useEffect(() => {
+    providerRef.current = provider;
+  }, [provider]);
 
   useEffect(() => {
     let disposed = false;
@@ -41,6 +32,8 @@ export function useCoreMLChat() {
         if (!disposed) {
           setProvider(instance);
           setIsAvailable(true);
+        } else {
+          await instance.unload();
         }
       } catch (error) {
         console.error("[CoreML] boot failed", error);
@@ -55,8 +48,9 @@ export function useCoreMLChat() {
 
     return () => {
       disposed = true;
-      if (provider) {
-        provider.unload().catch((error) => {
+      const latestProvider = providerRef.current;
+      if (latestProvider) {
+        latestProvider.unload().catch((error) => {
           console.warn("[CoreML] unload failed", error);
         });
       }
@@ -87,7 +81,7 @@ export function useCoreMLChat() {
         );
         return cleanCoreMLOutput(rawOutput, prompt);
       } catch (error) {
-        throw toActionableError(error);
+        throw toActionableCoreMLError(error);
       } finally {
         signal?.removeEventListener("abort", abortHandler);
       }

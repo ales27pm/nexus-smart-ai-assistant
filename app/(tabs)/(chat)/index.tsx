@@ -901,12 +901,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             userText,
           );
           setMessages(thread as any);
-          const controller = new AbortController();
-          const finalText = await generateCoreML(
-            systemPrompt,
-            userText,
-            controller.signal,
-          );
+          const finalText = await generateCoreML(systemPrompt, userText);
 
           const updated = thread.map((message: any) =>
             message.id === assistantId
