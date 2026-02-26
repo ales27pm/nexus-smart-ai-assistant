@@ -1,10 +1,9 @@
-import { CoreMLLLM } from "@/modules/expo-coreml-llm";
-import { DEFAULT_COREML_LOAD_OPTIONS } from "@/utils/coreml";
 import {
-  dolphinDecode,
-  dolphinEncode,
-  dolphinTokenId,
-} from "./dolphinTokenizer";
+  CoreMLGenerateOptions,
+  DEFAULT_COREML_GENERATE_OPTIONS,
+  cleanCoreMLOutput,
+} from "@/utils/coreml";
+import { ICoreMLProvider } from "@/utils/coremlProvider";
 
 type GenOpts = {
   maxNewTokens?: number;
@@ -13,118 +12,37 @@ type GenOpts = {
   topP?: number;
   repetitionPenalty?: number;
   history?: string[];
-  maxContext?: number;
 };
 
-let modelLoaded = false;
-let modelLoadInFlight: Promise<void> | null = null;
-let stopTokenIdsCache: readonly [number, number] | null = null;
-let stopTokenIdsInFlight: Promise<readonly [number, number]> | null = null;
-
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+function buildPrompt(prompt: string, history?: string[]): string {
+  if (!history?.length) return prompt;
+  return `${history.join("\n")}\n${prompt}`;
 }
 
-async function fetchStopTokenIdsWithRetry(
-  maxAttempts = 3,
-): Promise<readonly [number, number]> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const [eot, eos] = await Promise.all([
-        dolphinTokenId("<|eot_id|>"),
-        dolphinTokenId("<|end_of_text|>"),
-      ]);
-      return [eot, eos] as const;
-    } catch (error) {
-      lastError = error;
-      if (attempt < maxAttempts) {
-        await sleep(150 * attempt);
-      }
-    }
-  }
-
-  throw new Error(
-    `Failed to resolve stop token IDs after ${maxAttempts} attempts: ${String(lastError)}`,
-  );
-}
-
-async function getStopTokenIds(): Promise<readonly [number, number]> {
-  if (stopTokenIdsCache) return stopTokenIdsCache;
-
-  if (!stopTokenIdsInFlight) {
-    stopTokenIdsInFlight = fetchStopTokenIdsWithRetry();
-  }
-
-  try {
-    const resolved = await stopTokenIdsInFlight;
-    stopTokenIdsCache = resolved;
-    return resolved;
-  } catch (error) {
-    stopTokenIdsInFlight = null;
-    throw error;
-  } finally {
-    if (stopTokenIdsCache) {
-      stopTokenIdsInFlight = null;
-    }
-  }
-}
-
-async function ensureModelLoaded() {
-  if (modelLoaded) return;
-  if (modelLoadInFlight) {
-    await modelLoadInFlight;
-    return;
-  }
-
-  modelLoadInFlight = (async () => {
-    const loaded = await CoreMLLLM.isLoaded();
-    if (!loaded) {
-      await CoreMLLLM.loadModel({
-        ...DEFAULT_COREML_LOAD_OPTIONS,
-        computeUnits: "cpuAndNeuralEngine",
-      });
-    }
-    modelLoaded = true;
-  })();
-
-  try {
-    await modelLoadInFlight;
-  } finally {
-    modelLoadInFlight = null;
-  }
+function buildGenerationOptions(opts: GenOpts): CoreMLGenerateOptions {
+  return {
+    ...DEFAULT_COREML_GENERATE_OPTIONS,
+    maxNewTokens:
+      opts.maxNewTokens ?? DEFAULT_COREML_GENERATE_OPTIONS.maxNewTokens,
+    temperature:
+      opts.temperature ?? DEFAULT_COREML_GENERATE_OPTIONS.temperature,
+    topK: opts.topK ?? DEFAULT_COREML_GENERATE_OPTIONS.topK,
+    topP: opts.topP ?? DEFAULT_COREML_GENERATE_OPTIONS.topP,
+    repetitionPenalty:
+      opts.repetitionPenalty ??
+      DEFAULT_COREML_GENERATE_OPTIONS.repetitionPenalty,
+  };
 }
 
 export async function dolphinCoremlGenerate(
+  provider: ICoreMLProvider,
   prompt: string,
   opts: GenOpts = {},
 ) {
-  await ensureModelLoaded();
-
-  const joinedPrompt = opts.history?.length
-    ? `${opts.history.join("\n")}\n${prompt}`
-    : prompt;
-  const enc = await dolphinEncode(joinedPrompt);
-  const contextMax =
-    opts.maxContext ?? DEFAULT_COREML_LOAD_OPTIONS.maxContext ?? 2048;
-  const trimmedIds =
-    enc.ids.length > contextMax ? enc.ids.slice(-contextMax) : enc.ids;
-  const promptLen = trimmedIds.length;
-
-  const [eot, eos] = await getStopTokenIds();
-
-  const outIds: number[] = await CoreMLLLM.generateFromTokens(trimmedIds, {
-    maxNewTokens: opts.maxNewTokens ?? 192,
-    temperature: opts.temperature ?? 0.7,
-    topK: opts.topK ?? 40,
-    topP: opts.topP ?? 0.95,
-    repetitionPenalty: opts.repetitionPenalty ?? 1.05,
-    stopTokenIds: [eot, eos],
-  });
-
-  const completionIds = outIds.slice(promptLen);
-  const completion = await dolphinDecode(completionIds, true);
-
-  return completion.trim();
+  const joinedPrompt = buildPrompt(prompt, opts.history);
+  const rawOutput = await provider.generate(
+    joinedPrompt,
+    buildGenerationOptions(opts),
+  );
+  return cleanCoreMLOutput(rawOutput, joinedPrompt).trim();
 }

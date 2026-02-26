@@ -72,6 +72,7 @@ type NativeModuleShape = {
     tokenIds: number[],
     opts: GenerateFromTokensOptions,
   ): Promise<number[]>;
+  cancelAsync(): Promise<void>;
 };
 
 let nativeModule: NativeModuleShape | null = null;
@@ -124,6 +125,7 @@ export const CoreMLLLM = {
     tokenIds: number[],
     opts: GenerateFromTokensOptions = {},
   ) => getNativeModule().generateFromTokensAsync(tokenIds, opts),
+  cancel: () => getNativeModule().cancelAsync(),
 };
 
 export default CoreMLLLM;

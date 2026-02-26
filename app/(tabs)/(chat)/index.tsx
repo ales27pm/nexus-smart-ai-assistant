@@ -463,8 +463,14 @@ ${branchAnalyses[idx]}`,
               );
               if (!response.ok) {
                 const errorBody = await response.text().catch(() => "");
-                console.log("[NEXUS] Image API error body:", errorBody.substring(0, 300));
-                if (attempt < maxRetries && (response.status >= 500 || response.status === 429)) {
+                console.log(
+                  "[NEXUS] Image API error body:",
+                  errorBody.substring(0, 300),
+                );
+                if (
+                  attempt < maxRetries &&
+                  (response.status >= 500 || response.status === 429)
+                ) {
                   console.log(`[NEXUS] Retrying in ${(attempt + 1) * 2}s...`);
                   await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
                   continue;
@@ -492,7 +498,8 @@ ${branchAnalyses[idx]}`,
                 }
                 return JSON.stringify({
                   error: true,
-                  message: "Received invalid response from image service. Please try again.",
+                  message:
+                    "Received invalid response from image service. Please try again.",
                 });
               }
               console.log("[NEXUS] Image response keys:", Object.keys(data));
@@ -529,9 +536,13 @@ ${branchAnalyses[idx]}`,
               if (
                 attempt < maxRetries &&
                 e instanceof Error &&
-                (e.name === "AbortError" || e.message.includes("network") || e.message.includes("fetch"))
+                (e.name === "AbortError" ||
+                  e.message.includes("network") ||
+                  e.message.includes("fetch"))
               ) {
-                console.log(`[NEXUS] Retrying after error in ${(attempt + 1) * 2}s...`);
+                console.log(
+                  `[NEXUS] Retrying after error in ${(attempt + 1) * 2}s...`,
+                );
                 await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
                 continue;
               }
@@ -543,7 +554,8 @@ ${branchAnalyses[idx]}`,
           }
           return JSON.stringify({
             error: true,
-            message: "Image generation failed after multiple attempts. Please try again later.",
+            message:
+              "Image generation failed after multiple attempts. Please try again later.",
           });
         },
       }),
@@ -889,7 +901,12 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             userText,
           );
           setMessages(thread as any);
-          const finalText = await generateCoreML(systemPrompt, userText);
+          const controller = new AbortController();
+          const finalText = await generateCoreML(
+            systemPrompt,
+            userText,
+            controller.signal,
+          );
 
           const updated = thread.map((message: any) =>
             message.id === assistantId

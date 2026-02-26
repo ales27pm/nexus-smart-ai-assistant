@@ -1,8 +1,11 @@
+import { modelManifest } from "@/utils/modelManifest";
+
 export type CoreMLBridge = {
   loadModel: (opts: CoreMLLoadModelOptions) => Promise<unknown>;
   unloadModel: () => Promise<void>;
   isLoaded: () => Promise<boolean>;
   generate: (prompt: string, opts?: CoreMLGenerateOptions) => Promise<string>;
+  cancel: () => Promise<void>;
 };
 
 export type CoreMLLoadModelOptions = {
@@ -35,9 +38,18 @@ export type CoreMLGenerateOptions = {
   };
 };
 
-export const DEFAULT_COREML_MODEL_FILE =
-  "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage";
-export const DEFAULT_COREML_EOS_TOKEN_ID = 128256;
+export class CoreMLError extends Error {
+  constructor(
+    message: string,
+    public readonly code?: number,
+  ) {
+    super(message);
+    this.name = "CoreMLError";
+  }
+}
+
+export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
+export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
 
 export const DEFAULT_COREML_TOKENIZER = {
   kind: "none",
@@ -50,8 +62,9 @@ export const DEFAULT_COREML_LOAD_OPTIONS: CoreMLLoadModelOptions = {
   attentionMaskName: "attention_mask",
   cachePositionName: "cache_position",
   logitsName: "logits",
-  computeUnits: "all",
+  computeUnits: modelManifest.computeUnits,
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+  maxContext: modelManifest.contextLimit,
 };
 
 export const DEFAULT_COREML_GENERATE_OPTIONS: CoreMLGenerateOptions = {
@@ -60,6 +73,7 @@ export const DEFAULT_COREML_GENERATE_OPTIONS: CoreMLGenerateOptions = {
   topK: 40,
   topP: 0.95,
   repetitionPenalty: 1.05,
+  stopTokenIds: [...modelManifest.stopTokenIds],
   tokenizer: DEFAULT_COREML_TOKENIZER,
 };
 
@@ -72,4 +86,18 @@ export function cleanCoreMLOutput(rawOutput: string, prompt: string) {
     ? rawOutput.slice(prompt.length)
     : rawOutput;
   return stripped.replace(/^\s+/, "").trimEnd() || "(no output)";
+}
+
+export function normalizeCoreMLError(error: unknown): CoreMLError {
+  if (error instanceof CoreMLError) return error;
+  if (error instanceof Error) {
+    const maybeCode = Number((error as Error & { code?: unknown }).code);
+    return new CoreMLError(
+      error.message,
+      Number.isFinite(maybeCode) ? maybeCode : undefined,
+    );
+  }
+  return new CoreMLError(
+    typeof error === "string" ? error : "Unknown CoreML failure",
+  );
 }
