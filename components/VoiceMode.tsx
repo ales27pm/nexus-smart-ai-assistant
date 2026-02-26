@@ -17,6 +17,7 @@ import * as Speech from "expo-speech";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Colors from "@/constants/colors";
+import { detectSilence } from "@/utils/detectSilence";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const STT_URL = "https://toolkit.rork.com/stt/transcribe/";
@@ -1337,9 +1338,6 @@ export default function VoiceMode({
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(
-        SILENCE_DURATION_MS / METERING_INTERVAL,
-      );
 
       meteringIntervalRef.current = setInterval(async () => {
         try {
@@ -1354,27 +1352,27 @@ export default function VoiceMode({
           if (metering > MIN_PEAK_LEVEL_NATIVE) hadSpeechRef.current = true;
 
           const elapsed = Date.now() - recordingStartTime.current;
-          if (
-            metering < SILENCE_THRESHOLD_NATIVE &&
-            elapsed > MIN_RECORDING_MS
-          ) {
-            consecutiveSilentFrames++;
-            if (
-              consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED &&
-              hadSpeechRef.current
-            ) {
-              console.log(
-                "[VoiceMode] Silence after speech, peak:",
-                peakLevelRef.current.toFixed(1),
-              );
-              if (meteringIntervalRef.current) {
-                clearInterval(meteringIntervalRef.current);
-                meteringIntervalRef.current = null;
-              }
-              stopAndTranscribeNative();
+          const silence = detectSilence({
+            level: metering,
+            elapsedMs: elapsed,
+            minRecordingMs: MIN_RECORDING_MS,
+            silenceThreshold: SILENCE_THRESHOLD_NATIVE,
+            silenceDurationMs: SILENCE_DURATION_MS,
+            meteringIntervalMs: METERING_INTERVAL,
+            hadSpeech: hadSpeechRef.current,
+            consecutiveSilentFrames,
+          });
+          consecutiveSilentFrames = silence.consecutiveSilentFrames;
+          if (silence.shouldStop) {
+            console.log(
+              "[VoiceMode] Silence after speech, peak:",
+              peakLevelRef.current.toFixed(1),
+            );
+            if (meteringIntervalRef.current) {
+              clearInterval(meteringIntervalRef.current);
+              meteringIntervalRef.current = null;
             }
-          } else {
-            consecutiveSilentFrames = 0;
+            stopAndTranscribeNative();
           }
         } catch (error) {
           if (meteringIntervalRef.current) {
@@ -1446,9 +1444,6 @@ export default function VoiceMode({
       }, MAX_RECORDING_MS);
 
       let consecutiveSilentFrames = 0;
-      const SILENCE_FRAMES_NEEDED = Math.ceil(
-        SILENCE_DURATION_MS / METERING_INTERVAL,
-      );
 
       webLevelIntervalRef.current = setInterval(() => {
         if (!analyserRef.current) return;
@@ -1466,24 +1461,27 @@ export default function VoiceMode({
           analyserRef.current.getByteFrequencyData(dataArray);
           const avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
           const elapsed = Date.now() - recordingStartTime.current;
-          if (avg < WEB_SILENCE_AVG_THRESHOLD && elapsed > MIN_RECORDING_MS) {
-            consecutiveSilentFrames++;
-            if (
-              consecutiveSilentFrames >= SILENCE_FRAMES_NEEDED &&
-              hadSpeechRef.current
-            ) {
-              console.log(
-                "[VoiceMode] Web silence after speech, peak:",
-                peakLevelRef.current.toFixed(1),
-              );
-              if (meteringIntervalRef.current) {
-                clearInterval(meteringIntervalRef.current);
-                meteringIntervalRef.current = null;
-              }
-              stopAndTranscribeWeb();
+          const silence = detectSilence({
+            level: avg,
+            elapsedMs: elapsed,
+            minRecordingMs: MIN_RECORDING_MS,
+            silenceThreshold: WEB_SILENCE_AVG_THRESHOLD,
+            silenceDurationMs: SILENCE_DURATION_MS,
+            meteringIntervalMs: METERING_INTERVAL,
+            hadSpeech: hadSpeechRef.current,
+            consecutiveSilentFrames,
+          });
+          consecutiveSilentFrames = silence.consecutiveSilentFrames;
+          if (silence.shouldStop) {
+            console.log(
+              "[VoiceMode] Web silence after speech, peak:",
+              peakLevelRef.current.toFixed(1),
+            );
+            if (meteringIntervalRef.current) {
+              clearInterval(meteringIntervalRef.current);
+              meteringIntervalRef.current = null;
             }
-          } else {
-            consecutiveSilentFrames = 0;
+            stopAndTranscribeWeb();
           }
         } catch (error) {
           console.warn("[VoiceMode] Non-fatal voice pipeline error", error);
