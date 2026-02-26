@@ -383,6 +383,27 @@ npx expo run:ios --device
 
 Make sure your Apple Team is configured in Xcode Signing & Capabilities.
 
+### CocoaPods `PBXFileReference#new_file` troubleshooting
+
+If `npx expo prebuild --platform ios` fails during `pod install` with:
+
+`NoMethodError - undefined method 'new_file' for PBXFileReference`
+
+use the built-in doctor flow:
+
+```bash
+npm run ios:prebuild:doctor
+```
+
+This workflow will:
+
+1. Detect the CocoaPods binary currently on PATH.
+2. Install and activate CocoaPods `1.15.2` in user gems when a different version is active.
+3. Run `expo prebuild --no-install` so pod installation can be executed with a pinned CocoaPods version.
+4. Generate `ios/.ruby-version` and `ios/Gemfile` and execute `bundle exec pod install --verbose`.
+
+If the error still occurs, isolate custom pods by temporarily removing local native modules (start with `expo-coreml-llm`), then add them back one at a time until the failure reproduces.
+
 ### AltStore / ad-hoc sideload workflow
 
 ```bash
