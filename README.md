@@ -404,6 +404,18 @@ This workflow will:
 
 If the error still occurs, isolate custom pods by temporarily removing local native modules (start with `expo-coreml-llm`), then add them back one at a time until the failure reproduces.
 
+To automate this workflow, run:
+
+```bash
+npm run ios:prebuild:doctor -- --auto-isolate-custom-pods
+```
+
+You can customize the module isolation order with a comma-separated list:
+
+```bash
+CUSTOM_POD_MODULES=expo-coreml-llm,another-module npm run ios:prebuild:doctor -- --auto-isolate-custom-pods
+```
+
 ### AltStore / ad-hoc sideload workflow
 
 ```bash
