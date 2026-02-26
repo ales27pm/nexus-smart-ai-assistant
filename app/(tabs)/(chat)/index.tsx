@@ -434,59 +434,117 @@ ${branchAnalyses[idx]}`,
           size: z.enum(["1024x1024", "1024x1792", "1792x1024"]).optional(),
         }),
         async execute(input: { prompt: string; size?: string }) {
-          try {
-            console.log(
-              "[NEXUS] Generating image:",
-              input.prompt.substring(0, 60),
-            );
-            const response = await fetch(
-              "https://toolkit.rork.com/images/generate/",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  prompt: input.prompt,
-                  size: input.size ?? "1024x1024",
-                }),
-              },
-            );
-            if (!response.ok) {
+          const maxRetries = 2;
+          for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
               console.log(
-                "[NEXUS] Image API error:",
+                `[NEXUS] Generating image (attempt ${attempt + 1}):`,
+                input.prompt.substring(0, 60),
+              );
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 60000);
+              const response = await fetch(
+                "https://toolkit.rork.com/images/generate/",
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    prompt: input.prompt,
+                    size: input.size ?? "1024x1024",
+                  }),
+                  signal: controller.signal,
+                },
+              );
+              clearTimeout(timeout);
+              console.log(
+                "[NEXUS] Image API status:",
                 response.status,
                 response.statusText,
               );
+              if (!response.ok) {
+                const errorBody = await response.text().catch(() => "");
+                console.log("[NEXUS] Image API error body:", errorBody.substring(0, 300));
+                if (attempt < maxRetries && (response.status >= 500 || response.status === 429)) {
+                  console.log(`[NEXUS] Retrying in ${(attempt + 1) * 2}s...`);
+                  await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+                  continue;
+                }
+                return JSON.stringify({
+                  error: true,
+                  message: `Image generation service returned ${response.status}. Please try again later.`,
+                });
+              }
+              const rawText = await response.text();
+              console.log(
+                "[NEXUS] Image response length:",
+                rawText.length,
+                "preview:",
+                rawText.substring(0, 100),
+              );
+              let data: any;
+              try {
+                data = JSON.parse(rawText);
+              } catch (parseErr) {
+                console.log("[NEXUS] Failed to parse image response as JSON");
+                if (attempt < maxRetries) {
+                  await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+                  continue;
+                }
+                return JSON.stringify({
+                  error: true,
+                  message: "Received invalid response from image service. Please try again.",
+                });
+              }
+              console.log("[NEXUS] Image response keys:", Object.keys(data));
+              if (data.image?.base64Data) {
+                const mimeType = data.image.mimeType ?? "image/png";
+                console.log(
+                  "[NEXUS] Image generated successfully, base64 length:",
+                  data.image.base64Data.length,
+                  "mimeType:",
+                  mimeType,
+                );
+                return JSON.stringify({
+                  success: true,
+                  imageUri: `data:${mimeType};base64,${data.image.base64Data}`,
+                  prompt: input.prompt.substring(0, 100),
+                });
+              }
+              console.log(
+                "[NEXUS] No image data in response:",
+                JSON.stringify(data).substring(0, 300),
+              );
+              if (attempt < maxRetries) {
+                console.log(`[NEXUS] Retrying in ${(attempt + 1) * 2}s...`);
+                await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+                continue;
+              }
               return JSON.stringify({
                 error: true,
-                message: `Image API returned ${response.status}. Try again.`,
+                message:
+                  "Image generation did not return image data. The service may be busy — please try again in a moment.",
               });
-            }
-            const data = await response.json();
-            console.log("[NEXUS] Image response keys:", Object.keys(data));
-            if (data.image?.base64Data) {
-              const mimeType = data.image.mimeType ?? "image/png";
+            } catch (e: unknown) {
+              console.log("[NEXUS] Image generation error:", e);
+              if (
+                attempt < maxRetries &&
+                e instanceof Error &&
+                (e.name === "AbortError" || e.message.includes("network") || e.message.includes("fetch"))
+              ) {
+                console.log(`[NEXUS] Retrying after error in ${(attempt + 1) * 2}s...`);
+                await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
+                continue;
+              }
               return JSON.stringify({
-                success: true,
-                imageUri: `data:${mimeType};base64,${data.image.base64Data}`,
-                prompt: input.prompt.substring(0, 100),
+                error: true,
+                message: `Image generation failed: ${e instanceof Error ? e.message : "Unknown error"}. Please try again.`,
               });
             }
-            console.log(
-              "[NEXUS] No image data in response:",
-              JSON.stringify(data).substring(0, 200),
-            );
-            return JSON.stringify({
-              error: true,
-              message:
-                "No image data in response. The service may be temporarily unavailable.",
-            });
-          } catch (e: unknown) {
-            console.log("[NEXUS] Image generation error:", e);
-            return JSON.stringify({
-              error: true,
-              message: `Image generation failed: ${e instanceof Error ? e.message : "Unknown error"}`,
-            });
           }
+          return JSON.stringify({
+            error: true,
+            message: "Image generation failed after multiple attempts. Please try again later.",
+          });
         },
       }),
 
