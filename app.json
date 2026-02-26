@@ -14,6 +14,7 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "jsEngine": "jsc",
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.smart-ai-assistant-slxh0fb",
       "infoPlist": {
@@ -71,7 +72,6 @@
         "projectId": "fbf2d612-8c64-4b4c-9866-76c27abb4a0a"
       }
     },
-    "jsEngine": "jsc",
     "android": {
       "newArchEnabled": true,
       "jsEngine": "hermes"
