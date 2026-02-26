@@ -13,6 +13,7 @@ export function useCoreMLChat() {
   const [provider, setProvider] = useState<ICoreMLProvider | null>(null);
   const [isAvailable, setIsAvailable] = useState(false);
   const providerRef = useRef<ICoreMLProvider | null>(null);
+  const isGeneratingRef = useRef(false);
 
   useEffect(() => {
     let disposed = false;
@@ -63,6 +64,12 @@ export function useCoreMLChat() {
         );
       }
 
+      if (isGeneratingRef.current) {
+        throw new CoreMLError(
+          "CoreML generation already in progress. Please wait for the current request to finish.",
+        );
+      }
+
       const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
 
       const abortHandler = () => {
@@ -73,6 +80,7 @@ export function useCoreMLChat() {
       signal?.addEventListener("abort", abortHandler, { once: true });
 
       try {
+        isGeneratingRef.current = true;
         const rawOutput = await provider.generate(
           prompt,
           DEFAULT_COREML_GENERATE_OPTIONS,
@@ -81,6 +89,7 @@ export function useCoreMLChat() {
       } catch (error) {
         throw toActionableCoreMLError(error);
       } finally {
+        isGeneratingRef.current = false;
         signal?.removeEventListener("abort", abortHandler);
       }
     },

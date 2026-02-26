@@ -51,7 +51,7 @@ final class CoreMLLLMRunner {
         modelPath: options.modelPath
       )
     } catch {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 101, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelMissing.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "Missing CoreML model resource. Verify bundled .mlpackage exists.",
         NSUnderlyingErrorKey: error,
       ])
@@ -71,7 +71,7 @@ final class CoreMLLLMRunner {
       let messageLooksMemory = message.contains("memory") || message.contains("allocate")
 
       if (domainLooksMemory && codeLooksMemory) || messageLooksMemory {
-        throw NSError(domain: "ExpoCoreMLLLM", code: 102, userInfo: [
+        throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.outOfMemory.rawValue, userInfo: [
           NSLocalizedDescriptionKey: "Unable to allocate memory for CoreML model.",
           NSUnderlyingErrorKey: error,
         ])
@@ -161,7 +161,7 @@ final class CoreMLLLMRunner {
       throw NSError(domain: "ExpoCoreMLLLM", code: 100, userInfo: [NSLocalizedDescriptionKey: "Model not loaded. Call loadModelAsync first."])
     }
     guard let tokDict = options.tokenizer else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 101, userInfo: [NSLocalizedDescriptionKey: "This model is token-based; opts.tokenizer is required."])
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.tokenBasedModelMissingTokenizer.rawValue, userInfo: [NSLocalizedDescriptionKey: "This model is token-based; opts.tokenizer is required."])
     }
 
     let tokenizer = try getTokenizer(configDict: tokDict)
