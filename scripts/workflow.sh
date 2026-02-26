@@ -274,9 +274,19 @@ step_credentials() {
 
     if $creds_valid; then
       success "credentials.json looks valid (P12 + profile files exist)."
+      echo
+      echo -ne "  ${BOLD}Re-run Apple Developer auto-setup anyway? [y/N]:${RESET} "
+      read -r redo
+      if [[ "${redo:-N}" =~ ^[Yy]$ ]]; then
+        step_apple_login
+        return $?
+      fi
       return 0
     else
-      warn "credentials.json exists but references missing files. Re-running setup..."
+      warn "credentials.json exists but references missing files."
+      info "Launching Apple Developer auto-setup..."
+      step_apple_login
+      return $?
     fi
   fi
 
@@ -306,14 +316,41 @@ step_credentials() {
     fi
   fi
 
-  warn "No credential files found."
+  warn "No credential files found locally."
   echo
-  echo "  Options:"
-  echo "    a) Place .p12 and .mobileprovision in credentials/ios/"
-  echo "    b) Run the full fastlane sync:"
-  echo "       P12_PASSWORD='...' ./scripts/ios/sync_apple_credentials_fastlane.sh \\"
-  echo "         --bundle-id $BUNDLE_ID --apple-id <your@email>"
+  echo -e "  ${BOLD}How would you like to set up credentials?${RESET}"
+  echo -e "  ${CYAN}1${RESET}  Apple Developer auto-setup  ${DIM}(login → fetch/create → download)${RESET}"
+  echo -e "  ${CYAN}2${RESET}  Manual placement            ${DIM}(place .p12 + .mobileprovision in credentials/ios/)${RESET}"
   echo
+  echo -ne "  ${BOLD}▸ Choose [1]:${RESET} "
+  read -r cred_choice
+  case "${cred_choice:-1}" in
+    1) step_apple_login ;;
+    2)
+      echo
+      echo -e "  ${DIM}Place your files in: credentials/ios/${RESET}"
+      echo -e "  ${DIM}Then re-run this step.${RESET}"
+      ;;
+    *) warn "Invalid choice." ;;
+  esac
+}
+
+# ─── Step 5b: Apple Developer Login & Auto Credentials ──────────────────────
+step_apple_login() {
+  header "5b · Apple Developer Login & Auto Credentials"
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    fail "Apple Developer credential management requires macOS."
+    return 1
+  fi
+
+  if ! command -v fastlane >/dev/null 2>&1; then
+    fail "fastlane is required for Apple Developer integration."
+    echo -e "    ${DIM}Install: brew install fastlane${RESET}"
+    return 1
+  fi
+
+  "$SCRIPT_DIR/ios/apple_developer_credentials.sh"
 }
 
 # ─── Step 6: Build ───────────────────────────────────────────────────────────
@@ -427,6 +464,9 @@ show_menu() {
   echo -e "  ${CYAN}6${RESET}  Build IPA locally               ${DIM}[profile: $BUILD_PROFILE]${RESET}"
   echo -e "  ${CYAN}7${RESET}  Submit to App Store Connect"
   echo
+  echo -e "  ${BOLD}Apple Developer${RESET}"
+  echo -e "  ${CYAN}d${RESET}  Apple Developer login & credentials  ${DIM}(auto fetch/create/download)${RESET}"
+  echo
   echo -e "  ${BOLD}Utilities${RESET}"
   echo -e "  ${CYAN}i${RESET}  Inspect CoreML model I/O"
   echo -e "  ${CYAN}t${RESET}  Run tests"
@@ -490,6 +530,7 @@ interactive_loop() {
       5)  step_credentials ;;
       6)  step_build ;;
       7)  step_submit ;;
+      d)  step_apple_login ;;
       i)  step_inspect ;;
       t)  step_test ;;
       f)  run_full ;;
@@ -512,11 +553,12 @@ run_step() {
     model)            step_model ;;
     tokenizer|tok)    step_tokenizer ;;
     credentials|creds) step_credentials ;;
+    apple-login|apple) step_apple_login ;;
     build)            step_build ;;
     submit)           step_submit ;;
     inspect)          step_inspect ;;
     test)             step_test ;;
-    *) fail "Unknown step: $1"; echo "  Steps: env deps model tokenizer credentials build submit inspect test"; exit 1 ;;
+    *) fail "Unknown step: $1"; echo "  Steps: env deps model tokenizer credentials apple-login build submit inspect test"; exit 1 ;;
   esac
 }
 
@@ -551,7 +593,7 @@ main() {
         echo "  (no args)              Interactive menu"
         echo "  --full                 Run full pipeline (env → submit)"
         echo "  --step <name>          Run a single step"
-        echo "    Steps: env deps model tokenizer credentials build submit inspect test"
+        echo "    Steps: env deps model tokenizer credentials apple-login build submit inspect test"
         echo "  --variant <int4|int8|fp16>  Set model variant (default: int4)"
         echo "  --profile <name>       Set build profile (default: production)"
         echo
@@ -560,6 +602,10 @@ main() {
         echo "  P12_PASSWORD    iOS distribution certificate password"
         echo "  MODEL_VARIANT   Default model variant"
         echo "  BUILD_PROFILE   Default build profile"
+        echo "  ASC_KEY_ID      App Store Connect API Key ID"
+        echo "  ASC_ISSUER_ID   App Store Connect API Key Issuer ID"
+        echo "  ASC_KEY_PATH    Path to .p8 API key file"
+        echo "  APPLE_ID        Apple ID email (for Apple ID auth)"
         exit 0
         ;;
       *)

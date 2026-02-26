@@ -56,3 +56,6 @@ credentials/
 scripts/ios/*.p12
 scripts/ios/*.key
 scripts/ios/*.mobileprovision
+
+# Apple Developer auth config (API keys, saved settings)
+.apple-auth/
