@@ -1,3 +1,5 @@
 {
-  "apple.privacyManifestAggregationEnabled": "false"
+  "apple.privacyManifestAggregationEnabled": "false",
+  "newArchEnabled": "false",
+  "expo.jsEngine": "jsc"
 }
