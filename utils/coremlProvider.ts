@@ -40,17 +40,22 @@ function normalizeLoadOptions(
     | "maxContext"
   >
 > {
+  const mergedOptions: CoreMLLoadModelOptions = {
+    ...DEFAULT_COREML_LOAD_OPTIONS,
+    ...options,
+  };
+
   return {
-    modelFile: options.modelFile ?? "",
-    modelName: options.modelName ?? "",
-    modelPath: options.modelPath ?? "",
-    inputIdsName: options.inputIdsName ?? "input_ids",
-    attentionMaskName: options.attentionMaskName ?? "attention_mask",
-    cachePositionName: options.cachePositionName ?? "cache_position",
-    logitsName: options.logitsName ?? "logits",
-    computeUnits: options.computeUnits ?? "all",
-    eosTokenId: options.eosTokenId ?? -1,
-    maxContext: options.maxContext ?? -1,
+    modelFile: mergedOptions.modelFile ?? "",
+    modelName: mergedOptions.modelName ?? "",
+    modelPath: mergedOptions.modelPath ?? "",
+    inputIdsName: mergedOptions.inputIdsName ?? "input_ids",
+    attentionMaskName: mergedOptions.attentionMaskName ?? "attention_mask",
+    cachePositionName: mergedOptions.cachePositionName ?? "cache_position",
+    logitsName: mergedOptions.logitsName ?? "logits",
+    computeUnits: mergedOptions.computeUnits ?? "all",
+    eosTokenId: mergedOptions.eosTokenId ?? -1,
+    maxContext: mergedOptions.maxContext ?? -1,
   };
 }
 
