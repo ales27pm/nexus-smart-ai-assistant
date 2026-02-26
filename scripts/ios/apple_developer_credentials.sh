@@ -447,8 +447,23 @@ export_p12() {
 
     local certs_from_p12
     certs_from_p12="$TMP_DIR/fallback-certs.pem"
-    openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys -nodes 2>/dev/null > "$certs_from_p12"
-    [[ -s "$certs_from_p12" ]] || { fail "Fallback P12 export succeeded, but no leaf certificates were found."; return 1; }
+
+    # OpenSSL output differs across versions/keychain exports.
+    # First try leaf certs only, then fall back to all certs in the PKCS#12.
+    openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -clcerts -nokeys -nodes 2>/dev/null > "$certs_from_p12" || true
+    if [[ ! -s "$certs_from_p12" ]]; then
+      warn "Could not extract leaf certs from fallback PKCS#12. Retrying with all certificates..."
+      openssl pkcs12 -in "$DIRECT_P12_PATH" -passin env:P12_PASSWORD -nokeys -nodes 2>/dev/null > "$certs_from_p12" || true
+    fi
+
+    if [[ ! -s "$certs_from_p12" ]]; then
+      warn "Fallback PKCS#12 exported, but cert extraction returned no data."
+      warn "Keeping exported P12 as-is because keychain identity export succeeded."
+      mkdir -p "$OUT_DIR"
+      cp "$DIRECT_P12_PATH" "$P12_PATH"
+      success "P12 exported via identity fallback (unverified cert extraction): $P12_PATH"
+      return 0
+    fi
 
     local p12_match=false
     export TMP_DIR
@@ -651,8 +666,50 @@ JSON
   info "  distributionCertificate.path: $rel_p12"
 }
 
+
+load_p12_password_from_credentials_json() {
+  if [[ -n "${P12_PASSWORD:-}" ]]; then
+    return 0
+  fi
+
+  [[ -f "$CREDS_JSON" ]] || return 1
+
+  local creds_password=""
+  if command -v jq >/dev/null 2>&1; then
+    creds_password="$(jq -r '.ios.distributionCertificate.password // empty' "$CREDS_JSON" 2>/dev/null || true)"
+  elif command -v node >/dev/null 2>&1; then
+    creds_password="$(node -e "try { const fs=require('fs'); const c=JSON.parse(fs.readFileSync(process.argv[1],'utf8')); process.stdout.write(c?.ios?.distributionCertificate?.password || ''); } catch(e) {}" "$CREDS_JSON" 2>/dev/null || true)"
+  fi
+
+  if [[ -n "$creds_password" ]]; then
+    P12_PASSWORD="$creds_password"
+    export P12_PASSWORD
+    info "Using P12 password from credentials.json for validation."
+    return 0
+  fi
+
+  return 1
+}
+
+ensure_p12_password_for_validation() {
+  if [[ -n "${P12_PASSWORD:-}" ]]; then
+    return 0
+  fi
+
+  load_p12_password_from_credentials_json && return 0
+
+  if [[ -t 0 ]]; then
+    prompt_p12_password && return 0
+  fi
+
+  fail "P12 password is required for validation. Set P12_PASSWORD or write credentials.json with ios.distributionCertificate.password."
+  return 1
+}
+
 validate_credentials() {
   header "Validating Credentials"
+
+  ensure_p12_password_for_validation || return 1
 
   if [[ ! -f "$P12_PATH" ]]; then
     fail "P12 file missing: $P12_PATH"
@@ -814,7 +871,7 @@ run_interactive() {
         if [[ -z "${P12_PASSWORD:-}" ]]; then prompt_p12_password || continue; fi
         write_credentials_json
         ;;
-      7) validate_credentials ;;
+      7) ensure_p12_password_for_validation && validate_credentials ;;
       8)
         FORCE_RENEW=1
         do_full_auto_setup
