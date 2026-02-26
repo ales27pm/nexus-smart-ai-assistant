@@ -373,7 +373,9 @@ export_p12() {
   TMP_DIR="$(mktemp -d /tmp/apple-cred-export.XXXXXX)"
   chmod 700 "$TMP_DIR"
   _GLOBAL_TMP_DIRS+=("$TMP_DIR")
-  trap 'rm -rf "$TMP_DIR" 2>/dev/null || true' RETURN
+  local TMP_DIR_ESCAPED
+  printf -v TMP_DIR_ESCAPED '%q' "$TMP_DIR"
+  trap "rm -rf ${TMP_DIR_ESCAPED} 2>/dev/null || true" RETURN
 
   local CERT_PEM="$TMP_DIR/cert.pem"
   local ALL_KEYS_PEM="$TMP_DIR/all-keys.pem"
