@@ -25,7 +25,8 @@ import ChatInput, { ChatFile } from "@/components/ChatInput";
 import EmptyState from "@/components/EmptyState";
 import VoiceMode from "@/components/VoiceMode";
 import { useConversations } from "@/providers/ConversationsProvider";
-import { saveMessages, loadMessages } from "@/utils/conversations";
+import { loadMessages } from "@/utils/conversations";
+import { conversationPersistenceService } from "@/utils/conversationPersistence";
 import {
   loadMemories,
   searchMemories,
@@ -36,6 +37,7 @@ import {
   loadAssociativeLinks,
   saveAssociativeLinks,
   scheduleAssociativeLinkPruning,
+  shouldExtractMemory,
 } from "@/utils/memory";
 import {
   extractMemoryCandidates,
@@ -116,7 +118,6 @@ export default function ChatScreen() {
   const convIdRef = useRef<string>(activeId ?? generateId());
   const hasLoadedRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractionRef = useRef(false);
   const messagesCountRef = useRef(0);
 
@@ -128,36 +129,57 @@ export default function ChatScreen() {
     }
   }, [activeId, setActiveId]);
 
-  const runWebSearch = useCallback(async (query: string): Promise<string> => {
-    console.log("[NEXUS] Web search:", query);
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch(
-        `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
-        { signal: controller.signal },
-      );
-      clearTimeout(timeout);
-      const data = await response.json();
-      const results: string[] = [];
-      if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
-      if (data.RelatedTopics) {
-        for (const topic of data.RelatedTopics.slice(0, 5)) {
-          if (topic.Text) results.push(`- ${topic.Text}`);
-        }
+  const getWebSearchTimeoutMs = useCallback((): number => {
+    if (typeof navigator === "undefined") return 8000;
+
+    const connection = (
+      navigator as Navigator & {
+        connection?: { effectiveType?: string };
       }
-      return results.length > 0
-        ? `Search results for "${query}":
+    ).connection;
+
+    const effectiveType = connection?.effectiveType;
+    if (effectiveType === "slow-2g" || effectiveType === "2g") return 18000;
+    if (effectiveType === "3g") return 12000;
+    return 8000;
+  }, []);
+
+  const runWebSearch = useCallback(
+    async (query: string): Promise<string> => {
+      console.log("[NEXUS] Web search:", query);
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(
+          () => controller.abort(),
+          getWebSearchTimeoutMs(),
+        );
+        const response = await fetch(
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+          { signal: controller.signal },
+        );
+        clearTimeout(timeout);
+        const data = await response.json();
+        const results: string[] = [];
+        if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
+        if (data.RelatedTopics) {
+          for (const topic of data.RelatedTopics.slice(0, 5)) {
+            if (topic.Text) results.push(`- ${topic.Text}`);
+          }
+        }
+        return results.length > 0
+          ? `Search results for "${query}":
 
 ${results.join("\n")}`
-        : `No structured results for "${query}". Answer from knowledge and note limitations.`;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        return `Search timeout for "${query}". Answer from knowledge and note limitations.`;
+          : `No structured results for "${query}". Answer from knowledge and note limitations.`;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          return `Search timeout for "${query}". Answer from knowledge and note limitations.`;
+        }
+        return `Search failed for "${query}". Answer from knowledge.`;
       }
-      return `Search failed for "${query}". Answer from knowledge.`;
-    }
-  }, []);
+    },
+    [getWebSearchTimeoutMs],
+  );
 
   const runCognitiveAnalysis = useCallback(
     async (
@@ -769,31 +791,37 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
 
   useEffect(() => {
     if (!hasLoadedRef.current || messages.length === 0) return;
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const id = convIdRef.current;
-      saveMessages(id, messages);
-      const firstUserMsg = messages.find((m: any) => m.role === "user") as any;
-      const title =
-        firstUserMsg?.parts
-          ?.find((p: any) => p.type === "text")
-          ?.text?.substring(0, 60) ?? "New Chat";
-      const lastMsg = messages[messages.length - 1] as any;
-      const lastText =
-        lastMsg?.parts
-          ?.filter((p: any) => p.type === "text")
-          .map((p: any) => p.text)
-          .join(" ") ?? "";
-      upsertConversation({
-        id,
-        title,
-        preview: lastText.substring(0, 100),
-        timestamp: Date.now(),
-        messageCount: messages.length,
-      });
-    }, 800);
+
+    const id = convIdRef.current;
+    conversationPersistenceService.schedule({
+      conversationId: id,
+      messages,
+      onPersistMeta: (pendingMessages) => {
+        const firstUserMsg = pendingMessages.find(
+          (m: any) => m.role === "user",
+        ) as any;
+        const title =
+          firstUserMsg?.parts
+            ?.find((p: any) => p.type === "text")
+            ?.text?.substring(0, 60) ?? "New Chat";
+        const lastMsg = pendingMessages[pendingMessages.length - 1] as any;
+        const lastText =
+          lastMsg?.parts
+            ?.filter((p: any) => p.type === "text")
+            .map((p: any) => p.text)
+            .join(" ") ?? "";
+        upsertConversation({
+          id,
+          title,
+          preview: lastText.substring(0, 100),
+          timestamp: Date.now(),
+          messageCount: pendingMessages.length,
+        });
+      },
+    });
+
     return () => {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      conversationPersistenceService.flush();
     };
   }, [messages, upsertConversation]);
 
@@ -810,7 +838,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             ?.filter((p: any) => p.type === "text")
             .map((p: any) => p.text)
             .join(" ") ?? "";
-        if (userText.length > 20 && assistantText.length > 20) {
+        if (shouldExtractMemory(userText, assistantText)) {
           extractionRef.current = true;
           extractMemoryCandidates(userText, assistantText)
             .then(async (candidates) => {

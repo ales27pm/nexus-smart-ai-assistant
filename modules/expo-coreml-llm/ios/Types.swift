@@ -13,6 +13,12 @@ enum Types {
     case gpt2_bpe
   }
 
+
+  enum LLMError: Int {
+    case modelMissing = 101
+    case outOfMemory = 102
+  }
+
   struct LoadModelOptions {
     let modelFile: String?
     let modelPath: String?
