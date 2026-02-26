@@ -101,3 +101,18 @@ export function normalizeCoreMLError(error: unknown): CoreMLError {
     typeof error === "string" ? error : "Unknown CoreML failure",
   );
 }
+
+export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
+  101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
+  102: "CoreML memory pressure detected. Free up memory by closing apps and retry.",
+};
+
+export function toActionableCoreMLError(error: unknown): CoreMLError {
+  const normalized = normalizeCoreMLError(error);
+  if (!normalized.code) return normalized;
+
+  const hint = COREML_ACTIONABLE_ERRORS[normalized.code];
+  if (!hint) return normalized;
+
+  return new CoreMLError(`${normalized.message} (${hint})`, normalized.code);
+}
