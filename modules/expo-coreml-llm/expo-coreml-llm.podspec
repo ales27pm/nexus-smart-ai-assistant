@@ -19,7 +19,11 @@ Pod::Spec.new do |s|
   s.source_files = 'ios/**/*.{h,m,mm,swift}'
   s.swift_version = '5.9'
 
+  # CocoaPods 1.15+ can fail when directory entries are added as PBX file refs.
+  # Filter glob results to files so extensionless assets are preserved while
+  # excluding directories such as *.mlpackage bundles from PBX file references.
+  resource_files = Dir.glob('ios/resources/**/*').select { |path| File.file?(path) }
   s.resource_bundles = {
-    'ExpoCoreMLLLMResources' => ['ios/resources/**/*']
+    'ExpoCoreMLLLMResources' => resource_files
   }
 end

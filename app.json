@@ -7,13 +7,14 @@
     "icon": "./assets/images/icon.png",
     "scheme": "rork-app",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "jsEngine": "jsc",
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.smart-ai-assistant-slxh0fb",
       "infoPlist": {
@@ -70,6 +71,10 @@
       "eas": {
         "projectId": "fbf2d612-8c64-4b4c-9866-76c27abb4a0a"
       }
+    },
+    "android": {
+      "newArchEnabled": true,
+      "jsEngine": "hermes"
     }
   }
 }
