@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IOS_DIR="${ROOT_DIR}/ios"
-PREFERRED_COCOAPODS_VERSION="1.15.2"
+PREFERRED_COCOAPODS_VERSION="1.15.0"
 AUTO_ISOLATE_CUSTOM_PODS=0
 
 log() {
