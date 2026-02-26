@@ -52,18 +52,12 @@ ensure_cocoapods() {
 write_bundler_files() {
   mkdir -p "${IOS_DIR}"
 
-  local active_ruby_version
-  if ! active_ruby_version="$(ruby -e 'print RUBY_VERSION' 2>/dev/null)" || [[ -z "${active_ruby_version}" ]]; then
-    log "Failed to detect the active Ruby version. Ensure Ruby is installed and available on PATH."
-    exit 1
-  fi
-
-  printf '%s\n' "${active_ruby_version}" > "${IOS_DIR}/.ruby-version"
+  cat > "${IOS_DIR}/.ruby-version" <<'RUBY'
+3.2.6
+RUBY
 
   cat > "${IOS_DIR}/Gemfile" <<'GEMFILE'
 source 'https://rubygems.org'
-
-ruby File.read(File.join(__dir__, '.ruby-version')).strip
 
 gem 'cocoapods', '1.15.2'
 GEMFILE
