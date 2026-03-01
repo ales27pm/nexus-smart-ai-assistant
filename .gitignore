@@ -63,3 +63,12 @@ scripts/ios/*.mobileprovision
 NJKFHRBSH2.cer
 *.log
 *.ipa
+# Build artifacts
+*.ipa
+*.dSYM
+build-output.log
+
+# HuggingFace / local model caches
+.hf_models/
+.hf_tokenizer_cache/
+.huggingface/
