@@ -22,6 +22,7 @@ def main():
     try:
         import coremltools as ct
     except Exception:
+        print("__COREMLTOOLS_MISSING__", file=sys.stderr)
         print("❌ coremltools not installed. Install with:", file=sys.stderr)
         print("   python3 -m pip install --upgrade coremltools", file=sys.stderr)
         sys.exit(1)

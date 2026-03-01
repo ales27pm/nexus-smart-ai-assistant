@@ -4,6 +4,12 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  getIOExpectationsFromManifest,
+  getTokenizerBundlePathsFromManifest,
+  getTokenizerCacheKeyFromManifest,
+  readCoreMLManifest,
+} from "./coreml_manifest.mjs";
 
 const repoRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -29,55 +35,7 @@ async function exists(targetPath) {
 }
 
 function parseArgs(argv) {
-  const strict = argv.includes("--strict");
-  return { strict };
-}
-
-function assertNonEmptyString(value, key) {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${key} must be a non-empty string`);
-  }
-  return value;
-}
-
-function assertNumber(value, key) {
-  if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
-    throw new Error(`${key} must be a non-negative number`);
-  }
-  return value;
-}
-
-function assertComputeUnits(value) {
-  const allowed = new Set([
-    "all",
-    "cpuOnly",
-    "cpuAndGPU",
-    "cpuAndNeuralEngine",
-  ]);
-  if (typeof value !== "string" || !allowed.has(value)) {
-    throw new Error(
-      "computeUnits must be one of all|cpuOnly|cpuAndGPU|cpuAndNeuralEngine",
-    );
-  }
-  return value;
-}
-
-function parseManifest(raw) {
-  if (!raw || typeof raw !== "object") {
-    throw new Error("manifest must be an object");
-  }
-
-  const config = raw;
-  return {
-    activeModel: assertNonEmptyString(config.activeModel, "activeModel"),
-    tokenizerRepo: assertNonEmptyString(config.tokenizerRepo, "tokenizerRepo"),
-    coremlRepo: assertNonEmptyString(config.coremlRepo, "coremlRepo"),
-    contextLimit: assertNumber(config.contextLimit, "contextLimit"),
-    bosTokenId: assertNumber(config.bosTokenId, "bosTokenId"),
-    eosTokenId: assertNumber(config.eosTokenId, "eosTokenId"),
-    stopTokenIds: config.stopTokenIds,
-    computeUnits: assertComputeUnits(config.computeUnits),
-  };
+  return { strict: argv.includes("--strict") };
 }
 
 function buildTokenizerIdSet(tokenizerJson) {
@@ -139,43 +97,53 @@ function validateTokenizerCompatibility(tokenizerJson, manifest) {
   return { issues, notes };
 }
 
-function runCoreMLToolsInspection({ repoRoot, modelDir, strict }) {
+function isMissingCoreMLTools(stderr) {
+  const text = stderr.toLowerCase();
+  return (
+    text.includes("__coremltools_missing__") ||
+    text.includes("coremltools not installed") ||
+    text.includes("no module named 'coremltools'") ||
+    text.includes('no module named "coremltools"') ||
+    text.includes("modulenotfounderror")
+  );
+}
+
+function runCoreMLToolsInspection({ repoRootPath, modelDir, io, strict }) {
   const inspectScriptPath = path.join(
-    repoRoot,
+    repoRootPath,
     "scripts/coreml/inspect_coreml_io.py",
   );
+
+  const notes = [];
+  const issues = [];
+
   const pythonCheck = spawnSync("python3", ["--version"], { encoding: "utf8" });
   if (pythonCheck.status !== 0) {
-    return {
-      issues: strict
-        ? ["python3 is unavailable; cannot run deep CoreML IO inspection"]
-        : [],
-      notes: ["WARN python3 unavailable; skipping deep CoreML IO inspection"],
-    };
+    const msg = "python3 is unavailable; cannot run deep CoreML IO inspection";
+    if (strict) issues.push(msg);
+    else notes.push(`WARN ${msg}`);
+    return { issues, notes };
   }
 
   const inspectArgs = [
     inspectScriptPath,
     modelDir,
     "--expect-input",
-    "input_ids",
+    io.inputIdsName,
     "--expect-input",
-    "attention_mask",
+    io.attentionMaskName,
     "--expect-input",
-    "cache_position",
+    io.cachePositionName,
     "--expect-output",
-    "logits",
+    io.logitsName,
     "--strict",
   ];
 
   const result = spawnSync("python3", inspectArgs, {
     encoding: "utf8",
-    cwd: repoRoot,
+    cwd: repoRootPath,
     maxBuffer: 8 * 1024 * 1024,
   });
-
-  const notes = [];
-  const issues = [];
 
   if (result.status === 0) {
     notes.push(
@@ -185,33 +153,22 @@ function runCoreMLToolsInspection({ repoRoot, modelDir, strict }) {
   }
 
   const stderr = (result.stderr || "").trim();
-  const missingCoreMLTools = stderr.includes("coremltools not installed");
-  if (missingCoreMLTools && !strict) {
-    notes.push(
-      "WARN coremltools not installed; skipping deep CoreML IO inspection",
-    );
+  if (isMissingCoreMLTools(stderr)) {
+    const msg = "coremltools not installed; skipping deep CoreML IO inspection";
+    if (strict) issues.push(msg);
+    else notes.push(`WARN ${msg}`);
     return { issues, notes };
   }
 
-  issues.push(
-    `Deep CoreML IO inspection failed${stderr ? `: ${stderr.split("\n").slice(-1)[0]}` : ""}`,
-  );
+  const tail = stderr ? stderr.split("\n").slice(-1)[0] : "";
+  issues.push(`Deep CoreML IO inspection failed${tail ? `: ${tail}` : ""}`);
   return { issues, notes };
 }
 
 async function run() {
   const { strict } = parseArgs(process.argv.slice(2));
-
-  const manifestPath = path.join(repoRoot, "coreml-config.json");
-  const rawManifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  const manifest = parseManifest(rawManifest);
-
-  if (
-    !Array.isArray(manifest.stopTokenIds) ||
-    manifest.stopTokenIds.length < 1
-  ) {
-    throw new Error("stopTokenIds must contain at least one token id");
-  }
+  const { manifestPath, manifest } = await readCoreMLManifest(repoRoot);
+  const io = getIOExpectationsFromManifest(manifest);
 
   const modelDir = path.join(
     repoRoot,
@@ -219,21 +176,26 @@ async function run() {
     manifest.activeModel,
   );
 
+  const tokenizerBundle = getTokenizerBundlePathsFromManifest(manifest);
   const vocabPath = path.join(
     repoRoot,
-    "modules/expo-coreml-llm/ios/resources/tokenizers/gpt2/vocab.json",
+    tokenizerBundle.bundleDir,
+    tokenizerBundle.vocabFile,
   );
   const mergesPath = path.join(
     repoRoot,
-    "modules/expo-coreml-llm/ios/resources/tokenizers/gpt2/merges.txt",
+    tokenizerBundle.bundleDir,
+    tokenizerBundle.mergesFile,
   );
 
   const issues = [];
   const notes = [];
 
+  const tokenizerCacheKey = getTokenizerCacheKeyFromManifest(manifest);
   const tokenizerCacheDir = path.join(
     repoRoot,
-    ".hf_tokenizer_cache/dolphin_llama3_2_3b",
+    ".hf_tokenizer_cache",
+    tokenizerCacheKey,
   );
   const tokenizerJsonPath = path.join(tokenizerCacheDir, "tokenizer.json");
 
@@ -258,8 +220,9 @@ async function run() {
     }
 
     const deepInspection = runCoreMLToolsInspection({
-      repoRoot,
+      repoRootPath: repoRoot,
       modelDir,
+      io,
       strict,
     });
     issues.push(...deepInspection.issues);
@@ -299,12 +262,22 @@ async function run() {
     }
   }
 
-  console.log("[coreml-validate] Manifest", manifestPath);
+  notes.push(
+    `INFO tokenizer cache key derived from manifest.tokenizerRepo=${manifest.tokenizerRepo} -> ${tokenizerCacheKey}`,
+  );
   notes.push(
     "INFO tokenizer kind byte_level_bpe is expected for Llama 3.2 models; gpt2_bpe remains accepted as a legacy alias.",
   );
+
+  console.log("[coreml-validate] Manifest", manifestPath);
   console.log(
     `[coreml-validate] activeModel=${manifest.activeModel} computeUnits=${manifest.computeUnits} contextLimit=${manifest.contextLimit}`,
+  );
+  console.log(
+    `[coreml-validate] io inputIds=${io.inputIdsName} attentionMask=${io.attentionMaskName} cachePosition=${io.cachePositionName} logits=${io.logitsName}`,
+  );
+  console.log(
+    `[coreml-validate] tokenizer bundleDir=${tokenizerBundle.bundleDir} vocab=${tokenizerBundle.vocabFile} merges=${tokenizerBundle.mergesFile}`,
   );
 
   for (const line of notes) {

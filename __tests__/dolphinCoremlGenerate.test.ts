@@ -66,6 +66,30 @@ describe("dolphinCoremlGenerate", () => {
     );
   });
 
+  it("accepts legacy gpt2_bpe alias and normalizes to byte_level_bpe", async () => {
+    const legacyTokenizer = {
+      kind: "gpt2_bpe" as const,
+      vocabJsonAssetPath: "module:tokenizers/custom-legacy/vocab.json",
+      mergesTxtAssetPath: "module:tokenizers/custom-legacy/merges.txt",
+      bosTokenId: 777,
+      eosTokenId: 888,
+    };
+
+    await dolphinCoremlGenerate(provider, "prompt", {
+      tokenizer: legacyTokenizer,
+    });
+
+    expect(provider.generate).toHaveBeenCalledWith(
+      "prompt",
+      expect.objectContaining({
+        tokenizer: expect.objectContaining({
+          ...legacyTokenizer,
+          kind: "byte_level_bpe",
+        }),
+      }),
+    );
+  });
+
   it("joins history into prompt", async () => {
     await dolphinCoremlGenerate(provider, "latest", {
       history: ["user: hi", "assistant: hello"],

@@ -81,20 +81,20 @@ final class CoreMLLLMRunner {
           ])
         }
 
-        if isModelPlanBuildError(error) {
-          if unit == .cpuOnly {
-            throw NSError(domain: "ExpoCoreMLLLM", code: 104, userInfo: [
-              NSLocalizedDescriptionKey: "CoreML could not build an execution plan for this model on this device.",
-              NSUnderlyingErrorKey: error,
-            ])
-          }
+        let isPlanBuildFailure = isModelPlanBuildError(error)
+        if isPlanBuildFailure && unit == .cpuOnly {
+          throw NSError(domain: "ExpoCoreMLLLM", code: 104, userInfo: [
+            NSLocalizedDescriptionKey: "CoreML could not build an execution plan for this model on this device.",
+            NSUnderlyingErrorKey: error,
+          ])
+        }
+
+        let isRetryable = isPlanBuildFailure && unit != .cpuOnly
+        if isRetryable {
           continue
         }
 
-        let isRetryable = unit != .cpuOnly
-        if !isRetryable {
-          throw error
-        }
+        throw error
       }
     }
 
