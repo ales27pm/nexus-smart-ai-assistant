@@ -10,7 +10,10 @@ Pod::Spec.new do |s|
   s.homepage     = 'https://example.invalid'
   s.license      = { :type => 'MIT' }
   s.author       = { 'local' => 'local' }
-  s.platforms    = { :ios => '15.0' }
+  # this module uses APIs (MLState, cpuAndNeuralEngine) that require iOS 18+
+  # bumping the minimum here ensures the pod is compiled with the correct
+  # availability and prevents compiler errors when using these symbols.
+  s.platforms    = { :ios => '18.0' }
   s.source       = { :path => '.' }
   s.static_framework = true
 

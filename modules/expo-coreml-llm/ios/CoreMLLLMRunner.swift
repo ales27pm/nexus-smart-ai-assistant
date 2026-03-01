@@ -527,7 +527,8 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray2D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      arr[[0, NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
+      // use NSNumber for all dimensions to satisfy the subscript signature
+      arr[[NSNumber(value: 0), NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
     }
     return arr
   }
