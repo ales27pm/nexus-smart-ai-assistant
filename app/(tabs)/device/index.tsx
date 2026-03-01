@@ -28,10 +28,13 @@ import {
   DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   buildCoreMLChatPrompt,
   CoreMLBridge,
+  CoreMLLoadUxState,
   toActionableCoreMLError,
+  withPreferredCoreMLModelSource,
 } from "@/utils/coreml";
 import { iosToolsService } from "@/utils/iosToolsService";
 import { reportError } from "@/utils/globalErrorHandler";
+import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 
 type SafeActionOptions = {
   isCoreMLAction?: boolean;
@@ -45,6 +48,7 @@ type SafeAction = (
 
 function useSafeAction(
   setStatus: React.Dispatch<React.SetStateAction<string>>,
+  setCoreMLLoadState: React.Dispatch<React.SetStateAction<CoreMLLoadUxState>>,
 ): SafeAction {
   return React.useCallback(
     async (
@@ -71,11 +75,14 @@ function useSafeAction(
           normalizedError instanceof Error
             ? normalizedError.message
             : String(normalizedError);
+        if (options.isCoreMLAction) {
+          setCoreMLLoadState("failed—retry");
+        }
         setStatus(`${label} failed: ${message}`);
         Alert.alert(`${label} failed`, message);
       }
     },
-    [setStatus],
+    [setCoreMLLoadState, setStatus],
   );
 }
 
@@ -157,6 +164,8 @@ export default function DeviceNativeHubScreen() {
   const [isListening, setIsListening] = useState(false);
   const [coreML, setCoreML] = useState<CoreMLBridge | null>(null);
   const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
+  const [coreMLLoadState, setCoreMLLoadState] =
+    useState<CoreMLLoadUxState>("ready");
   const [coreMLModelName, setCoreMLModelName] = useState(
     DEFAULT_COREML_LOAD_OPTIONS.modelName ?? "MyLLM",
   );
@@ -171,7 +180,7 @@ export default function DeviceNativeHubScreen() {
     DEFAULT_COREML_TOKENIZER_MERGES_PATH,
   );
 
-  const runSafely = useSafeAction(setStatus);
+  const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
 
   useEffect(() => {
@@ -212,13 +221,24 @@ export default function DeviceNativeHubScreen() {
           );
         }
         const selectedModelName = coreMLModelName.trim();
-        const info = await coreML.loadModel({
+        const baseOptions = {
           ...DEFAULT_COREML_LOAD_OPTIONS,
           modelName:
             selectedModelName ||
             DEFAULT_COREML_LOAD_OPTIONS.modelName ||
             "MyLLM",
-        });
+        };
+
+        setCoreMLLoadState("downloading model");
+        const prepared = await ensureCoreMLModelAssets();
+
+        setCoreMLLoadState("verifying model");
+        const loadOptions = withPreferredCoreMLModelSource(
+          baseOptions,
+          prepared?.modelPath,
+        );
+        const info = await coreML.loadModel(loadOptions);
+        setCoreMLLoadState("ready");
         setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
         setStatus("CoreML model loaded");
       },
@@ -239,13 +259,22 @@ export default function DeviceNativeHubScreen() {
         let loaded = await coreML.isLoaded();
         if (!loaded) {
           const selectedModelName = coreMLModelName.trim();
-          await coreML.loadModel({
+          const baseOptions = {
             ...DEFAULT_COREML_LOAD_OPTIONS,
             modelName:
               selectedModelName ||
               DEFAULT_COREML_LOAD_OPTIONS.modelName ||
               "MyLLM",
-          });
+          };
+          setCoreMLLoadState("downloading model");
+          const prepared = await ensureCoreMLModelAssets();
+          setCoreMLLoadState("verifying model");
+          const loadOptions = withPreferredCoreMLModelSource(
+            baseOptions,
+            prepared?.modelPath,
+          );
+          await coreML.loadModel(loadOptions);
+          setCoreMLLoadState("ready");
           loaded = await coreML.isLoaded();
         }
 
@@ -479,6 +508,7 @@ export default function DeviceNativeHubScreen() {
           </Text>
         )}
         <Text style={styles.result}>{coreMLStatus}</Text>
+        <Text style={styles.result}>CoreML load state: {coreMLLoadState}</Text>
         <TextInput
           value={coreMLModelName}
           onChangeText={setCoreMLModelName}

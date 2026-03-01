@@ -21,6 +21,12 @@ export type CoreMLLoadModelOptions = {
   maxContext?: number;
 };
 
+export type CoreMLLoadUxState =
+  | "downloading model"
+  | "verifying model"
+  | "ready"
+  | "failed—retry";
+
 export type CoreMLGenerateOptions = {
   maxNewTokens?: number;
   temperature?: number;
@@ -74,6 +80,26 @@ export const DEFAULT_COREML_LOAD_OPTIONS: CoreMLLoadModelOptions = {
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
   maxContext: modelManifest.contextLimit,
 };
+
+export function withPreferredCoreMLModelSource(
+  baseOptions: CoreMLLoadModelOptions,
+  downloadedModelPath: string | null | undefined,
+): CoreMLLoadModelOptions {
+  const normalizedPath = downloadedModelPath?.trim();
+
+  if (normalizedPath) {
+    const nextOptions: CoreMLLoadModelOptions = {
+      ...baseOptions,
+      modelPath: normalizedPath,
+    };
+    delete nextOptions.modelFile;
+    return nextOptions;
+  }
+
+  const nextOptions: CoreMLLoadModelOptions = { ...baseOptions };
+  delete nextOptions.modelPath;
+  return nextOptions;
+}
 
 export const DEFAULT_COREML_GENERATE_OPTIONS: CoreMLGenerateOptions = {
   maxNewTokens: 220,

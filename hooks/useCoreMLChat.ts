@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { CoreMLError } from "@/utils/coreml";
-import { CoreMLLLMService, ILLMService } from "@/utils/llmService";
+import {
+  CoreMLLLMService,
+  CoreMLLoadStatusEvent,
+  ILLMService,
+} from "@/utils/llmService";
 import { reportError } from "@/utils/globalErrorHandler";
 import { useAsyncOperation } from "@/hooks/useAsyncOperation";
 
 export function useCoreMLChat(service?: ILLMService) {
   const [isAvailable, setIsAvailable] = useState(false);
+  const [loadStatus, setLoadStatus] = useState<CoreMLLoadStatusEvent>({
+    state: "downloading model",
+  });
   const serviceInstanceRef = useRef<ILLMService>(
     service ?? new CoreMLLLMService(),
   );
@@ -27,7 +34,11 @@ export function useCoreMLChat(service?: ILLMService) {
 
       try {
         const serviceInstance = serviceInstanceRef.current;
-        await serviceInstance.initialize();
+        await serviceInstance.initialize(undefined, (event) => {
+          if (!disposed) {
+            setLoadStatus(event);
+          }
+        });
 
         if (!disposed) {
           serviceRef.current = serviceInstance;
@@ -45,6 +56,10 @@ export function useCoreMLChat(service?: ILLMService) {
         if (!disposed) {
           serviceRef.current = null;
           setIsAvailable(false);
+          setLoadStatus({
+            state: "failed—retry",
+            detail: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     }
@@ -80,12 +95,12 @@ export function useCoreMLChat(service?: ILLMService) {
 
       return runExclusive(
         () =>
-        activeService.generateChatResponse(
-          systemPrompt,
-          userText,
-          undefined,
-          signal,
-        ),
+          activeService.generateChatResponse(
+            systemPrompt,
+            userText,
+            undefined,
+            signal,
+          ),
         () =>
           new CoreMLError(
             "CoreML generation already in progress. Please wait for the current request to finish.",
@@ -100,5 +115,6 @@ export function useCoreMLChat(service?: ILLMService) {
     isGenerating: isRunning,
     generate,
     service: serviceRef.current,
+    loadStatus,
   };
 }

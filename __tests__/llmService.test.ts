@@ -65,6 +65,40 @@ describe("CoreMLLLMService", () => {
         modelPath: "/documents/coreml-models/model/model.mlpackage",
       }),
     );
+    expect(provider.load).toHaveBeenCalledWith(
+      expect.not.objectContaining({ modelFile: "bundled.mlpackage" }),
+    );
+  });
+
+  it("emits explicit load-status events during initialize", async () => {
+    ensureCoreMLModelAssetsMock.mockResolvedValue({
+      modelDirectory: "/documents/coreml-models/model/",
+      modelPath: "/documents/coreml-models/model/model.mlpackage",
+      downloaded: false,
+      telemetry: {
+        modelName: "model",
+        durationMs: 25,
+        attempts: 1,
+        bytesWritten: 0,
+      },
+    });
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn(),
+    };
+
+    const service = new CoreMLLLMService(provider as any);
+    const events: string[] = [];
+
+    await service.initialize(undefined, (event) => {
+      events.push(event.state);
+    });
+
+    expect(events).toEqual(["downloading model", "verifying model", "ready"]);
   });
 
   it("throws outside __DEV__ when model preparation fails", async () => {
