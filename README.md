@@ -144,6 +144,30 @@ The repair script only touches `.npm-cache` in this project, so it won't require
    npx eas submit --platform ios
    ```
 
+#### Submit IPA without EAS Submit
+
+If EAS Submit returns a 400 error, you can upload the generated `.ipa` directly to App Store Connect via Apple's `altool`:
+
+```bash
+# Apple ID auth (app-specific password)
+./scripts/submit-ios-ipa-without-eas.sh \
+  --ipa /path/to/build.ipa \
+  --apple-id you@example.com \
+  --app-password xxxx-xxxx-xxxx-xxxx
+
+# OR API key auth
+./scripts/submit-ios-ipa-without-eas.sh \
+  --ipa /path/to/build.ipa \
+  --api-key <APPSTORE_CONNECT_KEY_ID> \
+  --api-issuer <APPSTORE_CONNECT_ISSUER_ID>
+```
+
+You can also run it through npm:
+
+```bash
+npm run submit:prod:ios:no-eas -- --ipa /path/to/build.ipa --apple-id you@example.com --app-password xxxx-xxxx-xxxx-xxxx
+```
+
 For detailed instructions, visit [Expo's App Store deployment guide](https://docs.expo.dev/submit/ios/).
 
 ### **Publish as a Website**
