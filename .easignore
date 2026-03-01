@@ -2,6 +2,9 @@
 
 # dependencies
 node_modules/
+bun.lock
+yarn.lock
+pnpm-lock.yaml
 
 # Expo
 .expo/
@@ -65,4 +68,6 @@ scripts/ios/*.mobileprovision
 .hf_hub_cache/
 .hf_hub_downloads/
 .hf_models/
-modules/expo-coreml-llm/ios/resources/models/
+# Keep the bundled CoreML model in EAS uploads even though it stays git-ignored.
+!modules/expo-coreml-llm/ios/resources/models/
+!modules/expo-coreml-llm/ios/resources/models/**

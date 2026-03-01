@@ -34,8 +34,11 @@ fi
 
 MODEL_DEST="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/models"
 TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/dolphin_llama3_2_3b"
+TOK_BUNDLE_DIR="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/tokenizers/gpt2"
+TOK_BUNDLE_VOCAB="$TOK_BUNDLE_DIR/vocab.json"
+TOK_BUNDLE_MERGES="$TOK_BUNDLE_DIR/merges.txt"
 
-mkdir -p "$MODEL_DEST" "$TOK_DEST"
+mkdir -p "$MODEL_DEST" "$TOK_DEST" "$TOK_BUNDLE_DIR"
 
 if ! command -v hf >/dev/null 2>&1; then
   echo "[i] 'hf' CLI not found; attempting safe installation via pipx/pip..."
@@ -80,8 +83,31 @@ TOK_ARGS=(download "$TOKENIZER_REPO"
 if [[ -n "${HF_TOKEN:-}" ]]; then TOK_ARGS+=(--token "$HF_TOKEN"); fi
 hf "${TOK_ARGS[@]}"
 
+python3 "$ROOT_DIR/scripts/coreml/export_gpt2_bpe_assets.py" \
+  --tokenizer-json "$TOK_DEST/tokenizer.json" \
+  --out-vocab "$TOK_BUNDLE_VOCAB" \
+  --out-merges "$TOK_BUNDLE_MERGES"
+PY_EXPORT_STATUS=$?
+
+if [[ $PY_EXPORT_STATUS -ne 0 ]]; then
+  echo "[x] Failed to export GPT-2 BPE tokenizer assets (python exit code: $PY_EXPORT_STATUS)" >&2
+  exit "$PY_EXPORT_STATUS"
+fi
+
+if [[ ! -s "$TOK_BUNDLE_VOCAB" ]]; then
+  echo "[x] Tokenizer vocab asset not created or empty: $TOK_BUNDLE_VOCAB" >&2
+  exit 1
+fi
+
+if [[ ! -s "$TOK_BUNDLE_MERGES" ]]; then
+  echo "[x] Tokenizer merges asset not created or empty: $TOK_BUNDLE_MERGES" >&2
+  exit 1
+fi
+
 echo "[✓] Tokenizer cache dir:"
 echo "    $TOK_DEST"
+echo "[✓] Tokenizer bundle assets:"
+echo "    $TOK_BUNDLE_DIR"
 
 echo
 echo "[next] Inspect CoreML IO:"
