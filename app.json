@@ -16,6 +16,7 @@
     "ios": {
       "jsEngine": "jsc",
       "supportsTablet": false,
+      "buildNumber": "76",
       "bundleIdentifier": "app.rork.smart-ai-assistant-slxh0fb",
       "privacyManifests": {
         "NSPrivacyTracking": false,

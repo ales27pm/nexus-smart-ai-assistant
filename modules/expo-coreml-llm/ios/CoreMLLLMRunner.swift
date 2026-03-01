@@ -40,10 +40,6 @@ final class CoreMLLLMRunner {
   }
 
   func load(options: Types.LoadModelOptions) throws -> Types.ModelInfo {
-    let cfg = MLModelConfiguration()
-    cfg.computeUnits = computeUnits(from: options.computeUnits)
-    cfg.allowLowPrecisionAccumulationOnGPU = true
-
     let modelURL: URL
     do {
       modelURL = try ResourceResolver.resolveModelURL(
@@ -57,26 +53,50 @@ final class CoreMLLLMRunner {
       ])
     }
 
-    let loaded: MLModel
-    do {
-      loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
-    } catch {
-      let nsError = error as NSError
-      let memoryDomains = Set(["MLModelErrorDomain", "MPSKernelErrorDomain", "MTLCommandBufferErrorDomain"])
-      let knownMemoryCodes = Set([3, 8, 9, 10, 11, 12])
+    let attempts = computeUnitFallbacks(preferred: options.computeUnits)
+    var loaded: MLModel?
+    var loadedComputeUnits: Types.CoreMLComputeUnits?
+    var firstFailure: Error?
+    var failureSummaries = [String]()
 
-      let domainLooksMemory = memoryDomains.contains(nsError.domain)
-      let codeLooksMemory = knownMemoryCodes.contains(nsError.code)
-      let message = String(describing: error).lowercased()
-      let messageLooksMemory = message.contains("memory") || message.contains("allocate")
+    for unit in attempts {
+      do {
+        let cfg = MLModelConfiguration()
+        cfg.computeUnits = computeUnits(from: unit)
+        cfg.allowLowPrecisionAccumulationOnGPU = true
 
-      if (domainLooksMemory && codeLooksMemory) || messageLooksMemory {
-        throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.outOfMemory.rawValue, userInfo: [
-          NSLocalizedDescriptionKey: "Unable to allocate memory for CoreML model.",
-          NSUnderlyingErrorKey: error,
-        ])
+        loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
+        loadedComputeUnits = unit
+        break
+      } catch {
+        if firstFailure == nil { firstFailure = error }
+
+        let nsError = error as NSError
+        failureSummaries.append("\(unit.rawValue): \(nsError.domain)(\(nsError.code))")
+
+        if isOutOfMemoryError(error) {
+          throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.outOfMemory.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "Unable to allocate memory for CoreML model.",
+            NSUnderlyingErrorKey: error,
+          ])
+        }
+
+        let isRetryable = isModelPlanBuildError(error) && unit != .cpuOnly
+        if !isRetryable {
+          throw error
+        }
       }
-      throw error
+    }
+
+    guard let loaded else {
+      let details = failureSummaries.joined(separator: ", ")
+      var info: [String: Any] = [
+        NSLocalizedDescriptionKey: "Failed to load CoreML model for all compute-unit fallbacks: \(details)",
+      ]
+      if let firstFailure {
+        info[NSUnderlyingErrorKey] = firstFailure
+      }
+      throw NSError(domain: "ExpoCoreMLLLM", code: 104, userInfo: info)
     }
 
     let inDesc = loaded.modelDescription.inputDescriptionsByName[options.inputIdsName]
@@ -107,7 +127,7 @@ final class CoreMLLLMRunner {
     return Types.ModelInfo(
       loaded: true,
       modelURL: modelURL.absoluteString,
-      computeUnits: options.computeUnits,
+      computeUnits: loadedComputeUnits ?? options.computeUnits,
       expectsSingleToken: detectedSingleToken,
       hasState: detectedHasState,
       inputIdsName: options.inputIdsName,
@@ -555,6 +575,37 @@ final class CoreMLLLMRunner {
     case .cpuAndGPU: return .cpuAndGPU
     case .cpuAndNeuralEngine: return .cpuAndNeuralEngine
     }
+  }
+
+  private func computeUnitFallbacks(preferred: Types.CoreMLComputeUnits) -> [Types.CoreMLComputeUnits] {
+    var units = [preferred]
+    let fallbackOrder: [Types.CoreMLComputeUnits] = [.all, .cpuAndNeuralEngine, .cpuAndGPU, .cpuOnly]
+    for candidate in fallbackOrder where !units.contains(candidate) {
+      units.append(candidate)
+    }
+    return units
+  }
+
+  private func isOutOfMemoryError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    let memoryDomains = Set(["MLModelErrorDomain", "MPSKernelErrorDomain", "MTLCommandBufferErrorDomain"])
+    let knownMemoryCodes = Set([3, 8, 9, 10, 11, 12])
+
+    let domainLooksMemory = memoryDomains.contains(nsError.domain)
+    let codeLooksMemory = knownMemoryCodes.contains(nsError.code)
+    let message = String(describing: error).lowercased()
+    let messageLooksMemory = message.contains("memory") || message.contains("allocate")
+    return (domainLooksMemory && codeLooksMemory) || messageLooksMemory
+  }
+
+  private func isModelPlanBuildError(_ error: Error) -> Bool {
+    let nsError = error as NSError
+    let message = String(describing: error).lowercased()
+    if nsError.code == -4 { return true }
+    return message.contains("execution plan")
+      || message.contains("model architecture file")
+      || message.contains("model.mil")
+      || message.contains("model plan")
   }
 
   private func shouldCancelGeneration() -> Bool {

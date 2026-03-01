@@ -1,6 +1,71 @@
 import Foundation
 
 enum ResourceResolver {
+  private static func findFirstDirectoryResource(
+    in bundle: Bundle,
+    withExtension ext: String
+  ) -> URL? {
+    guard let e = FileManager.default.enumerator(
+      at: bundle.bundleURL,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return nil
+    }
+
+    for case let url as URL in e {
+      guard url.pathExtension == ext else { continue }
+      let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+      if values?.isDirectory == true {
+        return url
+      }
+    }
+
+    return nil
+  }
+
+  private static func findNamedDirectoryResource(
+    in bundle: Bundle,
+    name: String
+  ) -> URL? {
+    guard let e = FileManager.default.enumerator(
+      at: bundle.bundleURL,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return nil
+    }
+
+    for case let url as URL in e {
+      guard url.lastPathComponent == name else { continue }
+      let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+      if values?.isDirectory == true {
+        return url
+      }
+    }
+
+    return nil
+  }
+
+  private static func findNamedResource(
+    in bundle: Bundle,
+    name: String
+  ) -> URL? {
+    guard let e = FileManager.default.enumerator(
+      at: bundle.bundleURL,
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    ) else {
+      return nil
+    }
+
+    for case let url as URL in e where url.lastPathComponent == name {
+      return url
+    }
+
+    return nil
+  }
+
   static func resourceBundle() -> Bundle? {
     let moduleBundle = Bundle(for: ExpoCoreMLLLMModule.self)
 
@@ -53,7 +118,18 @@ enum ResourceResolver {
       if let url = b.url(forResource: name, withExtension: ext, subdirectory: dir.isEmpty ? nil : dir) {
         return url
       }
+      // Fallback for resource bundles that flatten nested paths.
+      if let url = b.url(forResource: name, withExtension: ext) {
+        return url
+      }
     } else if let url = b.url(forResource: file, withExtension: nil, subdirectory: dir.isEmpty ? nil : dir) {
+      return url
+    } else if let url = b.url(forResource: file, withExtension: nil) {
+      return url
+    }
+
+    // Final fallback: recursive basename lookup.
+    if let url = findNamedResource(in: b, name: file) {
       return url
     }
 
@@ -82,11 +158,33 @@ enum ResourceResolver {
       if let url = b.url(forResource: name, withExtension: "mlpackage", subdirectory: "models") {
         return url
       }
+      if let url = b.url(forResource: name, withExtension: "mlpackage") {
+        return url
+      }
+      // Some build pipelines compile mlpackage resources into mlmodelc and flatten paths.
+      if let url = b.url(forResource: name, withExtension: "mlmodelc", subdirectory: "models") {
+        return url
+      }
+      if let url = b.url(forResource: name, withExtension: "mlmodelc") {
+        return url
+      }
+      if let url = findNamedDirectoryResource(in: b, name: "\(name).mlpackage") {
+        return url
+      }
+      if let url = findNamedDirectoryResource(in: b, name: "\(name).mlmodelc") {
+        return url
+      }
     }
 
     if file.hasSuffix(".mlmodelc") {
       let name = String(file.dropLast(".mlmodelc".count))
       if let url = b.url(forResource: name, withExtension: "mlmodelc", subdirectory: "models") {
+        return url
+      }
+      if let url = b.url(forResource: name, withExtension: "mlmodelc") {
+        return url
+      }
+      if let url = findNamedDirectoryResource(in: b, name: "\(name).mlmodelc") {
         return url
       }
     }
@@ -101,7 +199,18 @@ enum ResourceResolver {
         if let url = b.url(forResource: name, withExtension: ext, subdirectory: dir) {
           return url
         }
+        if let url = b.url(forResource: name, withExtension: ext) {
+          return url
+        }
       }
+    }
+
+    // Last-resort fallback for compiled model bundles emitted as model.mlmodelc.
+    if let url = b.url(forResource: "model", withExtension: "mlmodelc") {
+      return url
+    }
+    if let url = findFirstDirectoryResource(in: b, withExtension: "mlmodelc") {
+      return url
     }
 
     throw NSError(domain: "ExpoCoreMLLLM", code: 22, userInfo: [
