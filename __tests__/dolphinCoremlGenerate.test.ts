@@ -27,6 +27,7 @@ describe("dolphinCoremlGenerate", () => {
         maxNewTokens: 16,
         temperature: 0.2,
         stopTokenIds: [...modelManifest.stopTokenIds],
+        tokenizer: expect.objectContaining({ kind: "gpt2_bpe" }),
       }),
     );
     expect(out).toBe("completion");
