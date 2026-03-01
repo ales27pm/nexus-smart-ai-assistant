@@ -11,6 +11,10 @@ final class CoreMLLLMRunner {
   private var cachePositionName: String = "cache_position"
   private var logitsName: String = "logits"
 
+  private var inputIdsRank: Int = 2
+  private var attentionMaskRank: Int = 2
+  private var cachePositionRank: Int = 1
+
   private var eosTokenId: Int?
   private var maxContext: Int?
 
@@ -30,6 +34,9 @@ final class CoreMLLLMRunner {
     isLoaded = false
     expectsSingleToken = false
     hasState = false
+    inputIdsRank = 2
+    attentionMaskRank = 2
+    cachePositionRank = 1
     tokenizerCacheKey = nil
     tokenizerCache = nil
   }
@@ -113,6 +120,12 @@ final class CoreMLLLMRunner {
     let shape = inDesc?.multiArrayConstraint?.shape.map { $0.intValue } ?? []
     let detectedSingleToken = (shape.count == 2 && shape[1] == 1) || shape == [1, 1]
 
+    let maskDesc = loaded.modelDescription.inputDescriptionsByName[options.attentionMaskName]
+    let cacheDesc = loaded.modelDescription.inputDescriptionsByName[options.cachePositionName]
+    let detectedInputIdsRank = shape.count > 0 ? shape.count : 2
+    let detectedAttentionMaskRank = maskDesc?.multiArrayConstraint?.shape.count ?? 2
+    let detectedCachePositionRank = cacheDesc?.multiArrayConstraint?.shape.count ?? 1
+
     let detectedHasState: Bool
     if #available(iOS 18.0, *) {
       detectedHasState = !loaded.modelDescription.stateDescriptionsByName.isEmpty
@@ -125,6 +138,9 @@ final class CoreMLLLMRunner {
     self.attentionMaskName = options.attentionMaskName
     self.cachePositionName = options.cachePositionName
     self.logitsName = options.logitsName
+    self.inputIdsRank = detectedInputIdsRank
+    self.attentionMaskRank = detectedAttentionMaskRank
+    self.cachePositionRank = detectedCachePositionRank
     self.eosTokenId = options.eosTokenId
     self.maxContext = options.maxContext
     self.expectsSingleToken = detectedSingleToken
@@ -405,11 +421,20 @@ final class CoreMLLLMRunner {
       )
     }
 
-    let inputIds = try makeInt32MultiArray2D(values: tokenIds)
-    let attnMask = try makeInt32MultiArray2D(values: Array(repeating: 1, count: tokenIds.count))
-    let cachePos = try makeInt32MultiArray1D(values: (0..<tokenIds.count).map {
+    lock.lock()
+    let localInputIdsRank = inputIdsRank
+    let localAttentionMaskRank = attentionMaskRank
+    let localCachePositionRank = cachePositionRank
+    lock.unlock()
+
+    let inputIds = try makeInt32MultiArray(values: tokenIds, rank: localInputIdsRank)
+    let attnMask = try makeInt32MultiArray(
+      values: Array(repeating: 1, count: tokenIds.count),
+      rank: localAttentionMaskRank
+    )
+    let cachePos = try makeInt32MultiArray(values: (0..<tokenIds.count).map {
       clampCachePosition(startPosition + $0, maxContext: maxContext)
-    })
+    }, rank: localCachePositionRank)
 
     lock.lock()
     let inputName = inputIdsName
@@ -454,9 +479,15 @@ final class CoreMLLLMRunner {
     position: Int,
     state: MLState?
   ) throws -> [Float] {
-    let inputIds = try makeInt32MultiArray2D(value: tokenId)
-    let attnMask = try makeInt32MultiArray2D(value: 1)
-    let cachePos = try makeInt32MultiArray1D(value: position)
+    lock.lock()
+    let localInputIdsRank = inputIdsRank
+    let localAttentionMaskRank = attentionMaskRank
+    let localCachePositionRank = cachePositionRank
+    lock.unlock()
+
+    let inputIds = try makeInt32MultiArray(values: [tokenId], rank: localInputIdsRank)
+    let attnMask = try makeInt32MultiArray(values: [1], rank: localAttentionMaskRank)
+    let cachePos = try makeInt32MultiArray(values: [position], rank: localCachePositionRank)
 
     lock.lock()
     let inputName = inputIdsName
@@ -553,26 +584,18 @@ final class CoreMLLLMRunner {
     return Int32(clamped)
   }
 
-  private func makeInt32MultiArray2D(value: Int) throws -> MLMultiArray {
-    return try makeInt32MultiArray2D(values: [value])
-  }
+  private func makeInt32MultiArray(values: [Int], rank: Int) throws -> MLMultiArray {
+    if rank <= 1 {
+      let arr = try MLMultiArray(shape: [NSNumber(value: values.count)], dataType: .int32)
+      for (idx, value) in values.enumerated() {
+        arr[[NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
+      }
+      return arr
+    }
 
-  private func makeInt32MultiArray2D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
       arr[[NSNumber(value: 0), NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
-    }
-    return arr
-  }
-
-  private func makeInt32MultiArray1D(value: Int) throws -> MLMultiArray {
-    return try makeInt32MultiArray1D(values: [value])
-  }
-
-  private func makeInt32MultiArray1D(values: [Int]) throws -> MLMultiArray {
-    let arr = try MLMultiArray(shape: [NSNumber(value: values.count)], dataType: .int32)
-    for (idx, value) in values.enumerated() {
-      arr[[NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
     }
     return arr
   }
