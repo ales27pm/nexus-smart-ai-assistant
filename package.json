@@ -15,6 +15,7 @@
     "build:prod:ios:local": "./scripts/run-ios-local-eas-build.sh --profile production",
     "build:prod:ios:local:clean": "./scripts/run-ios-local-eas-build.sh --profile production --clean-cache",
     "build:prod:ios:local:repair": "./scripts/run-ios-local-eas-build.sh --profile production --clean-cache --repair-credentials",
+    "submit:prod:ios:no-eas": "./scripts/submit-ios-ipa-without-eas.sh",
     "check:ios:credentials": "node ./scripts/validate-ios-local-credentials.mjs",
     "eas-build-pre-install": "node ./scripts/ensure-package-lock-for-eas.mjs",
     "build:prod:local:repair": "npm run build:prod:ios:local:repair",
