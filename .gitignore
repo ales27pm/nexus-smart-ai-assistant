@@ -59,3 +59,8 @@ scripts/ios/*.mobileprovision
 
 # Apple Developer auth config (API keys, saved settings)
 .apple-auth/
+*.cer
+.npm-cache/
+.hf_tokenizer_cache/
+.hf_hub_cache/
+.hf_hub_downloads/
