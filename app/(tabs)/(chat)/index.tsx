@@ -724,8 +724,11 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
   const [useLocalLLM, setUseLocalLLM] = useState(false);
   const lastAssistantLenRef = useRef(0);
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { isAvailable: isCoreMLAvailable, generate: generateCoreML } =
-    useCoreMLChat();
+  const {
+    isAvailable: isCoreMLAvailable,
+    generate: generateCoreML,
+    loadStatus: coreMLLoadStatus,
+  } = useCoreMLChat();
 
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
@@ -1098,7 +1101,9 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
         </View>
       )}
       <View style={styles.localToggleRow}>
-        <Text style={styles.localToggleText}>On-device (CoreML)</Text>
+        <Text style={styles.localToggleText}>
+          On-device (CoreML): {coreMLLoadStatus.state}
+        </Text>
         <Switch
           value={useLocalLLM}
           onValueChange={(v) => setUseLocalLLM(v)}

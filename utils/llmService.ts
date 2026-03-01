@@ -2,18 +2,28 @@ import {
   CoreMLError,
   CoreMLGenerateOptions,
   CoreMLLoadModelOptions,
+  CoreMLLoadUxState,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   toActionableCoreMLError,
+  withPreferredCoreMLModelSource,
 } from "@/utils/coreml";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { Platform } from "react-native";
 
+export type CoreMLLoadStatusEvent = {
+  state: CoreMLLoadUxState;
+  detail?: string;
+};
+
 export interface ILLMService {
-  initialize(options?: CoreMLLoadModelOptions): Promise<void>;
+  initialize(
+    options?: CoreMLLoadModelOptions,
+    onLoadStatus?: (event: CoreMLLoadStatusEvent) => void,
+  ): Promise<void>;
   generateChatResponse(
     systemPrompt: string,
     userText: string,
@@ -31,18 +41,27 @@ export class CoreMLLLMService implements ILLMService {
 
   async initialize(
     options: CoreMLLoadModelOptions = DEFAULT_COREML_LOAD_OPTIONS,
+    onLoadStatus?: (event: CoreMLLoadStatusEvent) => void,
   ): Promise<void> {
-    const resolvedOptions: CoreMLLoadModelOptions = { ...options };
+    let resolvedOptions: CoreMLLoadModelOptions = { ...options };
 
     if (Platform.OS === "ios") {
       const startedAt = Date.now();
+      const emitLoadState = (state: CoreMLLoadUxState, detail?: string) => {
+        onLoadStatus?.({ state, detail });
+      };
+
       try {
+        emitLoadState("downloading model");
         const prepared = await ensureCoreMLModelAssets();
+        emitLoadState("verifying model");
+
+        resolvedOptions = withPreferredCoreMLModelSource(
+          resolvedOptions,
+          prepared?.modelPath,
+        );
+
         if (prepared?.modelPath) {
-          resolvedOptions.modelPath = prepared.modelPath;
-          if (!__DEV__) {
-            delete resolvedOptions.modelFile;
-          }
           console.info("[CoreMLLLMService] using downloaded model path", {
             modelPath: prepared.modelPath,
             downloadDurationMs: prepared.telemetry?.durationMs,
@@ -54,16 +73,32 @@ export class CoreMLLLMService implements ILLMService {
           durationMs: Date.now() - startedAt,
           error: error instanceof Error ? error.message : String(error),
         });
+
         if (!__DEV__) {
+          emitLoadState(
+            "failed—retry",
+            error instanceof Error ? error.message : String(error),
+          );
           throw error;
         }
+
+        resolvedOptions = withPreferredCoreMLModelSource(resolvedOptions, null);
         console.warn(
           "[CoreMLLLMService] continuing with bundled model fallback in __DEV__",
         );
       }
     }
 
-    await this.provider.load(resolvedOptions);
+    try {
+      await this.provider.load(resolvedOptions);
+      onLoadStatus?.({ state: "ready" });
+    } catch (error) {
+      onLoadStatus?.({
+        state: "failed—retry",
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   async generateChatResponse(
