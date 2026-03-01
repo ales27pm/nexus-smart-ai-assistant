@@ -83,8 +83,6 @@
           "ios": {
             "privacyManifestAggregationEnabled": false,
             "deploymentTarget": "18.0"
-            "privacyManifestAggregationEnabled": false,
-            "deploymentTarget": "18.0"
           }
         }
       ]
