@@ -481,14 +481,14 @@ final class CoreMLLLMRunner {
   private func extractLogits(_ logits: MLMultiArray) throws -> [Float] {
     let shape = logits.shape.map { $0.intValue }
 
-    func f(_ idx: [NSNumber]) -> Float { Float(truncating: logits[idx]) }
-
     if shape.count == 3 {
       let s = shape[1]
       let v = shape[2]
       let last = max(0, s - 1)
       var out = [Float](repeating: 0, count: v)
-      for j in 0..<v { out[j] = f([0, NSNumber(value: last), NSNumber(value: j)]) }
+      for j in 0..<v { 
+        out[j] = Float(truncating: logits[NSNumber(value: 0), NSNumber(value: last), NSNumber(value: j)])
+      }
       return out
     }
 
@@ -497,7 +497,9 @@ final class CoreMLLLMRunner {
       let v = shape[1]
       let row = max(0, s - 1)
       var out = [Float](repeating: 0, count: v)
-      for j in 0..<v { out[j] = f([NSNumber(value: row), NSNumber(value: j)]) }
+      for j in 0..<v { 
+        out[j] = Float(truncating: logits[NSNumber(value: row), NSNumber(value: j)])
+      }
       return out
     }
 
@@ -527,8 +529,7 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray2D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      // use NSNumber for all dimensions to satisfy the subscript signature
-      arr[[NSNumber(value: 0), NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
+      arr[NSNumber(value: 0), NSNumber(value: idx)] = NSNumber(value: safeInt32(value))
     }
     return arr
   }
@@ -545,6 +546,7 @@ final class CoreMLLLMRunner {
     return arr
   }
 
+  @available(iOS 16.0, *)
   private func computeUnits(from cu: Types.CoreMLComputeUnits) -> MLComputeUnits {
     switch cu {
     case .all: return .all
