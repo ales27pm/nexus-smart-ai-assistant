@@ -1,6 +1,7 @@
 {
   "platforms": ["ios"],
   "apple": {
-    "modules": ["ExpoCoreMLLLMModule"]
+    "modules": ["ExpoCoreMLLLMModule"],
+    "podspecPath": "expo-coreml-llm.podspec"
   }
 }

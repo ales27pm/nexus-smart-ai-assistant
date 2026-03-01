@@ -1,91 +1,6 @@
 import Foundation
 import CoreML
 
-// MARK: - Types
-
-struct Types {
-  struct LoadModelOptions {
-    let modelFile: String?
-    let modelName: String
-    let modelPath: String?
-    let computeUnits: CoreMLComputeUnits
-    let inputIdsName: String
-    let attentionMaskName: String
-    let cachePositionName: String
-    let logitsName: String
-    let eosTokenId: Int?
-    let maxContext: Int?
-  }
-
-  struct ModelInfo {
-    let loaded: Bool
-    let modelURL: String
-    let computeUnits: CoreMLComputeUnits
-    let expectsSingleToken: Bool
-    let hasState: Bool
-    let inputIdsName: String
-    let attentionMaskName: String
-    let cachePositionName: String
-    let logitsName: String
-    let eosTokenId: Int?
-    let maxContext: Int?
-  }
-
-  struct GenerateOptions {
-    let tokenizer: [String: Any]?
-    let sampling: SamplingOptions
-  }
-
-  struct GenerateFromTokensOptions {
-    let sampling: SamplingOptions
-    let maxContext: Int?
-  }
-
-  struct SamplingOptions {
-    let seed: Int?
-    let maxNewTokens: Int
-    let stopTokenIds: [Int]
-    let temperature: Float
-    let topK: Int
-    let topP: Float
-    let repetitionPenalty: Float
-  }
-
-  struct TokenizerConfig {
-    let kind: TokenizerKind
-    let vocabJsonAssetPath: String?
-    let mergesTxtAssetPath: String?
-    let bosTokenId: Int?
-    let eosTokenId: Int?
-
-    init(from dict: [String: Any]) throws {
-      self.kind = .gpt2_bpe
-      self.vocabJsonAssetPath = dict["vocabJsonAssetPath"] as? String
-      self.mergesTxtAssetPath = dict["mergesTxtAssetPath"] as? String
-      self.bosTokenId = dict["bosTokenId"] as? Int
-      self.eosTokenId = dict["eosTokenId"] as? Int
-    }
-  }
-
-  enum TokenizerKind: String {
-    case none
-    case gpt2_bpe
-  }
-
-  enum CoreMLComputeUnits: String {
-    case all
-    case cpuOnly
-    case cpuAndGPU
-    case cpuAndNeuralEngine
-  }
-
-  enum LLMError: Int {
-    case modelMissing = 101
-    case outOfMemory = 102
-    case tokenBasedModelMissingTokenizer = 104
-  }
-}
-
 final class CoreMLLLMRunner {
   private(set) var isLoaded: Bool = false
 
@@ -573,7 +488,7 @@ final class CoreMLLLMRunner {
       let last = max(0, s - 1)
       var out = [Float](repeating: 0, count: v)
       for j in 0..<v { 
-        out[j] = Float(truncating: logits[NSNumber(value: 0), NSNumber(value: last), NSNumber(value: j)])
+        out[j] = Float(truncating: logits[[NSNumber(value: 0), NSNumber(value: last), NSNumber(value: j)]])
       }
       return out
     }
@@ -584,7 +499,7 @@ final class CoreMLLLMRunner {
       let row = max(0, s - 1)
       var out = [Float](repeating: 0, count: v)
       for j in 0..<v { 
-        out[j] = Float(truncating: logits[NSNumber(value: row), NSNumber(value: j)])
+        out[j] = Float(truncating: logits[[NSNumber(value: row), NSNumber(value: j)]])
       }
       return out
     }
@@ -592,13 +507,13 @@ final class CoreMLLLMRunner {
     if shape.count == 1 {
       let v = shape[0]
       var out = [Float](repeating: 0, count: v)
-      for j in 0..<v { out[j] = f([NSNumber(value: j)]) }
+      for j in 0..<v { out[j] = Float(truncating: logits[[NSNumber(value: j)]]) }
       return out
     }
 
     let c = logits.count
     var out = [Float](repeating: 0, count: c)
-    for i in 0..<c { out[i] = f([NSNumber(value: i)]) }
+    for i in 0..<c { out[i] = logits[i].floatValue }
     return out
   }
 
@@ -615,7 +530,7 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray2D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [1, NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      arr[NSNumber(value: 0), NSNumber(value: idx)] = NSNumber(value: safeInt32(value))
+      arr[[NSNumber(value: 0), NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
     }
     return arr
   }

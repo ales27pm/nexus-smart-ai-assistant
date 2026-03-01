@@ -14,7 +14,6 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "deploymentTarget": "18.0",
       "jsEngine": "jsc",
       "supportsTablet": false,
       "bundleIdentifier": "app.rork.smart-ai-assistant-slxh0fb",
