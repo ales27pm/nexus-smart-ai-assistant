@@ -1,11 +1,23 @@
-import { Buffer } from "buffer";
 import * as FileSystem from "expo-file-system/legacy";
+import {
+  runtimeModelManifest,
+  toModelDownloadConfig,
+  type RuntimeModelFile,
+  type RuntimeModelVersion,
+} from "@/utils/modelManifest";
+import { Buffer } from "buffer";
 import { sha256 } from "js-sha256";
-import { modelManifest, type ModelDownloadConfig } from "@/utils/modelManifest";
 
 const LOG_PREFIX = "[CoreMLModelManager]";
 const DEFAULT_RETRY_COUNT = 3;
-const DOWNLOAD_STATE_FILE = "download-state.json";
+const INSTALL_METADATA_FILE = "install-metadata.json";
+const MANAGER_STATE_FILE = "manager-state.json";
+
+type DownloadFileDescriptor = {
+  path: string;
+  expectedHash: string;
+  sources: string[];
+};
 
 export type ModelAssetDownloadTelemetry = {
   modelName: string;
@@ -18,20 +30,29 @@ export type ModelAssetReadyResult = {
   modelDirectory: string;
   modelPath: string;
   downloaded: boolean;
+  activeVersionId: string;
   telemetry?: ModelAssetDownloadTelemetry;
 };
 
-type DownloadState = {
-  inProgress: boolean;
-  startedAt: string;
-  updatedAt: string;
-  lastError?: string;
+type InstalledFileMetadata = {
+  path: string;
+  expectedHash: string;
 };
 
-type ModelFileDescriptor = {
-  path: string;
-  url: string;
-  sha256: string;
+type InstalledModelMetadata = {
+  versionId: string;
+  manifestVersion: number;
+  modelName: string;
+  modelRelativePath: string;
+  installedAt: string;
+  files: InstalledFileMetadata[];
+};
+
+type ManagerState = {
+  activeVersionId?: string;
+  activeModelPath?: string;
+  manifestVersion?: number;
+  activatedAt?: string;
 };
 
 let ensureModelPromise: Promise<ModelAssetReadyResult | null> | null = null;
@@ -50,12 +71,20 @@ function getModelsRootDirectory(): string {
   return `${normalizeDirectory(FileSystem.documentDirectory)}coreml-models/`;
 }
 
-function getModelDirectory(config: ModelDownloadConfig): string {
-  return `${getModelsRootDirectory()}${config.modelName}/`;
+function getModelDirectory(versionId: string): string {
+  return `${getModelsRootDirectory()}${versionId}/`;
 }
 
-function getStateFilePath(config: ModelDownloadConfig): string {
-  return `${getModelDirectory(config)}${DOWNLOAD_STATE_FILE}`;
+function getModelFilePath(versionId: string, relativePath: string): string {
+  return `${getModelDirectory(versionId)}${relativePath}`;
+}
+
+function getInstallMetadataPath(versionId: string): string {
+  return `${getModelDirectory(versionId)}${INSTALL_METADATA_FILE}`;
+}
+
+function getManagerStatePath(): string {
+  return `${getModelsRootDirectory()}${MANAGER_STATE_FILE}`;
 }
 
 async function ensureDirectory(path: string): Promise<void> {
@@ -65,26 +94,26 @@ async function ensureDirectory(path: string): Promise<void> {
   }
 }
 
-async function writeDownloadState(
-  config: ModelDownloadConfig,
-  state: DownloadState,
-): Promise<void> {
-  await FileSystem.writeAsStringAsync(
-    getStateFilePath(config),
-    JSON.stringify(state, null, 2),
-  );
+async function writeJsonFile(path: string, value: unknown): Promise<void> {
+  await FileSystem.writeAsStringAsync(path, JSON.stringify(value, null, 2));
 }
 
-async function clearDownloadState(config: ModelDownloadConfig): Promise<void> {
-  const statePath = getStateFilePath(config);
-  const stateInfo = await FileSystem.getInfoAsync(statePath);
-  if (stateInfo.exists) {
-    await FileSystem.deleteAsync(statePath, { idempotent: true });
+async function readJsonFile<T>(path: string): Promise<T | null> {
+  const info = await FileSystem.getInfoAsync(path);
+  if (!info.exists) {
+    return null;
   }
-}
 
-function toAbsoluteModelPath(config: ModelDownloadConfig): string {
-  return `${getModelDirectory(config)}${config.modelRelativePath}`;
+  const content = await FileSystem.readAsStringAsync(path);
+  try {
+    return JSON.parse(content) as T;
+  } catch (error) {
+    console.warn(`${LOG_PREFIX} invalid JSON file; ignoring`, {
+      path,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 async function hashFileSha256(path: string): Promise<string> {
@@ -110,15 +139,15 @@ async function hashFileSha256(path: string): Promise<string> {
 }
 
 async function validateFileHash(
-  absolutePath: string,
+  path: string,
   expectedHash: string,
 ): Promise<boolean> {
-  const info = await FileSystem.getInfoAsync(absolutePath);
+  const info = await FileSystem.getInfoAsync(path);
   if (!info.exists || info.size === 0) {
     return false;
   }
 
-  const digest = await hashFileSha256(absolutePath);
+  const digest = await hashFileSha256(path);
   return digest.toLowerCase() === expectedHash.toLowerCase();
 }
 
@@ -129,185 +158,334 @@ async function deleteIfExists(path: string): Promise<void> {
   }
 }
 
-async function downloadWithResume(
-  descriptor: ModelFileDescriptor,
+function toDownloadDescriptors(
+  files: RuntimeModelFile[],
+): DownloadFileDescriptor[] {
+  return files.map((file) => ({
+    path: file.path,
+    expectedHash: file.sha256,
+    sources: [...file.sources],
+  }));
+}
+
+async function downloadWithFallbackSources(
+  descriptor: DownloadFileDescriptor,
   destination: string,
   retries: number,
 ): Promise<number> {
-  let attempt = 0;
   let bytesWritten = 0;
+  let lastError: unknown = null;
 
-  while (attempt < retries) {
-    attempt += 1;
+  for (const source of descriptor.sources) {
+    let attempt = 0;
+    while (attempt < retries) {
+      attempt += 1;
 
-    const resumable = FileSystem.createDownloadResumable(
-      descriptor.url,
-      destination,
-      {},
-      (progress) => {
-        bytesWritten = progress.totalBytesWritten;
-      },
-    );
+      const resumable = FileSystem.createDownloadResumable(
+        source,
+        destination,
+        {},
+        (progress) => {
+          bytesWritten = progress.totalBytesWritten;
+        },
+      );
 
-    try {
-      const response = await resumable.downloadAsync();
-      if (!response || response.status !== 200) {
-        throw new Error(
-          `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
-        );
+      try {
+        const response = await resumable.downloadAsync();
+        if (!response || response.status !== 200) {
+          throw new Error(
+            `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
+          );
+        }
+
+        return bytesWritten;
+      } catch (error) {
+        lastError = error;
+        console.warn(`${LOG_PREFIX} download attempt failed`, {
+          file: descriptor.path,
+          source,
+          attempt,
+          retries,
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        if (attempt < retries) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
       }
-
-      return bytesWritten;
-    } catch (error) {
-      console.warn(`${LOG_PREFIX} download attempt failed`, {
-        file: descriptor.path,
-        attempt,
-        retries,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      if (attempt >= retries) {
-        throw error;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
     }
   }
 
-  throw new Error(`Exhausted retries for ${descriptor.path}`);
+  throw (
+    lastError ??
+    new Error(
+      `Failed to download ${descriptor.path} from all configured sources`,
+    )
+  );
+}
+
+function toInstalledModelMetadata(
+  version: RuntimeModelVersion,
+): InstalledModelMetadata {
+  return {
+    versionId: version.id,
+    manifestVersion: runtimeModelManifest.manifestVersion,
+    modelName: version.modelName,
+    modelRelativePath: version.modelRelativePath,
+    installedAt: new Date().toISOString(),
+    files: version.files.map((file) => ({
+      path: file.path,
+      expectedHash: file.sha256,
+    })),
+  };
+}
+
+async function verifyInstalledVersion(
+  version: RuntimeModelVersion,
+): Promise<boolean> {
+  const metadata = await readJsonFile<InstalledModelMetadata>(
+    getInstallMetadataPath(version.id),
+  );
+
+  if (!metadata) {
+    return false;
+  }
+
+  if (
+    metadata.versionId !== version.id ||
+    metadata.manifestVersion !== runtimeModelManifest.manifestVersion
+  ) {
+    return false;
+  }
+
+  for (const file of version.files) {
+    const absolutePath = getModelFilePath(version.id, file.path);
+    const fileValid = await validateFileHash(absolutePath, file.sha256);
+    if (!fileValid) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function ensureFileDownloaded(
-  config: ModelDownloadConfig,
-  descriptor: ModelFileDescriptor,
-  retries: number,
+  version: RuntimeModelVersion,
+  descriptor: DownloadFileDescriptor,
 ): Promise<{ downloaded: boolean; bytesWritten: number }> {
-  const targetPath = `${getModelDirectory(config)}${descriptor.path}`;
-  const targetDir = targetPath.split("/").slice(0, -1).join("/");
-  await ensureDirectory(`${targetDir}/`);
+  const targetPath = getModelFilePath(version.id, descriptor.path);
+  const targetDir = `${targetPath.split("/").slice(0, -1).join("/")}/`;
+  await ensureDirectory(targetDir);
 
-  const validExistingFile = await validateFileHash(
+  const validExisting = await validateFileHash(
     targetPath,
-    descriptor.sha256,
+    descriptor.expectedHash,
   );
-  if (validExistingFile) {
+  if (validExisting) {
     return { downloaded: false, bytesWritten: 0 };
   }
 
   await deleteIfExists(targetPath);
-  const bytesWritten = await downloadWithResume(
+  const bytesWritten = await downloadWithFallbackSources(
     descriptor,
     targetPath,
-    retries,
+    version.retries ?? DEFAULT_RETRY_COUNT,
   );
 
-  const isValid = await validateFileHash(targetPath, descriptor.sha256);
-  if (!isValid) {
+  const validDownloaded = await validateFileHash(
+    targetPath,
+    descriptor.expectedHash,
+  );
+  if (!validDownloaded) {
     await deleteIfExists(targetPath);
-    console.error(`${LOG_PREFIX} hash mismatch`, {
-      file: descriptor.path,
-      expectedHash: descriptor.sha256,
-    });
     throw new Error(
-      `Hash mismatch for ${descriptor.path}; model asset integrity check failed.`,
+      `Hash mismatch for ${descriptor.path}; integrity check failed.`,
     );
   }
 
   return { downloaded: true, bytesWritten };
 }
 
-function mapDescriptors(config: ModelDownloadConfig): ModelFileDescriptor[] {
-  return config.files.map((file) => ({
-    path: file.path,
-    url: file.url,
-    sha256: file.sha256,
-  }));
+async function writeManagerState(state: ManagerState): Promise<void> {
+  await ensureDirectory(getModelsRootDirectory());
+  await writeJsonFile(getManagerStatePath(), state);
 }
 
-async function ensureModelAssetsInternal(
-  config: ModelDownloadConfig,
+async function readManagerState(): Promise<ManagerState | null> {
+  return readJsonFile<ManagerState>(getManagerStatePath());
+}
+
+async function activateVersion(version: RuntimeModelVersion): Promise<string> {
+  const modelPath = getModelFilePath(version.id, version.modelRelativePath);
+  const modelInfo = await FileSystem.getInfoAsync(modelPath);
+  if (!modelInfo.exists) {
+    throw new Error(`Model path missing for activation: ${modelPath}`);
+  }
+
+  await writeManagerState({
+    activeVersionId: version.id,
+    activeModelPath: modelPath,
+    manifestVersion: runtimeModelManifest.manifestVersion,
+    activatedAt: new Date().toISOString(),
+  });
+
+  return modelPath;
+}
+
+async function cleanupOldVersions(
+  keepVersionIds: string[],
+  maxRetained: number,
+): Promise<void> {
+  const root = getModelsRootDirectory();
+  const entries = await FileSystem.readDirectoryAsync(root).catch(
+    () => [] as string[],
+  );
+  const keepSet = new Set(keepVersionIds);
+  const candidateIds = entries.filter(
+    (entry) => entry !== MANAGER_STATE_FILE && !keepSet.has(entry),
+  );
+
+  if (candidateIds.length === 0) {
+    return;
+  }
+
+  const candidatesWithTime: { versionId: string; installedAtMs: number }[] = [];
+
+  for (const versionId of candidateIds) {
+    const metadata = await readJsonFile<InstalledModelMetadata>(
+      getInstallMetadataPath(versionId),
+    );
+    const installedAtMs = metadata?.installedAt
+      ? Date.parse(metadata.installedAt)
+      : Number.NEGATIVE_INFINITY;
+    candidatesWithTime.push({ versionId, installedAtMs });
+  }
+
+  candidatesWithTime.sort((a, b) => b.installedAtMs - a.installedAtMs);
+
+  const versionsToKeep = candidatesWithTime.slice(
+    0,
+    Math.max(0, maxRetained - keepSet.size),
+  );
+  for (const retained of versionsToKeep) {
+    keepSet.add(retained.versionId);
+  }
+
+  for (const versionId of candidateIds) {
+    if (!keepSet.has(versionId)) {
+      await deleteIfExists(getModelDirectory(versionId));
+      console.info(`${LOG_PREFIX} cleaned up stale model version`, {
+        versionId,
+      });
+    }
+  }
+}
+
+async function prepareVersion(
+  version: RuntimeModelVersion,
 ): Promise<ModelAssetReadyResult> {
-  const start = Date.now();
-  const modelDir = getModelDirectory(config);
-  const descriptors = mapDescriptors(config);
-
-  await ensureDirectory(getModelsRootDirectory());
-  await ensureDirectory(modelDir);
-
-  const state: DownloadState = {
-    inProgress: true,
-    startedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-  await writeDownloadState(config, state);
-
-  let totalBytes = 0;
+  const startedAt = Date.now();
+  let bytesWritten = 0;
   let downloadedAny = false;
 
-  try {
-    for (const descriptor of descriptors) {
-      const { downloaded, bytesWritten } = await ensureFileDownloaded(
-        config,
-        descriptor,
-        config.retries ?? DEFAULT_RETRY_COUNT,
+  await ensureDirectory(getModelsRootDirectory());
+  await ensureDirectory(getModelDirectory(version.id));
+
+  const alreadyInstalled = await verifyInstalledVersion(version);
+  if (!alreadyInstalled) {
+    for (const descriptor of toDownloadDescriptors(version.files)) {
+      const result = await ensureFileDownloaded(version, descriptor);
+      downloadedAny = downloadedAny || result.downloaded;
+      bytesWritten += result.bytesWritten;
+    }
+
+    await writeJsonFile(
+      getInstallMetadataPath(version.id),
+      toInstalledModelMetadata(version),
+    );
+  }
+
+  const modelPath = await activateVersion(version);
+
+  await cleanupOldVersions(
+    [version.id],
+    Math.max(runtimeModelManifest.maxRetainedVersions, 2),
+  );
+
+  return {
+    modelDirectory: getModelDirectory(version.id),
+    modelPath,
+    downloaded: downloadedAny,
+    activeVersionId: version.id,
+    telemetry: {
+      modelName: version.modelName,
+      durationMs: Date.now() - startedAt,
+      attempts: version.retries ?? DEFAULT_RETRY_COUNT,
+      bytesWritten,
+    },
+  };
+}
+
+function resolveActiveVersion(): RuntimeModelVersion {
+  const version = runtimeModelManifest.versions.find(
+    (entry) => entry.id === runtimeModelManifest.activeVersionId,
+  );
+
+  if (!version) {
+    throw new Error(
+      `Active runtime model version '${runtimeModelManifest.activeVersionId}' was not found in manifest.`,
+    );
+  }
+
+  return version;
+}
+
+async function ensureModelAssetsInternal(): Promise<ModelAssetReadyResult | null> {
+  // Keep compatibility with consumers expecting nullable, but runtime manifest always provides a version.
+  if (!runtimeModelManifest.versions.length) {
+    return null;
+  }
+
+  const activeVersion = resolveActiveVersion();
+  const managerState = await readManagerState();
+
+  const migrationRequired =
+    managerState?.manifestVersion !== runtimeModelManifest.manifestVersion ||
+    managerState?.activeVersionId !== activeVersion.id;
+
+  if (!migrationRequired) {
+    const isStillValid = await verifyInstalledVersion(activeVersion);
+    if (isStillValid) {
+      const modelPath = getModelFilePath(
+        activeVersion.id,
+        activeVersion.modelRelativePath,
       );
-      if (downloaded) {
-        downloadedAny = true;
-      }
-      totalBytes += bytesWritten;
+      return {
+        modelDirectory: getModelDirectory(activeVersion.id),
+        modelPath,
+        downloaded: false,
+        activeVersionId: activeVersion.id,
+      };
     }
+  }
 
-    const modelPath = toAbsoluteModelPath(config);
-    const modelInfo = await FileSystem.getInfoAsync(modelPath);
-    if (!modelInfo.exists) {
-      throw new Error(`Model path is missing after download: ${modelPath}`);
-    }
-
-    await clearDownloadState(config);
-
-    const telemetry: ModelAssetDownloadTelemetry = {
-      modelName: config.modelName,
-      durationMs: Date.now() - start,
-      attempts: config.retries ?? DEFAULT_RETRY_COUNT,
-      bytesWritten: totalBytes,
-    };
-
-    console.info(`${LOG_PREFIX} model assets ready`, telemetry);
-
-    return {
-      modelDirectory: modelDir,
-      modelPath,
-      downloaded: downloadedAny,
-      telemetry,
-    };
+  const previousActiveVersionId = managerState?.activeVersionId;
+  try {
+    const result = await prepareVersion(activeVersion);
+    return result;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await writeDownloadState(config, {
-      ...state,
-      inProgress: false,
-      updatedAt: new Date().toISOString(),
-      lastError: message,
+    console.error(`${LOG_PREFIX} failed to prepare active model version`, {
+      versionId: activeVersion.id,
+      previousActiveVersionId,
+      error: error instanceof Error ? error.message : String(error),
     });
-
-    console.error(`${LOG_PREFIX} failed to prepare model assets`, {
-      modelName: config.modelName,
-      durationMs: Date.now() - start,
-      error: message,
-    });
-
     throw error;
   }
 }
 
 export async function ensureCoreMLModelAssets(): Promise<ModelAssetReadyResult | null> {
-  if (!modelManifest.modelDownload) {
-    return null;
-  }
-
   if (!ensureModelPromise) {
-    ensureModelPromise = ensureModelAssetsInternal(
-      modelManifest.modelDownload,
-    ).finally(() => {
+    ensureModelPromise = ensureModelAssetsInternal().finally(() => {
       ensureModelPromise = null;
     });
   }
@@ -316,11 +494,23 @@ export async function ensureCoreMLModelAssets(): Promise<ModelAssetReadyResult |
 }
 
 export async function getDownloadedCoreMLModelPath(): Promise<string | null> {
-  if (!modelManifest.modelDownload) {
-    return null;
+  const managerState = await readManagerState();
+  if (managerState?.activeModelPath) {
+    const info = await FileSystem.getInfoAsync(managerState.activeModelPath);
+    if (info.exists) {
+      return managerState.activeModelPath;
+    }
   }
 
-  const modelPath = toAbsoluteModelPath(modelManifest.modelDownload);
-  const info = await FileSystem.getInfoAsync(modelPath);
-  return info.exists ? modelPath : null;
+  const activeVersion = resolveActiveVersion();
+  const fallback = getModelFilePath(
+    activeVersion.id,
+    activeVersion.modelRelativePath,
+  );
+  const fallbackInfo = await FileSystem.getInfoAsync(fallback);
+  return fallbackInfo.exists ? fallback : null;
+}
+
+export function getActiveModelDownloadConfigForDebug() {
+  return toModelDownloadConfig(resolveActiveVersion());
 }

@@ -1,0 +1,37 @@
+{
+  "manifestVersion": 1,
+  "minimumAppSupportedSchemaVersion": 1,
+  "maxRetainedVersions": 2,
+  "activeVersionId": "dolphin3-coreml-84510aa",
+  "versions": [
+    {
+      "id": "dolphin3-coreml-84510aa",
+      "modelName": "Dolphin3.0-Llama3.2-3B-int4-lut",
+      "modelRelativePath": "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
+      "retries": 3,
+      "files": [
+        {
+          "path": "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Manifest.json",
+          "sha256": "aad5ff885a5616ced62d32a9db123948e7c6d00205c5a2c078e8e0c29c102ac6",
+          "sources": [
+            "https://huggingface.co/ales27pm/Dolphin3.0-CoreML/resolve/84510aa5fbd1f23ef02c78ea45d65bd276dd5cc0/Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Manifest.json"
+          ]
+        },
+        {
+          "path": "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "sha256": "de73ca32b3dc6d5aaa096d1f4a2ee62e0438fefd0ee1e807af8e5668ccbcdcd3",
+          "sources": [
+            "https://huggingface.co/ales27pm/Dolphin3.0-CoreML/resolve/84510aa5fbd1f23ef02c78ea45d65bd276dd5cc0/Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Data/com.apple.CoreML/model.mlmodel"
+          ]
+        },
+        {
+          "path": "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "sha256": "fa6e034bad55a15cd2361b84da8b81bde01de66270b36f12ebd5e180d3bcc499",
+          "sources": [
+            "https://huggingface.co/ales27pm/Dolphin3.0-CoreML/resolve/84510aa5fbd1f23ef02c78ea45d65bd276dd5cc0/Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage/Data/com.apple.CoreML/weights/weight.bin"
+          ]
+        }
+      ]
+    }
+  ]
+}
