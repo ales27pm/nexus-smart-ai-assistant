@@ -23,7 +23,14 @@ Pod::Spec.new do |s|
   # CocoaPods 1.15+ can fail when directory entries are added as PBX file refs.
   # Filter glob results to files so extensionless assets are preserved while
   # excluding directories such as *.mlpackage bundles from PBX file references.
+  # NOTE:
+  # CocoaPods copies files inside a resource bundle by basename, not by the
+  # original directory tree. If we include both tokenizer variants that contain
+  # identical filenames (e.g. */vocab.json and */merges.txt), Xcode fails with:
+  # "Multiple commands produce ... ExpoCoreMLLLMResources.bundle/vocab.json".
+  # Keep only the default runtime tokenizer assets in the iOS pod bundle.
   resource_files = Dir.glob('ios/resources/**/*').select { |path| File.file?(path) }
+  resource_files.reject! { |path| path.include?('/tokenizers/gpt2/') }
   s.resource_bundles = {
     'ExpoCoreMLLLMResources' => resource_files
   }
