@@ -1,7 +1,8 @@
-import React, { Component, ErrorInfo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { AlertTriangle, RefreshCw } from 'lucide-react-native';
-import Colors from '@/constants/colors';
+import React, { Component, ErrorInfo } from "react";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { AlertTriangle, RefreshCw } from "lucide-react-native";
+import Colors from "@/constants/colors";
+import { reportBoundaryError } from "@/utils/globalErrorHandler";
 
 interface Props {
   children: React.ReactNode;
@@ -24,8 +25,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.log('[ErrorBoundary] Caught error:', error.message);
-    console.log('[ErrorBoundary] Component stack:', errorInfo.componentStack);
+    reportBoundaryError(error, errorInfo);
   }
 
   handleReset = () => {
@@ -41,7 +41,8 @@ export default class ErrorBoundary extends Component<Props, State> {
           </View>
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message}>
-            {this.props.fallbackMessage ?? 'An unexpected error occurred. Please try again.'}
+            {this.props.fallbackMessage ??
+              "An unexpected error occurred. Please try again."}
           </Text>
           {this.state.error && (
             <View style={styles.errorBox}>
@@ -71,8 +72,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.dark.background,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingHorizontal: 32,
   },
   iconWrap: {
@@ -80,20 +81,20 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     backgroundColor: Colors.dark.warningDim,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 20,
   },
   title: {
     fontSize: 18,
-    fontWeight: '700' as const,
+    fontWeight: "700" as const,
     color: Colors.dark.text,
     marginBottom: 8,
   },
   message: {
     fontSize: 14,
     color: Colors.dark.textSecondary,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
     lineHeight: 20,
     marginBottom: 16,
   },
@@ -102,19 +103,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 12,
     marginBottom: 20,
-    width: '100%',
+    width: "100%",
     borderWidth: 1,
     borderColor: Colors.dark.borderSubtle,
   },
   errorText: {
     fontSize: 12,
     color: Colors.dark.error,
-    fontFamily: 'monospace',
+    fontFamily: "monospace",
     lineHeight: 18,
   },
   retryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
     backgroundColor: Colors.dark.accent,
     paddingHorizontal: 24,
@@ -122,8 +123,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   retryText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
 });
