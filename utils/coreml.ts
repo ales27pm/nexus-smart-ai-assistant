@@ -30,7 +30,7 @@ export type CoreMLGenerateOptions = {
   stopTokenIds?: number[];
   seed?: number;
   tokenizer?: {
-    kind: "none" | "gpt2_bpe";
+    kind: "none" | "gpt2_bpe" | "byte_level_bpe";
     vocabJsonAssetPath?: string;
     mergesTxtAssetPath?: string;
     eosTokenId?: number;
@@ -57,7 +57,7 @@ export const DEFAULT_COREML_TOKENIZER_MERGES_PATH =
   "module:tokenizers/gpt2/merges.txt";
 
 export const DEFAULT_COREML_TOKENIZER = {
-  kind: "gpt2_bpe",
+  kind: "byte_level_bpe",
   vocabJsonAssetPath: DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   mergesTxtAssetPath: DEFAULT_COREML_TOKENIZER_MERGES_PATH,
   bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
@@ -96,14 +96,42 @@ export function cleanCoreMLOutput(rawOutput: string, prompt: string) {
   return stripped.replace(/^\s+/, "").trimEnd() || "(no output)";
 }
 
+function looksLikeExecutionPlanBuildFailure(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("execution plan") ||
+    normalized.includes("model architecture file") ||
+    normalized.includes("model.mil") ||
+    normalized.includes("error code: -4") ||
+    normalized.includes("error code -4")
+  );
+}
+
+function deriveCoreMLErrorCode(
+  error: Error & { code?: unknown },
+): number | undefined {
+  const maybeCode = Number(error.code);
+  if (Number.isFinite(maybeCode)) {
+    if (maybeCode === -4 && looksLikeExecutionPlanBuildFailure(error.message)) {
+      return 104;
+    }
+    return maybeCode;
+  }
+
+  if (looksLikeExecutionPlanBuildFailure(error.message)) {
+    return 104;
+  }
+
+  return undefined;
+}
+
 export function normalizeCoreMLError(error: unknown): CoreMLError {
   if (error instanceof CoreMLError) return error;
   if (error instanceof Error) {
-    const maybeCode = Number((error as Error & { code?: unknown }).code);
-    return new CoreMLError(
-      error.message,
-      Number.isFinite(maybeCode) ? maybeCode : undefined,
+    const normalizedCode = deriveCoreMLErrorCode(
+      error as Error & { code?: unknown },
     );
+    return new CoreMLError(error.message, normalizedCode);
   }
   return new CoreMLError(
     typeof error === "string" ? error : "Unknown CoreML failure",
@@ -118,7 +146,8 @@ export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
   22: "CoreML model file not found in bundle. Redownload model assets and rebuild.",
   101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
   102: "CoreML memory pressure detected. Free up memory by closing apps and retry.",
-  120: "Tokenizer config invalid. Use GPT-2 BPE tokenizer assets (vocab.json + merges.txt).",
+  104: "CoreML execution-plan build failed for this model on this device. Try computeUnits=cpuOnly, use a smaller/compatible model, or regenerate the model for the target iOS/CoreML runtime.",
+  120: "Tokenizer config invalid. Use byte-level BPE tokenizer assets (vocab.json + merges.txt).",
   121: "Tokenizer asset paths missing. Provide both vocab and merges paths.",
   122: "Tokenizer required for this model. Pass tokenizer settings with vocab/merges assets.",
 };

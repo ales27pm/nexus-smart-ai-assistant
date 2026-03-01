@@ -34,7 +34,7 @@ describe("dolphinCoremlGenerate", () => {
         temperature: 0.2,
         stopTokenIds: [...modelManifest.stopTokenIds],
         tokenizer: expect.objectContaining({
-          kind: "gpt2_bpe",
+          kind: "byte_level_bpe",
           vocabJsonAssetPath: DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
           mergesTxtAssetPath: DEFAULT_COREML_TOKENIZER_MERGES_PATH,
           bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
@@ -47,7 +47,7 @@ describe("dolphinCoremlGenerate", () => {
 
   it("uses explicit tokenizer asset paths and BOS/EOS IDs when provided", async () => {
     const customTokenizer = {
-      kind: "gpt2_bpe" as const,
+      kind: "byte_level_bpe" as const,
       vocabJsonAssetPath: "module:tokenizers/custom/vocab.json",
       mergesTxtAssetPath: "module:tokenizers/custom/merges.txt",
       bosTokenId: 50256,

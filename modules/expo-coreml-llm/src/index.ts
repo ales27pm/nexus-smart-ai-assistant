@@ -7,7 +7,8 @@ try {
 let requireOptionalNativeModule: (name: string) => unknown;
 let _NativeModulesProxy: any = null;
 try {
-  requireOptionalNativeModule = require("expo-modules-core").requireOptionalNativeModule;
+  requireOptionalNativeModule =
+    require("expo-modules-core").requireOptionalNativeModule;
   _NativeModulesProxy = require("expo-modules-core").NativeModulesProxy;
 } catch {
   requireOptionalNativeModule = () => null;
@@ -34,7 +35,7 @@ export type LoadModelOptions = {
 };
 
 type TokenizerConfig = {
-  kind: "none" | "gpt2_bpe";
+  kind: "none" | "gpt2_bpe" | "byte_level_bpe";
   vocabJsonAssetPath?: string;
   mergesTxtAssetPath?: string;
   bosTokenId?: number;
@@ -90,44 +91,71 @@ function getNativeModule(): NativeModuleShape {
   if (nativeModule) return nativeModule;
 
   try {
-    console.debug('[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLMModule")');
-    nativeModule = requireNativeModule("ExpoCoreMLLLMModule") as NativeModuleShape;
+    console.debug(
+      '[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLMModule")',
+    );
+    nativeModule = requireNativeModule(
+      "ExpoCoreMLLLMModule",
+    ) as NativeModuleShape;
     return nativeModule;
   } catch {
     try {
-      console.debug('[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLM")');
+      console.debug(
+        '[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLM")',
+      );
       // Some build environments register the module without the trailing "Module" suffix.
       nativeModule = requireNativeModule("ExpoCoreMLLLM") as NativeModuleShape;
       return nativeModule;
     } catch (err) {
-        console.debug('[ExpoCoreMLLLM] requireNativeModule attempts failed', err);
-        // Diagnostic attempts to help runtime debugging: try optional resolver and
-        // log NativeModulesProxy contents so we can see what native modules are
-        // visible to JS at runtime.
-        try {
-          const optA = requireOptionalNativeModule("ExpoCoreMLLLMModule");
-          const optB = requireOptionalNativeModule("ExpoCoreMLLLM");
-          // eslint-disable-next-line no-console
-          console.warn("expo-coreml-llm: requireOptionalNativeModule ExpoCoreMLLLMModule ->", optA);
-          // eslint-disable-next-line no-console
-          console.warn("expo-coreml-llm: requireOptionalNativeModule ExpoCoreMLLLM ->", optB);
-        } catch (e) {
-          // ignore
-        }
-        try {
-          // eslint-disable-next-line no-console
-          console.warn("expo-coreml-llm: NativeModulesProxy keys ->", _NativeModulesProxy ? Object.keys(_NativeModulesProxy) : "(not-available)");
-          // eslint-disable-next-line no-console
-          console.warn("expo-coreml-llm: NativeModulesProxy[ExpoCoreMLLLMModule] ->", _NativeModulesProxy ? _NativeModulesProxy["ExpoCoreMLLLMModule"] : "(not-available)");
-          // eslint-disable-next-line no-console
-          console.warn("expo-coreml-llm: NativeModulesProxy[ExpoCoreMLLLM] ->", _NativeModulesProxy ? _NativeModulesProxy["ExpoCoreMLLLM"] : "(not-available)");
-        } catch (e) {
-          // ignore
-        }
-
-        throw new Error(
-          "ExpoCoreMLLLMModule is not available. Ensure you ran `npx expo prebuild --clean`, installed pods, and launched an iOS dev client containing this native module.",
+      console.debug("[ExpoCoreMLLLM] requireNativeModule attempts failed", err);
+      // Diagnostic attempts to help runtime debugging: try optional resolver and
+      // log NativeModulesProxy contents so we can see what native modules are
+      // visible to JS at runtime.
+      try {
+        const optA = requireOptionalNativeModule("ExpoCoreMLLLMModule");
+        const optB = requireOptionalNativeModule("ExpoCoreMLLLM");
+        // eslint-disable-next-line no-console
+        console.warn(
+          "expo-coreml-llm: requireOptionalNativeModule ExpoCoreMLLLMModule ->",
+          optA,
         );
+        // eslint-disable-next-line no-console
+        console.warn(
+          "expo-coreml-llm: requireOptionalNativeModule ExpoCoreMLLLM ->",
+          optB,
+        );
+      } catch (e) {
+        // ignore
+      }
+      try {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "expo-coreml-llm: NativeModulesProxy keys ->",
+          _NativeModulesProxy
+            ? Object.keys(_NativeModulesProxy)
+            : "(not-available)",
+        );
+        // eslint-disable-next-line no-console
+        console.warn(
+          "expo-coreml-llm: NativeModulesProxy[ExpoCoreMLLLMModule] ->",
+          _NativeModulesProxy
+            ? _NativeModulesProxy["ExpoCoreMLLLMModule"]
+            : "(not-available)",
+        );
+        // eslint-disable-next-line no-console
+        console.warn(
+          "expo-coreml-llm: NativeModulesProxy[ExpoCoreMLLLM] ->",
+          _NativeModulesProxy
+            ? _NativeModulesProxy["ExpoCoreMLLLM"]
+            : "(not-available)",
+        );
+      } catch (e) {
+        // ignore
+      }
+
+      throw new Error(
+        "ExpoCoreMLLLMModule is not available. Ensure you ran `npx expo prebuild --clean`, installed pods, and launched an iOS dev client containing this native module.",
+      );
     }
   }
 }
@@ -138,7 +166,7 @@ function normalizeTokenizer(
   if (!tokenizer) return undefined;
   const normalized: TokenizerConfig = {
     ...tokenizer,
-    kind: tokenizer.kind ?? "gpt2_bpe",
+    kind: tokenizer.kind ?? "byte_level_bpe",
   };
   if (normalized.kind === "none") {
     throw new Error(

@@ -28,6 +28,7 @@ import {
   DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   buildCoreMLChatPrompt,
   CoreMLBridge,
+  toActionableCoreMLError,
 } from "@/utils/coreml";
 import {
   createCalendarEvent,
@@ -53,8 +54,15 @@ function useSafeAction(
       try {
         await fn();
       } catch (error) {
-        console.error(`${label} failed`, error);
-        const message = error instanceof Error ? error.message : String(error);
+        const normalizedError =
+          label.startsWith("CoreML") || label.includes("CoreML")
+            ? toActionableCoreMLError(error)
+            : error;
+        console.error(`${label} failed`, normalizedError);
+        const message =
+          normalizedError instanceof Error
+            ? normalizedError.message
+            : String(normalizedError);
         setStatus(`${label} failed: ${message}`);
         Alert.alert(`${label} failed`, message);
       }
@@ -220,7 +228,7 @@ export default function DeviceNativeHubScreen() {
       const mergesPath =
         coreMLMergesPath.trim() || DEFAULT_COREML_TOKENIZER_MERGES_PATH;
       const tokenizer = {
-        kind: "gpt2_bpe" as const,
+        kind: "byte_level_bpe" as const,
         vocabJsonAssetPath: vocabPath,
         mergesTxtAssetPath: mergesPath,
         bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,

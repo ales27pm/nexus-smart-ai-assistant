@@ -8,6 +8,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST_PATH="$ROOT_DIR/coreml-config.json"
 
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[!] node is required for CoreML pipeline validation" >&2
+  exit 7
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "[!] jq is required to read coreml-config.json"
   echo "    brew install jq  # macOS"
@@ -112,3 +118,16 @@ echo "    $TOK_BUNDLE_DIR"
 echo
 echo "[next] Inspect CoreML IO:"
 echo "    python3 scripts/coreml/inspect_coreml_io.py \"$MODEL_DEST/$MODEL_FILE\""
+
+
+echo "[i] Validating CoreML pipeline artifacts against manifest"
+node "$ROOT_DIR/scripts/coreml/validate_coreml_pipeline.mjs" --strict
+
+
+if python3 -c "import coremltools" >/dev/null 2>&1; then
+  echo "[i] Running deep CoreML IO inspection via coremltools"
+  node "$ROOT_DIR/scripts/coreml/run_coreml_inspect.mjs"
+else
+  echo "[i] coremltools not installed; skipping deep CoreML IO inspection"
+  echo "    Install: python3 -m pip install --upgrade coremltools"
+fi

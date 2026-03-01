@@ -81,7 +81,17 @@ final class CoreMLLLMRunner {
           ])
         }
 
-        let isRetryable = isModelPlanBuildError(error) && unit != .cpuOnly
+        if isModelPlanBuildError(error) {
+          if unit == .cpuOnly {
+            throw NSError(domain: "ExpoCoreMLLLM", code: 104, userInfo: [
+              NSLocalizedDescriptionKey: "CoreML could not build an execution plan for this model on this device.",
+              NSUnderlyingErrorKey: error,
+            ])
+          }
+          continue
+        }
+
+        let isRetryable = unit != .cpuOnly
         if !isRetryable {
           throw error
         }
@@ -156,11 +166,11 @@ final class CoreMLLLMRunner {
       throw NSError(domain: "ExpoCoreMLLLM", code: 120, userInfo: [
         NSLocalizedDescriptionKey: "tokenizer.kind=none not supported for token-mode models."
       ])
-    case .gpt2_bpe:
+    case .gpt2_bpe, .byte_level_bpe:
       guard let vocabPath = cfg.vocabJsonAssetPath,
             let mergesPath = cfg.mergesTxtAssetPath else {
         throw NSError(domain: "ExpoCoreMLLLM", code: 121, userInfo: [
-          NSLocalizedDescriptionKey: "Missing GPT2 BPE asset path: vocabJsonAssetPath/mergesTxtAssetPath"
+          NSLocalizedDescriptionKey: "Missing byte-level BPE asset path: vocabJsonAssetPath/mergesTxtAssetPath"
         ])
       }
       let vocabURL = try ResourceResolver.resolveModuleAssetPath(vocabPath)
