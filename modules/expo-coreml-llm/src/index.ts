@@ -94,9 +94,16 @@ function getNativeModule(): NativeModuleShape {
     console.debug(
       '[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLMModule")',
     );
-    nativeModule = requireNativeModule(
-      "ExpoCoreMLLLMModule",
-    ) as NativeModuleShape;
+    const candidate = requireNativeModule("ExpoCoreMLLLMModule") as
+      | NativeModuleShape
+      | null
+      | undefined;
+    if (!candidate) {
+      throw new Error(
+        "ExpoCoreMLLLM native module not found; tried 'ExpoCoreMLLLMModule' and 'ExpoCoreMLLLM'",
+      );
+    }
+    nativeModule = candidate;
     return nativeModule;
   } catch {
     try {
@@ -104,7 +111,16 @@ function getNativeModule(): NativeModuleShape {
         '[ExpoCoreMLLLM] trying requireNativeModule("ExpoCoreMLLLM")',
       );
       // Some build environments register the module without the trailing "Module" suffix.
-      nativeModule = requireNativeModule("ExpoCoreMLLLM") as NativeModuleShape;
+      const candidate = requireNativeModule("ExpoCoreMLLLM") as
+        | NativeModuleShape
+        | null
+        | undefined;
+      if (!candidate) {
+        throw new Error(
+          "ExpoCoreMLLLM native module not found; tried 'ExpoCoreMLLLMModule' and 'ExpoCoreMLLLM'",
+        );
+      }
+      nativeModule = candidate;
       return nativeModule;
     } catch (err) {
       console.debug("[ExpoCoreMLLLM] requireNativeModule attempts failed", err);

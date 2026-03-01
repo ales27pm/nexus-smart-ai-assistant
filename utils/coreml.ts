@@ -52,9 +52,9 @@ export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
 export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
 export const DEFAULT_COREML_BOS_TOKEN_ID = modelManifest.bosTokenId;
 export const DEFAULT_COREML_TOKENIZER_VOCAB_PATH =
-  "module:tokenizers/gpt2/vocab.json";
+  "module:tokenizers/byte_level_bpe/vocab.json";
 export const DEFAULT_COREML_TOKENIZER_MERGES_PATH =
-  "module:tokenizers/gpt2/merges.txt";
+  "module:tokenizers/byte_level_bpe/merges.txt";
 
 export const DEFAULT_COREML_TOKENIZER = {
   kind: "byte_level_bpe",

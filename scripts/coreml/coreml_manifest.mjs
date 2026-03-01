@@ -39,7 +39,7 @@ export function getTokenizerCacheKeyFromManifest(manifest) {
 export function getTokenizerBundlePathsFromManifest(manifest) {
   const bundleDir = asNonEmptyString(
     manifest.tokenizerBundleDir ??
-      "modules/expo-coreml-llm/ios/resources/tokenizers/gpt2",
+      "modules/expo-coreml-llm/ios/resources/tokenizers/byte_level_bpe",
     "tokenizerBundleDir",
   );
   const vocabFile = asNonEmptyString(
@@ -104,6 +104,14 @@ export function parseCoreMLManifest(raw) {
     manifest.stopTokenIds.length < 1
   ) {
     throw new Error("stopTokenIds must contain at least one token id");
+  }
+
+  for (const [index, tokenId] of manifest.stopTokenIds.entries()) {
+    if (!Number.isInteger(tokenId) || tokenId < 0) {
+      throw new Error(
+        `stopTokenIds[${index}] must be a non-negative integer; received ${String(tokenId)}`,
+      );
+    }
   }
 
   if (

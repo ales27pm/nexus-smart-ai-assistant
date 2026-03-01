@@ -36,6 +36,7 @@ const args = [
   io.cachePositionName,
   "--expect-output",
   io.logitsName,
+  "--strict",
 ];
 
 const result = spawnSync("python3", args, {
