@@ -61,7 +61,13 @@ enum Types {
     let eosTokenId: Int?
 
     init(from dict: [String: Any]) throws {
-      self.kind = TokenizerKind(rawValue: (dict["kind"] as? String) ?? "byte_level_bpe") ?? .byte_level_bpe
+      let rawKind = (dict["kind"] as? String) ?? "byte_level_bpe"
+      guard let parsedKind = TokenizerKind(rawValue: rawKind) else {
+        throw NSError(domain: "ExpoCoreMLLLM", code: 120, userInfo: [
+          NSLocalizedDescriptionKey: "Unsupported tokenizer.kind=\(rawKind). Supported kinds: byte_level_bpe, gpt2_bpe."
+        ])
+      }
+      self.kind = parsedKind
       self.vocabJsonAssetPath = dict["vocabJsonAssetPath"] as? String
       self.mergesTxtAssetPath = dict["mergesTxtAssetPath"] as? String
       self.bosTokenId = dict["bosTokenId"] as? Int
@@ -69,7 +75,7 @@ enum Types {
 
       if kind == .gpt2_bpe || kind == .byte_level_bpe {
         guard vocabJsonAssetPath != nil, mergesTxtAssetPath != nil else {
-          throw NSError(domain: "ExpoCoreMLLLM", code: 1, userInfo: [
+          throw NSError(domain: "ExpoCoreMLLLM", code: 121, userInfo: [
             NSLocalizedDescriptionKey: "tokenizer.kind=byte_level_bpe/gpt2_bpe requires vocabJsonAssetPath and mergesTxtAssetPath"
           ])
         }

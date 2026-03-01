@@ -17,8 +17,10 @@ type GenOpts = {
 
 function normalizeTokenizerKind(tokenizer: GenOpts["tokenizer"]) {
   if (!tokenizer) return tokenizer;
-  if (tokenizer.kind === "gpt2_bpe") {
-    return { ...tokenizer, kind: "byte_level_bpe" as const };
+  if (tokenizer.kind === "none") {
+    throw new Error(
+      "tokenizer.kind='none' is invalid for generation paths that require a tokenizer.",
+    );
   }
   return tokenizer;
 }

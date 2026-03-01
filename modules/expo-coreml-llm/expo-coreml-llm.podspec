@@ -28,9 +28,8 @@ Pod::Spec.new do |s|
   # original directory tree. If we include both tokenizer variants that contain
   # identical filenames (e.g. */vocab.json and */merges.txt), Xcode fails with:
   # "Multiple commands produce ... ExpoCoreMLLLMResources.bundle/vocab.json".
-  # Keep only the default runtime tokenizer assets in the iOS pod bundle.
+  # Include both tokenizer families; gpt2 files use unique basenames to avoid bundle collisions.
   resource_files = Dir.glob('ios/resources/**/*').select { |path| File.file?(path) }
-  resource_files.reject! { |path| path.include?('/tokenizers/gpt2/') }
   s.resource_bundles = {
     'ExpoCoreMLLLMResources' => resource_files
   }
