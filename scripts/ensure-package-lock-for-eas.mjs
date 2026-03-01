@@ -61,6 +61,17 @@ if (foundExtraLockfiles.length > 0) {
   }
 }
 
+log("Validating CoreML pipeline assets before EAS prebuild/pod steps.");
+try {
+  execSync("node ./scripts/coreml/validate_coreml_pipeline.mjs --strict", {
+    stdio: "inherit",
+  });
+} catch {
+  fail(
+    "CoreML pipeline validation failed. Ensure the active model directory from coreml-config.json exists before running EAS build.",
+  );
+}
+
 let lockfile;
 const parseLockfile = () => {
   const raw = fs.readFileSync(lockPath, "utf8");

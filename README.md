@@ -454,7 +454,7 @@ Install the `.ipa` using AltStore or Apple Configurator and run diagnostics on a
 
 ### CoreML pipeline (download → validate → build)
 
-Use the manifest-driven pipeline to keep model assets, tokenizer files, and runtime defaults aligned.
+Use the manifest-driven pipeline to keep model assets, tokenizer files, and runtime defaults aligned. Builds are intentionally blocked before `expo prebuild` / `pod install` when `modules/expo-coreml-llm/ios/resources/models/<activeModel>` is missing for the `activeModel` set in `coreml-config.json`.
 
 ```bash
 # Download model + tokenizer declared in coreml-config.json

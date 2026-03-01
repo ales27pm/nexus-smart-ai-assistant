@@ -33,6 +33,9 @@ jobs:
       - name: Validate local iOS credentials script parity
         run: node ./scripts/validate-ios-local-credentials.mjs
 
+      - name: Validate CoreML pipeline assets
+        run: npm run coreml:validate -- --strict
+
       - name: Expo prebuild (iOS)
         run: npx expo prebuild --platform ios --non-interactive --no-install
 
