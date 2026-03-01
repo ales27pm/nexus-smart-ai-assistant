@@ -9,6 +9,18 @@ export type ModelManifest = {
   eosTokenId: number;
   stopTokenIds: [number, number];
   computeUnits: ComputeUnits;
+  modelDownload?: ModelDownloadConfig;
+};
+
+export type ModelDownloadConfig = {
+  modelName: string;
+  modelRelativePath: string;
+  retries?: number;
+  files: {
+    path: string;
+    url: string;
+    sha256: string;
+  }[];
 };
 
 function assertNonEmptyString(value: unknown, key: string): string {
@@ -56,6 +68,63 @@ function parseStopTokenIds(value: unknown): [number, number] {
   return [parsed[0], parsed[1]];
 }
 
+function parseModelDownloadConfig(value: unknown): ModelDownloadConfig {
+  if (!value || typeof value !== "object") {
+    throw new Error("coreml-config.json: modelDownload must be an object");
+  }
+
+  const config = value as Record<string, unknown>;
+  const files = config.files;
+
+  if (!Array.isArray(files) || files.length === 0) {
+    throw new Error(
+      "coreml-config.json: modelDownload.files must be a non-empty array",
+    );
+  }
+
+  const retriesValue = config.retries;
+  let retries: number | undefined;
+  if (retriesValue !== undefined) {
+    retries = assertNonNegativeNumber(retriesValue, "modelDownload.retries");
+  }
+
+  return {
+    modelName: assertNonEmptyString(
+      config.modelName,
+      "modelDownload.modelName",
+    ),
+    modelRelativePath: assertNonEmptyString(
+      config.modelRelativePath,
+      "modelDownload.modelRelativePath",
+    ),
+    retries,
+    files: files.map((item, index) => {
+      if (!item || typeof item !== "object") {
+        throw new Error(
+          `coreml-config.json: modelDownload.files[${index}] must be an object`,
+        );
+      }
+
+      const file = item as Record<string, unknown>;
+
+      return {
+        path: assertNonEmptyString(
+          file.path,
+          `modelDownload.files[${index}].path`,
+        ),
+        url: assertNonEmptyString(
+          file.url,
+          `modelDownload.files[${index}].url`,
+        ),
+        sha256: assertNonEmptyString(
+          file.sha256,
+          `modelDownload.files[${index}].sha256`,
+        ),
+      };
+    }),
+  };
+}
+
 function parseManifest(raw: unknown): ModelManifest {
   if (!raw || typeof raw !== "object") {
     throw new Error("coreml-config.json: manifest must be an object");
@@ -72,6 +141,10 @@ function parseManifest(raw: unknown): ModelManifest {
     eosTokenId: assertNonNegativeNumber(config.eosTokenId, "eosTokenId"),
     stopTokenIds: parseStopTokenIds(config.stopTokenIds),
     computeUnits: assertComputeUnits(config.computeUnits),
+    modelDownload:
+      config.modelDownload === undefined
+        ? undefined
+        : parseModelDownloadConfig(config.modelDownload),
   };
 }
 
