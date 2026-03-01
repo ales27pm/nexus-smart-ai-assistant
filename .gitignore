@@ -75,3 +75,4 @@ build-output.log
 
 # CoreML model artifacts (generated/downloaded)
 modules/expo-coreml-llm/ios/resources/models/
+coremltools-venv/
