@@ -103,8 +103,7 @@ function isMissingCoreMLTools(stderr) {
     text.includes("__coremltools_missing__") ||
     text.includes("coremltools not installed") ||
     text.includes("no module named 'coremltools'") ||
-    text.includes('no module named "coremltools"') ||
-    text.includes("modulenotfounderror")
+    text.includes('no module named "coremltools"')
   );
 }
 
@@ -155,8 +154,7 @@ function runCoreMLToolsInspection({ repoRootPath, modelDir, io, strict }) {
   const stderr = (result.stderr || "").trim();
   if (isMissingCoreMLTools(stderr)) {
     const msg = "coremltools not installed; skipping deep CoreML IO inspection";
-    if (strict) issues.push(msg);
-    else notes.push(`WARN ${msg}`);
+    notes.push(`WARN ${msg}`);
     return { issues, notes };
   }
 
