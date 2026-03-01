@@ -44,7 +44,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="device"
+        name="device/index"
         options={{
           title: "Device",
           tabBarIcon: ({ color, size }) => (

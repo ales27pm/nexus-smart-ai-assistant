@@ -114,6 +114,17 @@ describe("coreml utils", () => {
       expect(normalized.code).toBe(104);
     });
 
+    it("maps model-not-loaded failures to app code 20", () => {
+      const error = new Error("Load the CoreML model first");
+
+      const normalized = normalizeCoreMLError(error);
+      const actionable = toActionableCoreMLError(error);
+
+      expect(normalized).toBeInstanceOf(CoreMLError);
+      expect(normalized.code).toBe(20);
+      expect(actionable.message).toContain("No CoreML model selected");
+    });
+
     it("handles non-Error inputs", () => {
       const normalizedFromString = normalizeCoreMLError("string failure");
       expect(normalizedFromString).toBeInstanceOf(CoreMLError);

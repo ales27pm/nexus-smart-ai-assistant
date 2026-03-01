@@ -238,10 +238,26 @@ export default function DeviceNativeHubScreen() {
             "CoreML module not available (iOS dev build + prebuild required)",
           );
         }
-        const loaded = await coreML.isLoaded();
+
+        let loaded = await coreML.isLoaded();
         if (!loaded) {
-          throw new Error("Load the CoreML model first");
+          const selectedModelName = coreMLModelName.trim();
+          await coreML.loadModel({
+            ...DEFAULT_COREML_LOAD_OPTIONS,
+            modelName:
+              selectedModelName ||
+              DEFAULT_COREML_LOAD_OPTIONS.modelName ||
+              "MyLLM",
+          });
+          loaded = await coreML.isLoaded();
         }
+
+        if (!loaded) {
+          throw new Error(
+            "CoreML model failed to load. Verify the model name and bundled .mlmodelc asset.",
+          );
+        }
+
         const vocabPath =
           coreMLVocabPath.trim() || DEFAULT_COREML_TOKENIZER_VOCAB_PATH;
         const mergesPath =
@@ -270,7 +286,14 @@ export default function DeviceNativeHubScreen() {
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, coreMLPrompt, coreMLVocabPath, coreMLMergesPath, runSafely]);
+  }, [
+    coreML,
+    coreMLModelName,
+    coreMLPrompt,
+    coreMLVocabPath,
+    coreMLMergesPath,
+    runSafely,
+  ]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
