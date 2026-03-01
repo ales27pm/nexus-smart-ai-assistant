@@ -12,6 +12,7 @@ type GenOpts = {
   topP?: number;
   repetitionPenalty?: number;
   history?: string[];
+  tokenizer?: CoreMLGenerateOptions["tokenizer"];
 };
 
 function buildPrompt(prompt: string, history?: string[]): string {
@@ -31,7 +32,7 @@ function buildGenerationOptions(opts: GenOpts): CoreMLGenerateOptions {
       opts.repetitionPenalty ??
       DEFAULT_COREML_GENERATE_OPTIONS.repetitionPenalty,
     stopTokenIds: DEFAULT_COREML_GENERATE_OPTIONS.stopTokenIds,
-    tokenizer: DEFAULT_COREML_GENERATE_OPTIONS.tokenizer,
+    tokenizer: opts.tokenizer ?? DEFAULT_COREML_GENERATE_OPTIONS.tokenizer,
     seed: DEFAULT_COREML_GENERATE_OPTIONS.seed,
   };
 }

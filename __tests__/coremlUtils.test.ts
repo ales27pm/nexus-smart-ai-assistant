@@ -3,11 +3,14 @@ import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   CoreMLError,
+  DEFAULT_COREML_BOS_TOKEN_ID,
+  DEFAULT_COREML_EOS_TOKEN_ID,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
   DEFAULT_COREML_TOKENIZER_MERGES_PATH,
   DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   normalizeCoreMLError,
+  toActionableCoreMLError,
 } from "@/utils/coreml";
 
 describe("coreml utils", () => {
@@ -50,6 +53,12 @@ describe("coreml utils", () => {
     expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.mergesTxtAssetPath).toBe(
       DEFAULT_COREML_TOKENIZER_MERGES_PATH,
     );
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.bosTokenId).toBe(
+      DEFAULT_COREML_BOS_TOKEN_ID,
+    );
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.eosTokenId).toBe(
+      DEFAULT_COREML_EOS_TOKEN_ID,
+    );
   });
 
   describe("normalizeCoreMLError", () => {
@@ -90,6 +99,33 @@ describe("coreml utils", () => {
       expect(normalizedFromObject).toBeInstanceOf(CoreMLError);
       expect(normalizedFromObject.message).toBe("Unknown CoreML failure");
       expect(normalizedFromObject.code).toBeUndefined();
+    });
+
+    it("adds actionable hint for max token limit error code 10", () => {
+      const actionable = toActionableCoreMLError(
+        new CoreMLError("generation failed", 10),
+      );
+
+      expect(actionable.code).toBe(10);
+      expect(actionable.message).toContain("resource bundle missing");
+    });
+
+    it("adds actionable hint for context errors in the 20 range", () => {
+      const actionable = toActionableCoreMLError(
+        new CoreMLError("generation failed", 20),
+      );
+
+      expect(actionable.code).toBe(20);
+      expect(actionable.message).toContain("No CoreML model selected");
+    });
+
+    it("adds actionable hint for tokenizer errors in the 120 range", () => {
+      const actionable = toActionableCoreMLError(
+        new CoreMLError("generation failed", 120),
+      );
+
+      expect(actionable.code).toBe(120);
+      expect(actionable.message).toContain("Tokenizer config invalid");
     });
   });
 });

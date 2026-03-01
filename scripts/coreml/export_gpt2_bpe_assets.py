@@ -43,6 +43,41 @@ def normalize_merges(raw_merges: Iterable[object]) -> List[str]:
     return lines
 
 
+
+def merge_added_tokens(vocab: dict[str, object], raw_added_tokens: object) -> dict[str, int]:
+    merged: dict[str, int] = {}
+    for token, token_id in vocab.items():
+        if not isinstance(token, str) or not isinstance(token_id, int):
+            raise ValueError(f"Unsupported vocab entry: {token!r} -> {token_id!r}")
+        merged[token] = token_id
+
+    if raw_added_tokens is None:
+        return merged
+
+    if not isinstance(raw_added_tokens, list):
+        raise ValueError("tokenizer.json added_tokens must be a list when present")
+
+    for idx, entry in enumerate(raw_added_tokens):
+        if not isinstance(entry, dict):
+            raise ValueError(f"Unsupported added_tokens entry at index {idx}: {entry!r}")
+
+        token = entry.get("content")
+        token_id = entry.get("id")
+        if not isinstance(token, str) or not isinstance(token_id, int):
+            raise ValueError(
+                f"added_tokens[{idx}] must include string content and integer id",
+            )
+
+        existing_id = merged.get(token)
+        if existing_id is not None and existing_id != token_id:
+            raise ValueError(
+                f"Token {token!r} has conflicting ids: vocab={existing_id}, added={token_id}",
+            )
+
+        merged[token] = token_id
+
+    return merged
+
 def main() -> int:
     args = parse_args()
     tokenizer_path = Path(args.tokenizer_json)
@@ -73,6 +108,12 @@ def main() -> int:
     if not isinstance(vocab, dict) or not vocab:
         print("❌ tokenizer.json model.vocab is missing or invalid", file=sys.stderr)
         return 5
+
+    try:
+        vocab = merge_added_tokens(vocab, root.get("added_tokens"))
+    except ValueError as exc:
+        print(f"❌ {exc}", file=sys.stderr)
+        return 8
 
     merges_raw = model.get("merges")
     if not isinstance(merges_raw, list) or not merges_raw:

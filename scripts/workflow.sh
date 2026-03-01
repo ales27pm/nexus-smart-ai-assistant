@@ -259,10 +259,23 @@ step_tokenizer() {
     fi
   done
 
-  python3 "$SCRIPT_DIR/coreml/export_gpt2_bpe_assets.py" \
-    --tokenizer-json "$TOK_STAGING/tokenizer.json" \
-    --out-vocab "$bundle_vocab" \
-    --out-merges "$bundle_merges"
+  local should_export=true
+  if [[ -s "$bundle_vocab" && -s "$bundle_merges" && "$bundle_vocab" -nt "$TOK_STAGING/tokenizer.json" && "$bundle_merges" -nt "$TOK_STAGING/tokenizer.json" ]]; then
+    should_export=false
+    info "Tokenizer bundle assets are up to date; skipping export."
+  fi
+
+  if $should_export; then
+    python3 "$SCRIPT_DIR/coreml/export_gpt2_bpe_assets.py" \
+      --tokenizer-json "$TOK_STAGING/tokenizer.json" \
+      --out-vocab "$bundle_vocab" \
+      --out-merges "$bundle_merges"
+    local py_export_status=$?
+    if [[ $py_export_status -ne 0 ]]; then
+      fail "Failed to export GPT-2 BPE tokenizer assets (exit code: $py_export_status)"
+      return $py_export_status
+    fi
+  fi
 
   if [[ ! -s "$bundle_vocab" || ! -s "$bundle_merges" ]]; then
     fail "Tokenizer bundle asset generation failed."

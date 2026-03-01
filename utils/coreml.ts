@@ -50,7 +50,7 @@ export class CoreMLError extends Error {
 
 export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
 export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
-export const DEFAULT_COREML_BOS_TOKEN_ID = 128000;
+export const DEFAULT_COREML_BOS_TOKEN_ID = modelManifest.bosTokenId;
 export const DEFAULT_COREML_TOKENIZER_VOCAB_PATH =
   "module:tokenizers/gpt2/vocab.json";
 export const DEFAULT_COREML_TOKENIZER_MERGES_PATH =
