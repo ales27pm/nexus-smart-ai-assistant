@@ -66,11 +66,11 @@ describe("dolphinCoremlGenerate", () => {
     );
   });
 
-  it("accepts legacy gpt2_bpe alias and normalizes to byte_level_bpe", async () => {
+  it("accepts gpt2_bpe tokenizer configs without normalization", async () => {
     const legacyTokenizer = {
       kind: "gpt2_bpe" as const,
-      vocabJsonAssetPath: "module:tokenizers/custom-legacy/vocab.json",
-      mergesTxtAssetPath: "module:tokenizers/custom-legacy/merges.txt",
+      vocabJsonAssetPath: "module:tokenizers/gpt2/gpt2-vocab.json",
+      mergesTxtAssetPath: "module:tokenizers/gpt2/gpt2-merges.txt",
       bosTokenId: 777,
       eosTokenId: 888,
     };
@@ -82,10 +82,7 @@ describe("dolphinCoremlGenerate", () => {
     expect(provider.generate).toHaveBeenCalledWith(
       "prompt",
       expect.objectContaining({
-        tokenizer: expect.objectContaining({
-          ...legacyTokenizer,
-          kind: "byte_level_bpe",
-        }),
+        tokenizer: expect.objectContaining(legacyTokenizer),
       }),
     );
   });

@@ -159,8 +159,8 @@ export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
   101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
   102: "CoreML memory pressure detected. Free up memory by closing apps and retry.",
   104: "CoreML execution-plan build failed for this model on this device. Try computeUnits=cpuOnly, use a smaller/compatible model, or regenerate the model for the target iOS/CoreML runtime.",
-  120: "Tokenizer config invalid. Use byte-level BPE tokenizer assets (vocab.json + merges.txt).",
-  121: "Tokenizer asset paths missing. Provide both vocab and merges paths.",
+  120: "Tokenizer config invalid. Use byte_level_bpe or gpt2_bpe with matching vocab/merges assets.",
+  121: "Tokenizer asset paths missing. Provide both vocabJsonAssetPath and mergesTxtAssetPath.",
   122: "Tokenizer required for this model. Pass tokenizer settings with vocab/merges assets.",
 };
 

@@ -494,14 +494,14 @@ export default function DeviceNativeHubScreen() {
         <TextInput
           value={coreMLVocabPath}
           onChangeText={setCoreMLVocabPath}
-          placeholder="Tokenizer vocab path (bundle:/module:/absolute)"
+          placeholder="Tokenizer vocab path (byte_level_bpe: .../vocab.json, gpt2_bpe: .../gpt2-vocab.json)"
           placeholderTextColor={Colors.dark.textTertiary}
           style={styles.input}
         />
         <TextInput
           value={coreMLMergesPath}
           onChangeText={setCoreMLMergesPath}
-          placeholder="Tokenizer merges path (bundle:/module:/absolute)"
+          placeholder="Tokenizer merges path (byte_level_bpe: .../merges.txt, gpt2_bpe: .../gpt2-merges.txt)"
           placeholderTextColor={Colors.dark.textTertiary}
           style={styles.input}
         />
@@ -525,7 +525,8 @@ export default function DeviceNativeHubScreen() {
         </Text>
         <Text style={styles.result}>
           Notes: CoreML model must be bundled as a compiled .mlmodelc. Tokenizer
-          files must exist at the provided paths.
+          kind may be byte_level_bpe or gpt2_bpe, and vocab/merges paths must
+          match that tokenizer asset set.
         </Text>
       </View>
 

@@ -170,7 +170,7 @@ describe("coreml utils", () => {
       );
 
       expect(actionable.code).toBe(120);
-      expect(actionable.message).toContain("byte-level BPE tokenizer assets");
+      expect(actionable.message).toContain("byte_level_bpe or gpt2_bpe");
     });
   });
 });

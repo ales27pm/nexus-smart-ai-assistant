@@ -481,7 +481,12 @@ Recommended flow for iOS dev/sideload builds:
 4. Build via Xcode (`npx expo run:ios --device`) or EAS (`npx eas build --platform ios --profile development`)
 5. Install IPA through AltStore / Apple Configurator for on-device verification.
 
-Tokenizer note: Llama 3.2 uses a byte-level BPE tokenizer. In this codebase, `byte_level_bpe` is the canonical tokenizer kind, while `gpt2_bpe` remains a backward-compatible alias for existing configs.
+Tokenizer note: Llama 3.2 uses a byte-level BPE tokenizer. This codebase supports both `byte_level_bpe` and `gpt2_bpe` kinds in JS/native config.
+
+- `byte_level_bpe`: `module:tokenizers/byte_level_bpe/vocab.json` + `module:tokenizers/byte_level_bpe/merges.txt`
+- `gpt2_bpe`: `module:tokenizers/gpt2/gpt2-vocab.json` + `module:tokenizers/gpt2/gpt2-merges.txt`
+
+Both resolve to the same GPT-2-style byte-level BPE tokenizer implementation on iOS; keep the kind and asset pair aligned.
 
 If you see `Failed to build the model execution plan ... model.mil ... error code: -4`, try:
 
