@@ -72,3 +72,6 @@ build-output.log
 .hf_models/
 .hf_tokenizer_cache/
 .huggingface/
+
+# CoreML model artifacts (generated/downloaded)
+modules/expo-coreml-llm/ios/resources/models/
