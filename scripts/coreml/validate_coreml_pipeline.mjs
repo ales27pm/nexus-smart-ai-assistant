@@ -213,21 +213,35 @@ async function run() {
     const coreMLDataDir = path.join(modelDir, "Data/com.apple.CoreML");
     const modelMilPath = path.join(coreMLDataDir, "model.mil");
     const modelMLModelPath = path.join(coreMLDataDir, "model.mlmodel");
-    const hasModelMil = await exists(modelMilPath);
-    const hasModelMLModel = await exists(modelMLModelPath);
+    const hasCoreMLDataDir = await exists(coreMLDataDir);
 
-    if (!hasModelMil && !hasModelMLModel) {
+    if (!hasCoreMLDataDir) {
       notes.push(
-        `WARN neither model.mil nor model.mlmodel was found under ${path.relative(repoRoot, coreMLDataDir)}.`,
-      );
-    } else if (hasModelMil) {
-      notes.push(
-        `OK found model.mil at ${path.relative(repoRoot, modelMilPath)}.`,
+        `WARN CoreML data directory ${path.relative(repoRoot, coreMLDataDir)} was not found.`,
       );
     } else {
-      notes.push(
-        `OK found model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)} (model.mil is optional for this package format).`,
-      );
+      const [hasModelMil, hasModelMLModel] = await Promise.all([
+        exists(modelMilPath),
+        exists(modelMLModelPath),
+      ]);
+
+      if (!hasModelMil && !hasModelMLModel) {
+        notes.push(
+          `WARN neither model.mil nor model.mlmodel was found under ${path.relative(repoRoot, coreMLDataDir)}.`,
+        );
+      } else if (hasModelMil && hasModelMLModel) {
+        notes.push(
+          `OK found model.mil at ${path.relative(repoRoot, modelMilPath)} and model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)}.`,
+        );
+      } else if (hasModelMil) {
+        notes.push(
+          `OK found model.mil at ${path.relative(repoRoot, modelMilPath)}.`,
+        );
+      } else if (hasModelMLModel) {
+        notes.push(
+          `OK found model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)} (model.mil is optional for this package format).`,
+        );
+      }
     }
 
     const deepInspection = runCoreMLToolsInspection({
