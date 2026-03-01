@@ -56,7 +56,8 @@
         "expo-build-properties",
         {
           "ios": {
-            "privacyManifestAggregationEnabled": false
+            "privacyManifestAggregationEnabled": false,
+            "deploymentTarget": "18.0"
           }
         }
       ]

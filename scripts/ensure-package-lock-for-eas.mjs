@@ -33,11 +33,32 @@ const foundExtraLockfiles = extraLockfiles.filter((file) =>
 );
 
 if (foundExtraLockfiles.length > 0) {
-  fail(
-    `Found additional lockfile(s): ${foundExtraLockfiles.join(
-      ", ",
-    )}. Keep only package-lock.json to avoid inconsistent dependency resolution in EAS builds.`,
-  );
+  // If only `bun.lock` is present, avoid hard-failing: back it up so EAS
+  // can proceed while preserving the file for local bun users.
+  const onlyBun =
+    foundExtraLockfiles.length === 1 && foundExtraLockfiles[0] === "bun.lock";
+
+  if (onlyBun) {
+    const bunPath = path.resolve(process.cwd(), "bun.lock");
+    const backupPath = path.resolve(process.cwd(), "bun.lock.easbak");
+    try {
+      fs.renameSync(bunPath, backupPath);
+      log(
+        "Found bun.lock — renamed to bun.lock.easbak to allow EAS to continue.",
+      );
+      log("You can restore it after the build by renaming the file back.");
+    } catch (err) {
+      fail(
+        `Found bun.lock but failed to back it up: ${err.message}. Remove extra lockfiles and retry.`,
+      );
+    }
+  } else {
+    fail(
+      `Found additional lockfile(s): ${foundExtraLockfiles.join(
+        ", ",
+      )}. Keep only package-lock.json to avoid inconsistent dependency resolution in EAS builds.`,
+    );
+  }
 }
 
 let lockfile;

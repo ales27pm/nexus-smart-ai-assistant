@@ -225,7 +225,7 @@ final class CoreMLLLMRunner {
 
     var localState: MLState?
     if #available(iOS 18.0, *), localHasState {
-      localState = try model.makeState()
+      localState = model.makeState()
     }
 
     if localSingleToken {
@@ -298,6 +298,7 @@ final class CoreMLLLMRunner {
     } else {
       prefillTokens = tokens
     }
+    _ = prefillTokens
 
     let batchTokens: [Int]
     if let mc = maxContext, mc > 0, tokens.count > mc {
@@ -504,13 +505,13 @@ final class CoreMLLLMRunner {
     if shape.count == 1 {
       let v = shape[0]
       var out = [Float](repeating: 0, count: v)
-      for j in 0..<v { out[j] = Float(truncating: logits[NSNumber(value: j)]) }
+      for j in 0..<v { out[j] = f([NSNumber(value: j)]) }
       return out
     }
 
     let c = logits.count
     var out = [Float](repeating: 0, count: c)
-    for i in 0..<c { out[i] = logits[i].floatValue }
+    for i in 0..<c { out[i] = f([NSNumber(value: i)]) }
     return out
   }
 
@@ -539,7 +540,7 @@ final class CoreMLLLMRunner {
   private func makeInt32MultiArray1D(values: [Int]) throws -> MLMultiArray {
     let arr = try MLMultiArray(shape: [NSNumber(value: values.count)], dataType: .int32)
     for (idx, value) in values.enumerated() {
-      arr[NSNumber(value: idx)] = NSNumber(value: safeInt32(value))
+      arr[[NSNumber(value: idx)]] = NSNumber(value: safeInt32(value))
     }
     return arr
   }

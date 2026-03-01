@@ -396,7 +396,11 @@ step_build() {
   "$SCRIPT_DIR/check-ios-local-build-env.sh"
 
   info "Starting EAS local build..."
-  env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache \
+  # Some environments encounter issues computing the EAS project fingerprint
+  # (e.g. "balanced is not a function"). Skip the automatic fingerprint step
+  # to allow the local build to proceed. If fingerprinting is required, unset
+  # EAS_SKIP_AUTO_FINGERPRINT in your environment.
+  env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 \
     npx eas build --profile "$BUILD_PROFILE" --platform ios --local
 }
 

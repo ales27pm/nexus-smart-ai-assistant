@@ -59,3 +59,6 @@ scripts/ios/*.mobileprovision
 
 # Apple Developer auth config (API keys, saved settings)
 .apple-auth/
+.npm-cache/
+NJKFHRBSH2.cer
+*.log

@@ -10,7 +10,8 @@ Pod::Spec.new do |s|
   s.homepage     = 'https://example.invalid'
   s.license      = { :type => 'MIT' }
   s.author       = { 'local' => 'local' }
-  s.platforms    = { :ios => '15.0' }
+  # Require newer iOS version for APIs used in Swift (MLState, cpuAndNeuralEngine)
+  s.platforms    = { :ios => '18.0' }
   s.source       = { :path => '.' }
   s.static_framework = true
 
