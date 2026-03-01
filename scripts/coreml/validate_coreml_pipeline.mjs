@@ -210,10 +210,23 @@ async function run() {
       issues.push(`Model path exists but is not a directory: ${modelDir}`);
     }
 
-    const modelMilPath = path.join(modelDir, "Data/com.apple.CoreML/model.mil");
-    if (!(await exists(modelMilPath))) {
+    const coreMLDataDir = path.join(modelDir, "Data/com.apple.CoreML");
+    const modelMilPath = path.join(coreMLDataDir, "model.mil");
+    const modelMLModelPath = path.join(coreMLDataDir, "model.mlmodel");
+    const hasModelMil = await exists(modelMilPath);
+    const hasModelMLModel = await exists(modelMLModelPath);
+
+    if (!hasModelMil && !hasModelMLModel) {
       notes.push(
-        `WARN model.mil not found at expected path (${path.relative(repoRoot, modelMilPath)}).`,
+        `WARN neither model.mil nor model.mlmodel was found under ${path.relative(repoRoot, coreMLDataDir)}.`,
+      );
+    } else if (hasModelMil) {
+      notes.push(
+        `OK found model.mil at ${path.relative(repoRoot, modelMilPath)}.`,
+      );
+    } else {
+      notes.push(
+        `OK found model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)} (model.mil is optional for this package format).`,
       );
     }
 
