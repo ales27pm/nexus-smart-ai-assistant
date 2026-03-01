@@ -107,6 +107,14 @@ function looksLikeExecutionPlanBuildFailure(message: string): boolean {
   );
 }
 
+function looksLikeModelNotLoaded(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("load the coreml model first") ||
+    normalized.includes("model not loaded")
+  );
+}
+
 function deriveCoreMLErrorCode(
   error: Error & { code?: unknown },
 ): number | undefined {
@@ -120,6 +128,10 @@ function deriveCoreMLErrorCode(
 
   if (looksLikeExecutionPlanBuildFailure(error.message)) {
     return 104;
+  }
+
+  if (looksLikeModelNotLoaded(error.message)) {
+    return 20;
   }
 
   return undefined;
