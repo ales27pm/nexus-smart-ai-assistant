@@ -87,6 +87,22 @@ python3 "$ROOT_DIR/scripts/coreml/export_gpt2_bpe_assets.py" \
   --tokenizer-json "$TOK_DEST/tokenizer.json" \
   --out-vocab "$TOK_BUNDLE_VOCAB" \
   --out-merges "$TOK_BUNDLE_MERGES"
+PY_EXPORT_STATUS=$?
+
+if [[ $PY_EXPORT_STATUS -ne 0 ]]; then
+  echo "[x] Failed to export GPT-2 BPE tokenizer assets (python exit code: $PY_EXPORT_STATUS)" >&2
+  exit "$PY_EXPORT_STATUS"
+fi
+
+if [[ ! -s "$TOK_BUNDLE_VOCAB" ]]; then
+  echo "[x] Tokenizer vocab asset not created or empty: $TOK_BUNDLE_VOCAB" >&2
+  exit 1
+fi
+
+if [[ ! -s "$TOK_BUNDLE_MERGES" ]]; then
+  echo "[x] Tokenizer merges asset not created or empty: $TOK_BUNDLE_MERGES" >&2
+  exit 1
+fi
 
 echo "[✓] Tokenizer cache dir:"
 echo "    $TOK_DEST"

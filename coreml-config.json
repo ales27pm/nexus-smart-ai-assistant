@@ -3,7 +3,11 @@
   "tokenizerRepo": "dphn/Dolphin3.0-Llama3.2-3B",
   "coremlRepo": "ales27pm/Dolphin3.0-CoreML",
   "contextLimit": 2048,
+  "bosTokenId": 128000,
   "eosTokenId": 128256,
-  "stopTokenIds": [128009, 128001],
+  "stopTokenIds": [
+    128009,
+    128001
+  ],
   "computeUnits": "cpuAndNeuralEngine"
 }

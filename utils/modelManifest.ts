@@ -5,6 +5,7 @@ export type ModelManifest = {
   tokenizerRepo: string;
   coremlRepo: string;
   contextLimit: number;
+  bosTokenId: number;
   eosTokenId: number;
   stopTokenIds: [number, number];
   computeUnits: ComputeUnits;
@@ -67,6 +68,7 @@ function parseManifest(raw: unknown): ModelManifest {
     tokenizerRepo: assertNonEmptyString(config.tokenizerRepo, "tokenizerRepo"),
     coremlRepo: assertNonEmptyString(config.coremlRepo, "coremlRepo"),
     contextLimit: assertNonNegativeNumber(config.contextLimit, "contextLimit"),
+    bosTokenId: assertNonNegativeNumber(config.bosTokenId, "bosTokenId"),
     eosTokenId: assertNonNegativeNumber(config.eosTokenId, "eosTokenId"),
     stopTokenIds: parseStopTokenIds(config.stopTokenIds),
     computeUnits: assertComputeUnits(config.computeUnits),
