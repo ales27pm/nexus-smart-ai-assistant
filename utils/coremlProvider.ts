@@ -127,7 +127,24 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
     try {
       return await this.bridge.generate(prompt, options);
     } catch (error) {
-      throw normalizeCoreMLError(error);
+      const normalizedError = normalizeCoreMLError(error);
+      const activeComputeUnits =
+        this.activeLoadOptions?.computeUnits ??
+        DEFAULT_COREML_LOAD_OPTIONS.computeUnits;
+      const shouldRetryWithCpuOnly =
+        normalizedError.code === 104 && activeComputeUnits !== "cpuOnly";
+
+      if (!shouldRetryWithCpuOnly) {
+        throw normalizedError;
+      }
+
+      const fallbackOptions: CoreMLLoadModelOptions = {
+        ...(this.activeLoadOptions ?? DEFAULT_COREML_LOAD_OPTIONS),
+        computeUnits: "cpuOnly",
+      };
+
+      await this.load(fallbackOptions, { forceReload: true });
+      return await this.bridge.generate(prompt, options);
     }
   }
 
