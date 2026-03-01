@@ -64,5 +64,7 @@ fi
 
 ./scripts/check-ios-local-build-env.sh
 ensure_compatible_cocoapods
+echo "[i] Validating CoreML pipeline assets before local EAS iOS build."
+npm run coreml:validate -- --strict
 
 env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local

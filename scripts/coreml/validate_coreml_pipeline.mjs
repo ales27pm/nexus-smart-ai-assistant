@@ -199,9 +199,9 @@ async function run() {
 
   const modelExists = await exists(modelDir);
   if (!modelExists) {
-    const message = `Model asset missing: ${path.relative(repoRoot, modelDir)}`;
-    if (strict) issues.push(message);
-    else notes.push(`WARN ${message}`);
+    issues.push(
+      `Model asset missing. Expected directory: ${modelDir} (from coreml-config.json activeModel=${manifest.activeModel})`,
+    );
   }
 
   if (modelExists) {

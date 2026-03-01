@@ -85,6 +85,12 @@ GEMFILE
 }
 
 run_prebuild_and_pod_install() {
+  log "Validating CoreML pipeline assets before Expo prebuild/pod install."
+  (
+    cd "${ROOT_DIR}"
+    npm run coreml:validate -- --strict
+  )
+
   log "Running Expo prebuild without pod install so we can control the CocoaPods toolchain."
   (
     cd "${ROOT_DIR}"
