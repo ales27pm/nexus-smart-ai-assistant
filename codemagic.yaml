@@ -34,6 +34,7 @@ workflows:
           python3 -m pip install --user huggingface_hub
           export PATH="$HOME/.local/bin:$PATH"
           ./scripts/workflow.sh --variant "$MODEL_VARIANT" --step model
+          ./scripts/workflow.sh --step tokenizer
 
       - name: Expo prebuild
         script: |

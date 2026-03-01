@@ -1,0 +1,73 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+bun.lock
+yarn.lock
+pnpm-lock.yaml
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+ios/
+android/
+!modules/expo-coreml-llm/ios/
+!modules/expo-coreml-llm/ios/**
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+.vercel
+
+.rork
+
+.env
+rork-eslint.config.js
+core
+node_modules
+.expo
+# EAS local credentials
+credentials.json
+credentials/
+
+!scripts/ios/
+!scripts/ios/**
+scripts/ios/*.p12
+scripts/ios/*.key
+scripts/ios/*.mobileprovision
+
+# Apple Developer auth config (API keys, saved settings)
+.apple-auth/
+*.cer
+.npm-cache/
+.hf_tokenizer_cache/
+.hf_hub_cache/
+.hf_hub_downloads/
+.hf_models/
+# Keep the bundled CoreML model in EAS uploads even though it stays git-ignored.
+!modules/expo-coreml-llm/ios/resources/models/
+!modules/expo-coreml-llm/ios/resources/models/**
