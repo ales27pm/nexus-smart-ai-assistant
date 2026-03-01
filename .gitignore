@@ -62,3 +62,4 @@ scripts/ios/*.mobileprovision
 .npm-cache/
 NJKFHRBSH2.cer
 *.log
+*.ipa
