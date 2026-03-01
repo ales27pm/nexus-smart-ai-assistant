@@ -427,3 +427,40 @@ npx eas build --platform ios --profile development
 ```
 
 Install the `.ipa` using AltStore or Apple Configurator and run diagnostics on a physical device.
+
+### CoreML pipeline (download → validate → build)
+
+Use the manifest-driven pipeline to keep model assets, tokenizer files, and runtime defaults aligned.
+
+```bash
+# Download model + tokenizer declared in coreml-config.json
+npm run coreml:fetch
+
+# Validate manifest + bundled assets before prebuild / EAS build
+npm run coreml:validate -- --strict
+
+# Optional deep inspection (requires coremltools):
+npm run coreml:inspect
+```
+
+For deep CoreML graph/introspection checks, install `coremltools` locally:
+
+```bash
+python3 -m pip install --upgrade coremltools
+```
+
+Recommended flow for iOS dev/sideload builds:
+
+1. `npm run coreml:fetch`
+2. `npm run coreml:validate -- --strict`
+3. `npx expo prebuild --platform ios`
+4. Build via Xcode (`npx expo run:ios --device`) or EAS (`npx eas build --platform ios --profile development`)
+5. Install IPA through AltStore / Apple Configurator for on-device verification.
+
+Tokenizer note: Llama 3.2 uses a byte-level BPE tokenizer. In this codebase, `byte_level_bpe` is the canonical tokenizer kind, while `gpt2_bpe` remains a backward-compatible alias for existing configs.
+
+If you see `Failed to build the model execution plan ... model.mil ... error code: -4`, try:
+
+- Switching `computeUnits` in `coreml-config.json` to `cpuOnly` for compatibility testing.
+- Using a smaller or more compatible CoreML variant.
+- Re-exporting/regenerating the model for your iOS/CoreML runtime version.

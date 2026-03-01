@@ -8,6 +8,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST_PATH="$ROOT_DIR/coreml-config.json"
 
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[!] node is required for CoreML pipeline validation" >&2
+  exit 7
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "[!] jq is required to read coreml-config.json"
   echo "    brew install jq  # macOS"
@@ -17,7 +23,10 @@ fi
 
 COREML_REPO="$(jq -r '.coremlRepo' "$MANIFEST_PATH")"
 TOKENIZER_REPO="$(jq -r '.tokenizerRepo' "$MANIFEST_PATH")"
-MODEL_FILE="$(jq -r '.activeModel' "$MANIFEST_PATH")"
+MODEL_FILE="$(jq -r ' .activeModel ' "$MANIFEST_PATH")"
+TOKENIZER_BUNDLE_DIR_MANIFEST="$(jq -r ' .tokenizerBundleDir // "modules/expo-coreml-llm/ios/resources/tokenizers/byte_level_bpe" ' "$MANIFEST_PATH")"
+TOKENIZER_VOCAB_FILE="$(jq -r ' .tokenizerVocabFile // "vocab.json" ' "$MANIFEST_PATH")"
+TOKENIZER_MERGES_FILE="$(jq -r ' .tokenizerMergesFile // "merges.txt" ' "$MANIFEST_PATH")"
 
 if [ -z "$COREML_REPO" ] || [ "$COREML_REPO" = "null" ]; then
   echo "[!] Invalid coremlRepo in $MANIFEST_PATH"
@@ -31,12 +40,26 @@ if [ -z "$MODEL_FILE" ] || [ "$MODEL_FILE" = "null" ]; then
   echo "[!] Invalid activeModel in $MANIFEST_PATH"
   exit 6
 fi
+if [ -z "$TOKENIZER_BUNDLE_DIR_MANIFEST" ] || [ "$TOKENIZER_BUNDLE_DIR_MANIFEST" = "null" ]; then
+  echo "[!] Invalid tokenizerBundleDir in $MANIFEST_PATH"
+  exit 8
+fi
+if [ -z "$TOKENIZER_VOCAB_FILE" ] || [ "$TOKENIZER_VOCAB_FILE" = "null" ]; then
+  echo "[!] Invalid tokenizerVocabFile in $MANIFEST_PATH"
+  exit 9
+fi
+if [ -z "$TOKENIZER_MERGES_FILE" ] || [ "$TOKENIZER_MERGES_FILE" = "null" ]; then
+  echo "[!] Invalid tokenizerMergesFile in $MANIFEST_PATH"
+  exit 10
+fi
 
 MODEL_DEST="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/models"
-TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/dolphin_llama3_2_3b"
-TOK_BUNDLE_DIR="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/tokenizers/gpt2"
-TOK_BUNDLE_VOCAB="$TOK_BUNDLE_DIR/vocab.json"
-TOK_BUNDLE_MERGES="$TOK_BUNDLE_DIR/merges.txt"
+TOKENIZER_CACHE_KEY="$(printf "%s" "$TOKENIZER_REPO" | sed -E 's#^.*/##; s/[^[:alnum:]]+/_/g; s/^_+//; s/_+$//;' | tr "[:upper:]" "[:lower:]")"
+if [ -z "$TOKENIZER_CACHE_KEY" ]; then TOKENIZER_CACHE_KEY="tokenizer"; fi
+TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/$TOKENIZER_CACHE_KEY"
+TOK_BUNDLE_DIR="$ROOT_DIR/$TOKENIZER_BUNDLE_DIR_MANIFEST"
+TOK_BUNDLE_VOCAB="$TOK_BUNDLE_DIR/$TOKENIZER_VOCAB_FILE"
+TOK_BUNDLE_MERGES="$TOK_BUNDLE_DIR/$TOKENIZER_MERGES_FILE"
 
 mkdir -p "$MODEL_DEST" "$TOK_DEST" "$TOK_BUNDLE_DIR"
 
@@ -72,6 +95,7 @@ echo "[✓] Model installed at:"
 echo "    $MODEL_DEST/$MODEL_FILE"
 
 echo "[i] Downloading tokenizer files from: $TOKENIZER_REPO"
+echo "[i] Tokenizer cache key: $TOKENIZER_CACHE_KEY"
 TOK_ARGS=(download "$TOKENIZER_REPO"
   --include "tokenizer.json"
   --include "tokenizer_config.json"
@@ -112,3 +136,18 @@ echo "    $TOK_BUNDLE_DIR"
 echo
 echo "[next] Inspect CoreML IO:"
 echo "    python3 scripts/coreml/inspect_coreml_io.py \"$MODEL_DEST/$MODEL_FILE\""
+
+
+echo "[i] Validating CoreML pipeline artifacts against manifest"
+node "$ROOT_DIR/scripts/coreml/validate_coreml_pipeline.mjs" --strict
+
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "[i] python3 not installed; skipping deep CoreML IO inspection"
+elif python3 -c "import coremltools" >/dev/null 2>&1; then
+  echo "[i] Running deep CoreML IO inspection via coremltools"
+  node "$ROOT_DIR/scripts/coreml/run_coreml_inspect.mjs"
+else
+  echo "[i] coremltools not installed; skipping deep CoreML IO inspection"
+  echo "    Install: python3 -m pip install --upgrade coremltools"
+fi

@@ -15,6 +15,14 @@ type GenOpts = {
   tokenizer?: CoreMLGenerateOptions["tokenizer"];
 };
 
+function normalizeTokenizerKind(tokenizer: GenOpts["tokenizer"]) {
+  if (!tokenizer) return tokenizer;
+  if (tokenizer.kind === "gpt2_bpe") {
+    return { ...tokenizer, kind: "byte_level_bpe" as const };
+  }
+  return tokenizer;
+}
+
 function buildPrompt(prompt: string, history?: string[]): string {
   if (!history?.length) return prompt;
   return `${history.join("\n")}\n${prompt}`;
@@ -32,7 +40,9 @@ function buildGenerationOptions(opts: GenOpts): CoreMLGenerateOptions {
       opts.repetitionPenalty ??
       DEFAULT_COREML_GENERATE_OPTIONS.repetitionPenalty,
     stopTokenIds: DEFAULT_COREML_GENERATE_OPTIONS.stopTokenIds,
-    tokenizer: opts.tokenizer ?? DEFAULT_COREML_GENERATE_OPTIONS.tokenizer,
+    tokenizer:
+      normalizeTokenizerKind(opts.tokenizer) ??
+      DEFAULT_COREML_GENERATE_OPTIONS.tokenizer,
     seed: DEFAULT_COREML_GENERATE_OPTIONS.seed,
   };
 }

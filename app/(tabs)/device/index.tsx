@@ -28,6 +28,7 @@ import {
   DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   buildCoreMLChatPrompt,
   CoreMLBridge,
+  toActionableCoreMLError,
 } from "@/utils/coreml";
 import {
   createCalendarEvent,
@@ -43,18 +44,36 @@ import {
   upsertVectorDocument,
 } from "@/utils/nativeCapabilities";
 
-type SafeAction = (label: string, fn: () => Promise<void>) => Promise<void>;
+type SafeActionOptions = {
+  isCoreMLAction?: boolean;
+};
+
+type SafeAction = (
+  label: string,
+  fn: () => Promise<void>,
+  options?: SafeActionOptions,
+) => Promise<void>;
 
 function useSafeAction(
   setStatus: React.Dispatch<React.SetStateAction<string>>,
 ): SafeAction {
   return React.useCallback(
-    async (label: string, fn: () => Promise<void>) => {
+    async (
+      label: string,
+      fn: () => Promise<void>,
+      options: SafeActionOptions = {},
+    ) => {
       try {
         await fn();
       } catch (error) {
-        console.error(`${label} failed`, error);
-        const message = error instanceof Error ? error.message : String(error);
+        const normalizedError = options.isCoreMLAction
+          ? toActionableCoreMLError(error)
+          : error;
+        console.error(`${label} failed`, normalizedError);
+        const message =
+          normalizedError instanceof Error
+            ? normalizedError.message
+            : String(normalizedError);
         setStatus(`${label} failed: ${message}`);
         Alert.alert(`${label} failed`, message);
       }
@@ -187,60 +206,70 @@ export default function DeviceNativeHubScreen() {
   }, [runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
-    await runSafely("CoreML load", async () => {
-      if (!coreML) {
-        throw new Error(
-          "CoreML module not available (iOS dev build + prebuild required)",
-        );
-      }
-      const selectedModelName = coreMLModelName.trim();
-      const info = await coreML.loadModel({
-        ...DEFAULT_COREML_LOAD_OPTIONS,
-        modelName:
-          selectedModelName || DEFAULT_COREML_LOAD_OPTIONS.modelName || "MyLLM",
-      });
-      setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
-      setStatus("CoreML model loaded");
-    });
+    await runSafely(
+      "CoreML load",
+      async () => {
+        if (!coreML) {
+          throw new Error(
+            "CoreML module not available (iOS dev build + prebuild required)",
+          );
+        }
+        const selectedModelName = coreMLModelName.trim();
+        const info = await coreML.loadModel({
+          ...DEFAULT_COREML_LOAD_OPTIONS,
+          modelName:
+            selectedModelName ||
+            DEFAULT_COREML_LOAD_OPTIONS.modelName ||
+            "MyLLM",
+        });
+        setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
+        setStatus("CoreML model loaded");
+      },
+      { isCoreMLAction: true },
+    );
   }, [coreML, coreMLModelName, runSafely]);
 
   const runCoreMLGenerate = useCallback(async () => {
-    await runSafely("CoreML generate", async () => {
-      if (!coreML) {
-        throw new Error(
-          "CoreML module not available (iOS dev build + prebuild required)",
-        );
-      }
-      const loaded = await coreML.isLoaded();
-      if (!loaded) {
-        throw new Error("Load the CoreML model first");
-      }
-      const vocabPath =
-        coreMLVocabPath.trim() || DEFAULT_COREML_TOKENIZER_VOCAB_PATH;
-      const mergesPath =
-        coreMLMergesPath.trim() || DEFAULT_COREML_TOKENIZER_MERGES_PATH;
-      const tokenizer = {
-        kind: "gpt2_bpe" as const,
-        vocabJsonAssetPath: vocabPath,
-        mergesTxtAssetPath: mergesPath,
-        bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
-        eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-      };
+    await runSafely(
+      "CoreML generate",
+      async () => {
+        if (!coreML) {
+          throw new Error(
+            "CoreML module not available (iOS dev build + prebuild required)",
+          );
+        }
+        const loaded = await coreML.isLoaded();
+        if (!loaded) {
+          throw new Error("Load the CoreML model first");
+        }
+        const vocabPath =
+          coreMLVocabPath.trim() || DEFAULT_COREML_TOKENIZER_VOCAB_PATH;
+        const mergesPath =
+          coreMLMergesPath.trim() || DEFAULT_COREML_TOKENIZER_MERGES_PATH;
+        const tokenizer = {
+          kind: "byte_level_bpe" as const,
+          vocabJsonAssetPath: vocabPath,
+          mergesTxtAssetPath: mergesPath,
+          bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
+          eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+        };
 
-      const text = await coreML.generate(
-        buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
-        {
-          maxNewTokens: 160,
-          temperature: 0.8,
-          topK: 40,
-          topP: 0.95,
-          repetitionPenalty: 1.05,
-          tokenizer,
-        },
-      );
-      setCoreMLOutput(text);
-      setStatus("CoreML generation complete");
-    });
+        const text = await coreML.generate(
+          buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
+          {
+            maxNewTokens: 160,
+            temperature: 0.8,
+            topK: 40,
+            topP: 0.95,
+            repetitionPenalty: 1.05,
+            tokenizer,
+          },
+        );
+        setCoreMLOutput(text);
+        setStatus("CoreML generation complete");
+      },
+      { isCoreMLAction: true },
+    );
   }, [coreML, coreMLPrompt, coreMLVocabPath, coreMLMergesPath, runSafely]);
 
   const runSttCapture = useCallback(async () => {
