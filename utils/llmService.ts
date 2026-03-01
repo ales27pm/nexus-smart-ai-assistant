@@ -9,6 +9,8 @@ import {
   toActionableCoreMLError,
 } from "@/utils/coreml";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
+import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
+import { Platform } from "react-native";
 
 export interface ILLMService {
   initialize(options?: CoreMLLoadModelOptions): Promise<void>;
@@ -30,7 +32,38 @@ export class CoreMLLLMService implements ILLMService {
   async initialize(
     options: CoreMLLoadModelOptions = DEFAULT_COREML_LOAD_OPTIONS,
   ): Promise<void> {
-    await this.provider.load(options);
+    const resolvedOptions: CoreMLLoadModelOptions = { ...options };
+
+    if (Platform.OS === "ios") {
+      const startedAt = Date.now();
+      try {
+        const prepared = await ensureCoreMLModelAssets();
+        if (prepared?.modelPath) {
+          resolvedOptions.modelPath = prepared.modelPath;
+          if (!__DEV__) {
+            delete resolvedOptions.modelFile;
+          }
+          console.info("[CoreMLLLMService] using downloaded model path", {
+            modelPath: prepared.modelPath,
+            downloadDurationMs: prepared.telemetry?.durationMs,
+            downloaded: prepared.downloaded,
+          });
+        }
+      } catch (error) {
+        console.error("[CoreMLLLMService] model asset preparation failed", {
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        if (!__DEV__) {
+          throw error;
+        }
+        console.warn(
+          "[CoreMLLLMService] continuing with bundled model fallback in __DEV__",
+        );
+      }
+    }
+
+    await this.provider.load(resolvedOptions);
   }
 
   async generateChatResponse(

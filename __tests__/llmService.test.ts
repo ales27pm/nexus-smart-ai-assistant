@@ -1,7 +1,22 @@
 import { CoreMLError } from "@/utils/coreml";
+import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { CoreMLLLMService } from "@/utils/llmService";
 
+jest.mock("@/utils/coremlModelManager", () => ({
+  ensureCoreMLModelAssets: jest.fn(),
+}));
+
 describe("CoreMLLLMService", () => {
+  const ensureCoreMLModelAssetsMock =
+    ensureCoreMLModelAssets as jest.MockedFunction<
+      typeof ensureCoreMLModelAssets
+    >;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    ensureCoreMLModelAssetsMock.mockResolvedValue(null);
+  });
+
   it("initializes and disposes through provider", async () => {
     const provider = {
       load: jest.fn().mockResolvedValue(undefined),
@@ -18,6 +33,60 @@ describe("CoreMLLLMService", () => {
 
     expect(provider.load).toHaveBeenCalled();
     expect(provider.unload).toHaveBeenCalled();
+  });
+
+  it("prefers downloaded model path when manager resolves one", async () => {
+    ensureCoreMLModelAssetsMock.mockResolvedValue({
+      modelDirectory: "/documents/coreml-models/model/",
+      modelPath: "/documents/coreml-models/model/model.mlpackage",
+      downloaded: true,
+      telemetry: {
+        modelName: "model",
+        durationMs: 1000,
+        attempts: 3,
+        bytesWritten: 2048,
+      },
+    });
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn(),
+    };
+
+    const service = new CoreMLLLMService(provider as any);
+    await service.initialize({ modelFile: "bundled.mlpackage" });
+
+    expect(ensureCoreMLModelAssetsMock).toHaveBeenCalled();
+    expect(provider.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelPath: "/documents/coreml-models/model/model.mlpackage",
+      }),
+    );
+  });
+
+  it("throws outside __DEV__ when model preparation fails", async () => {
+    const previousDev = global.__DEV__;
+    (global as any).__DEV__ = false;
+
+    ensureCoreMLModelAssetsMock.mockRejectedValue(new Error("storage failed"));
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn(),
+    };
+
+    const service = new CoreMLLLMService(provider as any);
+
+    await expect(service.initialize()).rejects.toThrow("storage failed");
+    expect(provider.load).not.toHaveBeenCalled();
+
+    (global as any).__DEV__ = previousDev;
   });
 
   it("generates cleaned response", async () => {
@@ -84,7 +153,12 @@ describe("CoreMLLLMService", () => {
     controller.abort();
 
     await expect(
-      service.generateChatResponse("system", "hello", undefined, controller.signal),
+      service.generateChatResponse(
+        "system",
+        "hello",
+        undefined,
+        controller.signal,
+      ),
     ).rejects.toBeInstanceOf(CoreMLError);
     expect(provider.cancel).toHaveBeenCalledTimes(1);
     expect(provider.generate).not.toHaveBeenCalled();
