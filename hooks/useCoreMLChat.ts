@@ -11,7 +11,13 @@ export function useCoreMLChat(service?: ILLMService) {
     service ?? new CoreMLLLMService(),
   );
   const serviceRef = useRef<ILLMService | null>(null);
-  const { isRunning, run } = useAsyncOperation();
+  const { isRunning, runExclusive } = useAsyncOperation();
+
+  useEffect(() => {
+    if (service) {
+      serviceInstanceRef.current = service;
+    }
+  }, [service]);
 
   useEffect(() => {
     let disposed = false;
@@ -72,22 +78,21 @@ export function useCoreMLChat(service?: ILLMService) {
         );
       }
 
-      if (isRunning) {
-        throw new CoreMLError(
-          "CoreML generation already in progress. Please wait for the current request to finish.",
-        );
-      }
-
-      return run(() =>
+      return runExclusive(
+        () =>
         activeService.generateChatResponse(
           systemPrompt,
           userText,
           undefined,
           signal,
         ),
+        () =>
+          new CoreMLError(
+            "CoreML generation already in progress. Please wait for the current request to finish.",
+          ),
       );
     },
-    [isRunning, run],
+    [runExclusive],
   );
 
   return {

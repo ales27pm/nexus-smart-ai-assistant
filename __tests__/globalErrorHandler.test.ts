@@ -57,22 +57,43 @@ describe("globalErrorHandler", () => {
   });
 
   it("installs global handlers only once", () => {
-    const previousHandler = jest.fn();
     const setGlobalHandler = jest.fn();
 
-    (globalThis as any).ErrorUtils = {
-      getGlobalHandler: () => previousHandler,
-      setGlobalHandler,
-    };
+    jest.isolateModules(() => {
+      const previousHandler = jest.fn();
+      (globalThis as any).ErrorUtils = {
+        getGlobalHandler: () => previousHandler,
+        setGlobalHandler,
+      };
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const {
-      installGlobalErrorHandlers: installAgain,
-    } = require("@/utils/globalErrorHandler");
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const {
+        installGlobalErrorHandlers: installAgain,
+      } = require("@/utils/globalErrorHandler");
 
-    installAgain();
-    installAgain();
+      installAgain();
+      installAgain();
+    });
 
     expect(setGlobalHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not throw when metadata is unserializable", () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    expect(() => {
+      reportError({
+        error: new Error("boom"),
+        severity: "error",
+        source: "global-js",
+        metadata: circular,
+      });
+    }).not.toThrow();
+
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("metadata=[unserializable]"),
+      expect.any(Error),
+    );
   });
 });

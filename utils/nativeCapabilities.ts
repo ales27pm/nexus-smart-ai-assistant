@@ -213,7 +213,7 @@ export async function speakText(text: string): Promise<void> {
 
 export async function transcribeSpeechOnce(): Promise<string> {
   const { NativeSpeechRecognitionService } =
-    await import("@/hooks/useSpeechRecognition");
+    await import("@/utils/speechRecognitionService");
   const service = new NativeSpeechRecognitionService();
   return service.transcribeOnce(8000);
 }

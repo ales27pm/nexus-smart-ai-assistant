@@ -64,7 +64,7 @@ function useSafeAction(
               ? normalizedError
               : new Error(String(normalizedError)),
           severity: "error",
-          source: "global-js",
+          source: "user-action",
           metadata: { label, screen: "deviceNativeHub" },
         });
         const message =

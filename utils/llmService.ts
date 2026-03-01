@@ -47,6 +47,11 @@ export class CoreMLLLMService implements ILLMService {
       });
     };
 
+    if (signal?.aborted) {
+      abortHandler();
+      throw new CoreMLError("Generation aborted before start", "ABORT_ERR");
+    }
+
     signal?.addEventListener("abort", abortHandler, { once: true });
 
     try {
@@ -67,6 +72,10 @@ export class CoreMLLLMService implements ILLMService {
     try {
       return await this.provider.isLoaded();
     } catch (error) {
+      if (error instanceof CoreMLError) {
+        throw error;
+      }
+
       throw new CoreMLError(
         error instanceof Error
           ? error.message

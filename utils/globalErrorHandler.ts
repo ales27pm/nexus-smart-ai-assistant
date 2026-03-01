@@ -7,7 +7,11 @@ let globalHandlersInstalled = false;
 export type ErrorReport = {
   error: Error;
   severity: ErrorSeverity;
-  source: "react-boundary" | "global-js" | "promise-rejection";
+  source:
+    | "react-boundary"
+    | "global-js"
+    | "promise-rejection"
+    | "user-action";
   componentStack?: string;
   metadata?: Record<string, unknown>;
 };
@@ -26,7 +30,11 @@ function formatErrorReport(report: ErrorReport): string {
   }
 
   if (report.metadata) {
-    parts.push(`metadata=${JSON.stringify(report.metadata)}`);
+    try {
+      parts.push(`metadata=${JSON.stringify(report.metadata)}`);
+    } catch {
+      parts.push("metadata=[unserializable]");
+    }
   }
 
   return parts.join(" | ");
@@ -92,7 +100,15 @@ export function installGlobalErrorHandlers(): void {
         source: "global-js",
       });
 
-      previousHandler(error, isFatal);
+      try {
+        previousHandler(error, isFatal);
+      } catch (previousHandlerError) {
+        console.error(
+          "[GlobalErrorHandler] previous global handler failed",
+          previousHandlerError,
+          normalizedError,
+        );
+      }
     });
   }
 
