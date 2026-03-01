@@ -4,6 +4,7 @@ set -euo pipefail
 PROFILE="production"
 CLEAN_CACHE="0"
 REPAIR_CREDENTIALS="0"
+SKIP_AUTO_FINGERPRINT="1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,6 +18,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --repair-credentials)
       REPAIR_CREDENTIALS="1"
+      shift
+      ;;
+    --auto-fingerprint)
+      SKIP_AUTO_FINGERPRINT="0"
       shift
       ;;
     *)
@@ -67,4 +72,10 @@ ensure_compatible_cocoapods
 echo "[i] Validating CoreML pipeline assets before local EAS iOS build."
 npm run coreml:validate -- --strict
 
-env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local
+if [[ "$SKIP_AUTO_FINGERPRINT" == "1" ]]; then
+  echo "[i] Skipping EAS auto fingerprint to avoid known 'balanced is not a function' failures during local builds."
+  echo "[i] Pass --auto-fingerprint to re-enable EAS automatic fingerprint computation."
+  env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 npx eas build --profile "$PROFILE" --platform ios --local
+else
+  env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local
+fi
