@@ -21,8 +21,11 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
+  DEFAULT_COREML_BOS_TOKEN_ID,
   DEFAULT_COREML_EOS_TOKEN_ID,
   DEFAULT_COREML_LOAD_OPTIONS,
+  DEFAULT_COREML_TOKENIZER_MERGES_PATH,
+  DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   buildCoreMLChatPrompt,
   CoreMLBridge,
 } from "@/utils/coreml";
@@ -145,8 +148,12 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
-  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>("");
-  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>("");
+  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
+    DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
+  );
+  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
+    DEFAULT_COREML_TOKENIZER_MERGES_PATH,
+  );
 
   const runSafely = useSafeAction(setStatus);
   const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
@@ -208,17 +215,17 @@ export default function DeviceNativeHubScreen() {
       if (!loaded) {
         throw new Error("Load the CoreML model first");
       }
-      const vocabPath = coreMLVocabPath.trim();
-      const mergesPath = coreMLMergesPath.trim();
-      const tokenizer =
-        vocabPath && mergesPath
-          ? {
-              kind: "gpt2_bpe" as const,
-              vocabJsonAssetPath: vocabPath,
-              mergesTxtAssetPath: mergesPath,
-              eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-            }
-          : undefined;
+      const vocabPath =
+        coreMLVocabPath.trim() || DEFAULT_COREML_TOKENIZER_VOCAB_PATH;
+      const mergesPath =
+        coreMLMergesPath.trim() || DEFAULT_COREML_TOKENIZER_MERGES_PATH;
+      const tokenizer = {
+        kind: "gpt2_bpe" as const,
+        vocabJsonAssetPath: vocabPath,
+        mergesTxtAssetPath: mergesPath,
+        bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
+        eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
+      };
 
       const text = await coreML.generate(
         buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),

@@ -5,6 +5,8 @@ import {
   CoreMLError,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
+  DEFAULT_COREML_TOKENIZER_MERGES_PATH,
+  DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   normalizeCoreMLError,
 } from "@/utils/coreml";
 
@@ -41,7 +43,13 @@ describe("coreml utils", () => {
     expect(DEFAULT_COREML_GENERATE_OPTIONS.stopTokenIds).toEqual([
       ...modelManifest.stopTokenIds,
     ]);
-    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.kind).toBe("none");
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.kind).toBe("gpt2_bpe");
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.vocabJsonAssetPath).toBe(
+      DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
+    );
+    expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.mergesTxtAssetPath).toBe(
+      DEFAULT_COREML_TOKENIZER_MERGES_PATH,
+    );
   });
 
   describe("normalizeCoreMLError", () => {

@@ -50,9 +50,17 @@ export class CoreMLError extends Error {
 
 export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
 export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
+export const DEFAULT_COREML_BOS_TOKEN_ID = 128000;
+export const DEFAULT_COREML_TOKENIZER_VOCAB_PATH =
+  "module:tokenizers/gpt2/vocab.json";
+export const DEFAULT_COREML_TOKENIZER_MERGES_PATH =
+  "module:tokenizers/gpt2/merges.txt";
 
 export const DEFAULT_COREML_TOKENIZER = {
-  kind: "none",
+  kind: "gpt2_bpe",
+  vocabJsonAssetPath: DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
+  mergesTxtAssetPath: DEFAULT_COREML_TOKENIZER_MERGES_PATH,
+  bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
   eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
 } as const;
 
@@ -103,8 +111,16 @@ export function normalizeCoreMLError(error: unknown): CoreMLError {
 }
 
 export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
+  10: "CoreML resource bundle missing. Run prebuild + pod install, then rebuild the iOS app.",
+  12: "Tokenizer asset missing from bundle. Run the tokenizer install step before building iOS.",
+  20: "No CoreML model selected. Provide modelFile/modelPath and retry.",
+  21: "CoreML resource bundle not found. Re-run prebuild and install pods.",
+  22: "CoreML model file not found in bundle. Redownload model assets and rebuild.",
   101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
   102: "CoreML memory pressure detected. Free up memory by closing apps and retry.",
+  120: "Tokenizer config invalid. Use GPT-2 BPE tokenizer assets (vocab.json + merges.txt).",
+  121: "Tokenizer asset paths missing. Provide both vocab and merges paths.",
+  122: "Tokenizer required for this model. Pass tokenizer settings with vocab/merges assets.",
 };
 
 export function toActionableCoreMLError(error: unknown): CoreMLError {

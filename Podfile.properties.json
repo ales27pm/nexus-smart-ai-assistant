@@ -1,5 +1,6 @@
 {
   "apple.privacyManifestAggregationEnabled": "false",
   "newArchEnabled": "false",
-  "expo.jsEngine": "jsc"
+  "expo.jsEngine": "jsc",
+  "ios.deploymentTarget": "18.0"
 }

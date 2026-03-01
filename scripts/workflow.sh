@@ -210,55 +210,67 @@ step_model() {
 step_tokenizer() {
   header "4 · Download Tokenizer Files"
 
-  local REQUIRED_FILES=("tokenizer.json" "tokenizer_config.json" "special_tokens_map.json" "config.json" "generation_config.json")
-  local all_present=true
+  local CACHE_REQUIRED_FILES=("tokenizer.json" "tokenizer_config.json" "special_tokens_map.json" "config.json" "generation_config.json")
+  local bundle_dir="$PROJECT_ROOT/modules/expo-coreml-llm/ios/resources/tokenizers/gpt2"
+  local bundle_vocab="$bundle_dir/vocab.json"
+  local bundle_merges="$bundle_dir/merges.txt"
+  local cache_complete=true
 
   mkdir -p "$TOK_STAGING"
+  mkdir -p "$bundle_dir"
 
-  for f in "${REQUIRED_FILES[@]}"; do
+  for f in "${CACHE_REQUIRED_FILES[@]}"; do
     if [[ ! -f "$TOK_STAGING/$f" ]]; then
-      all_present=false
+      cache_complete=false
       break
     fi
   done
 
-  if $all_present; then
-    success "Tokenizer files already present. Skipping download."
-    return 0
+  if ! $cache_complete; then
+    info "Downloading tokenizer from: $TOKENIZER_REPO"
+
+    if command -v hf >/dev/null 2>&1; then
+      local TOK_ARGS=(download "$TOKENIZER_REPO")
+      for f in "${CACHE_REQUIRED_FILES[@]}"; do
+        TOK_ARGS+=(--include "$f")
+      done
+      TOK_ARGS+=(--local-dir "$TOK_STAGING")
+      if [[ -n "${HF_TOKEN:-}" ]]; then TOK_ARGS+=(--token "$HF_TOKEN"); fi
+      hf "${TOK_ARGS[@]}"
+    elif python3 -c "import huggingface_hub" 2>/dev/null; then
+      local ALLOW_ARGS=()
+      for f in "${CACHE_REQUIRED_FILES[@]}"; do
+        ALLOW_ARGS+=(--allow-pattern "$f")
+      done
+      python3 "$SCRIPT_DIR/coreml/hf_snapshot_download.py" \
+        --repo "$TOKENIZER_REPO" \
+        --local-dir "$TOK_STAGING" \
+        "${ALLOW_ARGS[@]}"
+    else
+      fail "No download tool available for tokenizer."
+      return 1
+    fi
   fi
 
-  info "Downloading tokenizer from: $TOKENIZER_REPO"
-
-  if command -v hf >/dev/null 2>&1; then
-    local TOK_ARGS=(download "$TOKENIZER_REPO")
-    for f in "${REQUIRED_FILES[@]}"; do
-      TOK_ARGS+=(--include "$f")
-    done
-    TOK_ARGS+=(--local-dir "$TOK_STAGING")
-    if [[ -n "${HF_TOKEN:-}" ]]; then TOK_ARGS+=(--token "$HF_TOKEN"); fi
-    hf "${TOK_ARGS[@]}"
-  elif python3 -c "import huggingface_hub" 2>/dev/null; then
-    local ALLOW_ARGS=()
-    for f in "${REQUIRED_FILES[@]}"; do
-      ALLOW_ARGS+=(--allow-pattern "$f")
-    done
-    python3 "$SCRIPT_DIR/coreml/hf_snapshot_download.py" \
-      --repo "$TOKENIZER_REPO" \
-      --local-dir "$TOK_STAGING" \
-      "${ALLOW_ARGS[@]}"
-  else
-    fail "No download tool available for tokenizer."
-    return 1
-  fi
-
-  for f in "${REQUIRED_FILES[@]}"; do
+  for f in "${CACHE_REQUIRED_FILES[@]}"; do
     if [[ ! -f "$TOK_STAGING/$f" ]]; then
       fail "Missing tokenizer file after download: $f"
       return 1
     fi
   done
 
-  success "Tokenizer installed: $TOK_STAGING"
+  python3 "$SCRIPT_DIR/coreml/export_gpt2_bpe_assets.py" \
+    --tokenizer-json "$TOK_STAGING/tokenizer.json" \
+    --out-vocab "$bundle_vocab" \
+    --out-merges "$bundle_merges"
+
+  if [[ ! -s "$bundle_vocab" || ! -s "$bundle_merges" ]]; then
+    fail "Tokenizer bundle asset generation failed."
+    return 1
+  fi
+
+  success "Tokenizer cache ready: $TOK_STAGING"
+  success "Tokenizer bundle assets installed: $bundle_dir"
 }
 
 # ─── Step 5: iOS Credentials ─────────────────────────────────────────────────
