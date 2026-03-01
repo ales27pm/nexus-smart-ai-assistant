@@ -116,7 +116,10 @@ export async function getCurrentCoordinates(): Promise<string> {
         return;
       }
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve(`${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`),
+        (pos) =>
+          resolve(
+            `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`,
+          ),
         (err) => reject(new Error(`Location error: ${err.message}`)),
         { enableHighAccuracy: false, timeout: 10000 },
       );
@@ -150,7 +153,8 @@ export async function createCalendarEvent(): Promise<string> {
     Platform.OS === "ios"
       ? await Calendar.getDefaultCalendarAsync()
       : (await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT)).find(
-          (calendar: { allowsModifications: boolean }) => calendar.allowsModifications,
+          (calendar: { allowsModifications: boolean }) =>
+            calendar.allowsModifications,
         );
 
   if (!defaultCalendar) {
@@ -208,39 +212,10 @@ export async function speakText(text: string): Promise<void> {
 }
 
 export async function transcribeSpeechOnce(): Promise<string> {
-  if (Platform.OS === "web") {
-    throw new Error("Speech recognition is not available on web");
-  }
-
-  const { ExpoSpeechRecognitionModule } = await import("expo-speech-recognition");
-  const { recognizeOnce } = await import("@/utils/speechRecognition");
-
-  const module = ExpoSpeechRecognitionModule;
-
-  if (!module.isRecognitionAvailable()) {
-    throw new Error("Speech recognition service unavailable");
-  }
-
-  const permission = await module.requestPermissionsAsync();
-  if (!permission.granted) {
-    throw new Error("Speech permission was denied");
-  }
-
-  const { promise, cancel } = recognizeOnce(module, 8000);
-
-  try {
-    module.start({
-      lang: "en-US",
-      interimResults: true,
-      requiresOnDeviceRecognition: false,
-      addsPunctuation: true,
-    });
-  } catch (error) {
-    cancel();
-    throw error;
-  }
-
-  return promise;
+  const { NativeSpeechRecognitionService } =
+    await import("@/utils/speechRecognitionService");
+  const service = new NativeSpeechRecognitionService();
+  return service.transcribeOnce(8000);
 }
 
 export async function openDialer(phoneNumber: string): Promise<void> {

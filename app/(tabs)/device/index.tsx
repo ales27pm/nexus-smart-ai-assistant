@@ -30,19 +30,8 @@ import {
   CoreMLBridge,
   toActionableCoreMLError,
 } from "@/utils/coreml";
-import {
-  createCalendarEvent,
-  getCurrentCoordinates,
-  getPrimaryContactSummary,
-  loadLocalNote,
-  openDialer,
-  openSms,
-  persistLocalNote,
-  searchVectorDocuments,
-  speakText,
-  transcribeSpeechOnce,
-  upsertVectorDocument,
-} from "@/utils/nativeCapabilities";
+import { iosToolsService } from "@/utils/iosToolsService";
+import { reportError } from "@/utils/globalErrorHandler";
 
 type SafeActionOptions = {
   isCoreMLAction?: boolean;
@@ -69,7 +58,15 @@ function useSafeAction(
         const normalizedError = options.isCoreMLAction
           ? toActionableCoreMLError(error)
           : error;
-        console.error(`${label} failed`, normalizedError);
+        reportError({
+          error:
+            normalizedError instanceof Error
+              ? normalizedError
+              : new Error(String(normalizedError)),
+          severity: "error",
+          source: "user-action",
+          metadata: { label, screen: "deviceNativeHub" },
+        });
         const message =
           normalizedError instanceof Error
             ? normalizedError.message
@@ -110,7 +107,7 @@ function DeviceNativeHubLocationSection({
   const handleGetLocation = useCallback(
     () =>
       runSafely("Location", async () => {
-        setCoords(await getCurrentCoordinates());
+        setCoords(await iosToolsService.getCurrentCoordinates());
       }),
     [runSafely],
   );
@@ -179,7 +176,7 @@ export default function DeviceNativeHubScreen() {
 
   useEffect(() => {
     void runSafely("Load note", async () => {
-      setNote(await loadLocalNote());
+      setNote(await iosToolsService.loadLocalNote());
     });
 
     if (Platform.OS !== "web") {
@@ -303,7 +300,7 @@ export default function DeviceNativeHubScreen() {
     setIsListening(true);
     await runSafely("Speech-to-text", async () => {
       setStatus("Listening... speak now");
-      const transcript = await transcribeSpeechOnce();
+      const transcript = await iosToolsService.transcribeSpeechOnce();
       setSpeechTranscript(transcript);
       setStatus("Speech captured");
     });
@@ -316,15 +313,15 @@ export default function DeviceNativeHubScreen() {
         throw new Error("Enter text before saving");
       }
 
-      await persistLocalNote(note);
-      await upsertVectorDocument(note);
+      await iosToolsService.persistLocalNote(note);
+      await iosToolsService.upsertVectorDocument(note);
       setStatus("Saved to SecureStore + local vector DB");
     });
   }, [note, runSafely]);
 
   const runVectorSearch = useCallback(async () => {
     await runSafely("Vector search", async () => {
-      const next = await searchVectorDocuments(searchQuery);
+      const next = await iosToolsService.searchVectorDocuments(searchQuery);
       setResults(next);
       setStatus(`Vector search completed (${next.length} results)`);
     });
@@ -385,7 +382,7 @@ export default function DeviceNativeHubScreen() {
           style={styles.button}
           onPress={() =>
             runSafely("Text-to-speech", async () => {
-              await speakText(
+              await iosToolsService.speakText(
                 "Native text to speech is active in your development build.",
               );
               setStatus("TTS completed");
@@ -413,7 +410,7 @@ export default function DeviceNativeHubScreen() {
           style={styles.button}
           onPress={() =>
             runSafely("Calendar", async () => {
-              const eventId = await createCalendarEvent();
+              const eventId = await iosToolsService.createCalendarEvent();
               setStatus(`Calendar event created (${eventId})`);
             })
           }
@@ -424,7 +421,7 @@ export default function DeviceNativeHubScreen() {
           style={styles.button}
           onPress={() =>
             runSafely("Contacts", async () => {
-              setContact(await getPrimaryContactSummary());
+              setContact(await iosToolsService.getPrimaryContactSummary());
               setStatus("Contact read succeeded");
             })
           }
@@ -441,7 +438,9 @@ export default function DeviceNativeHubScreen() {
         </View>
         <TouchableOpacity
           style={styles.button}
-          onPress={() => runSafely("Dialer", () => openDialer("18005551212"))}
+          onPress={() =>
+            runSafely("Dialer", () => iosToolsService.openDialer("18005551212"))
+          }
         >
           <Text style={styles.buttonText}>Open dialer</Text>
         </TouchableOpacity>
@@ -449,7 +448,10 @@ export default function DeviceNativeHubScreen() {
           style={styles.button}
           onPress={() =>
             runSafely("SMS", () =>
-              openSms("18005551212", "Diagnostic test from native hub"),
+              iosToolsService.openSms(
+                "18005551212",
+                "Diagnostic test from native hub",
+              ),
             )
           }
         >

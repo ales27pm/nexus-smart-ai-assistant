@@ -1,19 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import {
-  CoreMLError,
-  buildCoreMLChatPrompt,
-  cleanCoreMLOutput,
-  DEFAULT_COREML_GENERATE_OPTIONS,
-  toActionableCoreMLError,
-} from "@/utils/coreml";
-import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
+import { CoreMLError } from "@/utils/coreml";
+import { CoreMLLLMService, ILLMService } from "@/utils/llmService";
+import { reportError } from "@/utils/globalErrorHandler";
+import { useAsyncOperation } from "@/hooks/useAsyncOperation";
 
-export function useCoreMLChat() {
-  const [provider, setProvider] = useState<ICoreMLProvider | null>(null);
+export function useCoreMLChat(service?: ILLMService) {
   const [isAvailable, setIsAvailable] = useState(false);
-  const providerRef = useRef<ICoreMLProvider | null>(null);
-  const isGeneratingRef = useRef(false);
+  const serviceInstanceRef = useRef<ILLMService>(
+    service ?? new CoreMLLLMService(),
+  );
+  const serviceRef = useRef<ILLMService | null>(null);
+  const { isRunning, runExclusive } = useAsyncOperation();
+
+  useEffect(() => {
+    if (service) {
+      serviceInstanceRef.current = service;
+    }
+  }, [service]);
 
   useEffect(() => {
     let disposed = false;
@@ -22,21 +26,24 @@ export function useCoreMLChat() {
       if (Platform.OS !== "ios") return;
 
       try {
-        const instance = new NativeCoreMLProvider();
-        await instance.load();
+        const serviceInstance = serviceInstanceRef.current;
+        await serviceInstance.initialize();
 
         if (!disposed) {
-          providerRef.current = instance;
-          setProvider(instance);
+          serviceRef.current = serviceInstance;
           setIsAvailable(true);
         } else {
-          await instance.unload();
+          await serviceInstance.dispose();
         }
       } catch (error) {
-        console.error("[CoreML] boot failed", error);
+        reportError({
+          error: error instanceof Error ? error : new Error(String(error)),
+          severity: "error",
+          source: "global-js",
+          metadata: { scope: "useCoreMLChat.boot" },
+        });
         if (!disposed) {
-          providerRef.current = null;
-          setProvider(null);
+          serviceRef.current = null;
           setIsAvailable(false);
         }
       }
@@ -46,11 +53,16 @@ export function useCoreMLChat() {
 
     return () => {
       disposed = true;
-      const latestProvider = providerRef.current;
-      providerRef.current = null;
-      if (latestProvider) {
-        latestProvider.unload().catch((error) => {
-          console.warn("[CoreML] unload failed", error);
+      const latestService = serviceRef.current;
+      serviceRef.current = null;
+      if (latestService) {
+        latestService.dispose().catch((error) => {
+          reportError({
+            error: error instanceof Error ? error : new Error(String(error)),
+            severity: "warning",
+            source: "global-js",
+            metadata: { scope: "useCoreMLChat.dispose" },
+          });
         });
       }
     };
@@ -58,43 +70,35 @@ export function useCoreMLChat() {
 
   const generate = useCallback(
     async (systemPrompt: string, userText: string, signal?: AbortSignal) => {
-      if (!provider) {
+      const activeService = serviceRef.current;
+
+      if (!activeService) {
         throw new CoreMLError(
           "CoreML module not linked. Run: npm i, npx expo prebuild --clean, pod install, then rebuild iOS dev client.",
         );
       }
 
-      if (isGeneratingRef.current) {
-        throw new CoreMLError(
-          "CoreML generation already in progress. Please wait for the current request to finish.",
-        );
-      }
-
-      const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-
-      const abortHandler = () => {
-        provider.cancel().catch((error) => {
-          console.warn("[CoreML] cancel failed", error);
-        });
-      };
-      signal?.addEventListener("abort", abortHandler, { once: true });
-
-      try {
-        isGeneratingRef.current = true;
-        const rawOutput = await provider.generate(
-          prompt,
-          DEFAULT_COREML_GENERATE_OPTIONS,
-        );
-        return cleanCoreMLOutput(rawOutput, prompt);
-      } catch (error) {
-        throw toActionableCoreMLError(error);
-      } finally {
-        isGeneratingRef.current = false;
-        signal?.removeEventListener("abort", abortHandler);
-      }
+      return runExclusive(
+        () =>
+        activeService.generateChatResponse(
+          systemPrompt,
+          userText,
+          undefined,
+          signal,
+        ),
+        () =>
+          new CoreMLError(
+            "CoreML generation already in progress. Please wait for the current request to finish.",
+          ),
+      );
     },
-    [provider],
+    [runExclusive],
   );
 
-  return { provider, isAvailable, generate };
+  return {
+    isAvailable,
+    isGenerating: isRunning,
+    generate,
+    service: serviceRef.current,
+  };
 }
