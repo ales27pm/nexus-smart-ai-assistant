@@ -48,7 +48,6 @@ import {
   analyzeEmotion,
   assessMetacognition,
   buildThoughtTree,
-  detectCuriosity,
   buildEmotionalMimicry,
 } from "@/utils/cognition";
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
@@ -512,7 +511,7 @@ ${branchAnalyses[idx]}`,
               let data: any;
               try {
                 data = JSON.parse(rawText);
-              } catch (parseErr) {
+              } catch {
                 console.log("[NEXUS] Failed to parse image response as JSON");
                 if (attempt < maxRetries) {
                   await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
