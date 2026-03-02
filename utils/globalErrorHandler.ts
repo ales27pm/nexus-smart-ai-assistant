@@ -4,14 +4,14 @@ export type ErrorSeverity = "fatal" | "error" | "warning";
 
 let globalHandlersInstalled = false;
 
+export function resetHandlers(): void {
+  globalHandlersInstalled = false;
+}
+
 export type ErrorReport = {
   error: Error;
   severity: ErrorSeverity;
-  source:
-    | "react-boundary"
-    | "global-js"
-    | "promise-rejection"
-    | "user-action";
+  source: "react-boundary" | "global-js" | "promise-rejection" | "user-action";
   componentStack?: string;
   metadata?: Record<string, unknown>;
 };
@@ -65,7 +65,7 @@ export function reportBoundaryError(error: Error, errorInfo: ErrorInfo): void {
   });
 }
 
-export function installGlobalErrorHandlers(): void {
+export function installGlobalErrorHandlers(scope: any = globalThis): void {
   if (globalHandlersInstalled) {
     return;
   }
@@ -73,14 +73,17 @@ export function installGlobalErrorHandlers(): void {
   globalHandlersInstalled = true;
 
   const globalHandler = (
-    globalThis as typeof globalThis & {
+    scope as {
       ErrorUtils?: {
         getGlobalHandler?: () => (error: unknown, isFatal?: boolean) => void;
         setGlobalHandler?: (
           handler: (error: unknown, isFatal?: boolean) => void,
         ) => void;
       };
-      onunhandledrejection?: (event: PromiseRejectionEvent) => void;
+      addEventListener?: (
+        type: "unhandledrejection",
+        listener: (event: PromiseRejectionEvent) => void,
+      ) => void;
     }
   ).ErrorUtils;
 
@@ -112,8 +115,8 @@ export function installGlobalErrorHandlers(): void {
     });
   }
 
-  if (typeof globalThis.addEventListener === "function") {
-    globalThis.addEventListener(
+  if (typeof scope.addEventListener === "function") {
+    scope.addEventListener(
       "unhandledrejection",
       (event: PromiseRejectionEvent) => {
         const reason = event.reason;
