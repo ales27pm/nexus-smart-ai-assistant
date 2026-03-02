@@ -163,6 +163,27 @@ function deriveCoreMLErrorCode(
   return undefined;
 }
 
+function getNativeCoreMLErrorCode(error: unknown): number | undefined {
+  if (!(error instanceof Error)) {
+    return undefined;
+  }
+
+  const maybeCode = Number((error as Error & { code?: unknown }).code);
+  if (Number.isFinite(maybeCode)) {
+    return maybeCode;
+  }
+
+  return undefined;
+}
+
+export function isComputeUnitError(error: unknown): boolean {
+  if (getNativeCoreMLErrorCode(error) === -4) {
+    return true;
+  }
+
+  return normalizeCoreMLError(error).code === 104;
+}
+
 export function normalizeCoreMLError(error: unknown): CoreMLError {
   if (error instanceof CoreMLError) return error;
   if (error instanceof Error) {

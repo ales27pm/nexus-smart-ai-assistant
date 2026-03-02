@@ -5,6 +5,7 @@ import {
   CoreMLGenerateOptions,
   CoreMLLoadModelOptions,
   DEFAULT_COREML_LOAD_OPTIONS,
+  isComputeUnitError,
   normalizeCoreMLError,
 } from "@/utils/coreml";
 
@@ -132,7 +133,7 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
         this.activeLoadOptions?.computeUnits ??
         DEFAULT_COREML_LOAD_OPTIONS.computeUnits;
       const shouldRetryWithCpuOnly =
-        normalizedError.code === 104 && activeComputeUnits !== "cpuOnly";
+        isComputeUnitError(error) && activeComputeUnits !== "cpuOnly";
 
       if (!shouldRetryWithCpuOnly) {
         throw normalizedError;

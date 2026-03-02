@@ -9,6 +9,7 @@ import {
   DEFAULT_COREML_LOAD_OPTIONS,
   DEFAULT_COREML_TOKENIZER_MERGES_PATH,
   DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
+  isComputeUnitError,
   normalizeCoreMLError,
   toActionableCoreMLError,
 } from "@/utils/coreml";
@@ -61,6 +62,43 @@ describe("coreml utils", () => {
     expect(DEFAULT_COREML_GENERATE_OPTIONS.tokenizer?.eosTokenId).toBe(
       DEFAULT_COREML_EOS_TOKEN_ID,
     );
+  });
+
+  describe("isComputeUnitError", () => {
+    const cases: Array<{
+      name: string;
+      error: unknown;
+      expected: boolean;
+    }> = [
+      {
+        name: "returns true for normalized app code 104",
+        error: new CoreMLError("execution plan failed", 104),
+        expected: true,
+      },
+      {
+        name: "returns true for native -4 code",
+        error: Object.assign(new Error("native compute unit failure"), {
+          code: -4,
+        }),
+        expected: true,
+      },
+      {
+        name: "returns true for execution-plan style message without code",
+        error: new Error(
+          "Failed to build execution plan using model architecture file.",
+        ),
+        expected: true,
+      },
+      {
+        name: "returns false for unrelated codes and messages",
+        error: Object.assign(new Error("plain failure"), { code: 500 }),
+        expected: false,
+      },
+    ];
+
+    it.each(cases)("$name", ({ error, expected }) => {
+      expect(isComputeUnitError(error)).toBe(expected);
+    });
   });
 
   describe("normalizeCoreMLError", () => {
