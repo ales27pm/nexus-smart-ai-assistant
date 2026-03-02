@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  cat <<'MSG'
+❌ iOS local builds are only supported on macOS hosts.
+
+This command runs `eas build --local --platform ios`, which requires Xcode/xcodebuild and cannot run on Linux/Windows.
+
+Use one of these options instead:
+  - Build iOS in the cloud: `npx eas build --platform ios --profile production`
+  - Run Android local builds on this machine: `npm run build:prod:android:local:clean`
+  - Run iOS local builds from a Mac with Xcode + Fastlane installed
+MSG
+  exit 1
+fi
+
 missing_tools=()
 
 print_version() {
