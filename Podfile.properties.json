@@ -2,5 +2,6 @@
   "apple.privacyManifestAggregationEnabled": "false",
   "newArchEnabled": "false",
   "expo.jsEngine": "jsc",
-  "ios.deploymentTarget": "18.0"
+  "ios.deploymentTarget": "18.0",
+  "expo.sqlite.useLibSQL": "true"
 }
