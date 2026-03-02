@@ -239,7 +239,16 @@ export default function VoiceMode({
       stopSpeaking();
       cleanupAll();
     }
-  }, [visible]);
+  }, [
+    visible,
+    cleanupAll,
+    clearAllTimers,
+    fadeAnim,
+    orbOpacity,
+    orbScale,
+    startListening,
+    stopSpeaking,
+  ]);
 
   useEffect(() => {
     if (!streamingText || isMutedRef.current) return;
@@ -265,7 +274,7 @@ export default function VoiceMode({
       enqueueSpeechChunk(chunk);
     }
     setDisplayText(streamingText);
-  }, [streamingText]);
+  }, [streamingText, enqueueSpeechChunk]);
 
   useEffect(() => {
     if (
@@ -312,7 +321,13 @@ export default function VoiceMode({
       }
     }
     prevRespondingRef.current = isResponding;
-  }, [isResponding, lastAssistantText]);
+  }, [
+    isResponding,
+    lastAssistantText,
+    addTurn,
+    enqueueSpeechChunk,
+    finishSpeakingCycle,
+  ]);
 
   useEffect(() => {
     stopAllAnims();
@@ -334,6 +349,7 @@ export default function VoiceMode({
         break;
     }
     return () => stopAllAnims();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceState]);
 
   const clearAllTimers = useCallback(() => {
@@ -400,7 +416,17 @@ export default function VoiceMode({
         ]),
       ),
     );
-  }, []);
+  }, [
+    barAnims,
+    bgPulse,
+    halo2Opacity,
+    halo3Opacity,
+    haloOpacity,
+    innerGlow,
+    orbOpacity,
+    orbScale,
+    startLoop,
+  ]);
 
   const animateListening = useCallback(() => {
     Animated.timing(orbOpacity, {
@@ -526,7 +552,19 @@ export default function VoiceMode({
         ),
       );
     });
-  }, []);
+  }, [
+    barAnims,
+    bgPulse,
+    halo2Opacity,
+    halo2Scale,
+    halo3Opacity,
+    halo3Scale,
+    haloOpacity,
+    haloScale,
+    innerGlow,
+    orbOpacity,
+    startLoop,
+  ]);
 
   const animateProcessing = useCallback(() => {
     Animated.timing(orbOpacity, {
@@ -586,7 +624,17 @@ export default function VoiceMode({
         ),
       );
     });
-  }, []);
+  }, [
+    bgPulse,
+    dotAnims,
+    halo2Opacity,
+    halo3Opacity,
+    haloOpacity,
+    innerGlow,
+    orbOpacity,
+    orbScale,
+    startLoop,
+  ]);
 
   const animateThinking = useCallback(() => {
     Animated.timing(orbOpacity, {
@@ -646,7 +694,17 @@ export default function VoiceMode({
         ),
       );
     });
-  }, []);
+  }, [
+    bgPulse,
+    dotAnims,
+    halo2Opacity,
+    halo3Opacity,
+    haloOpacity,
+    innerGlow,
+    orbOpacity,
+    orbScale,
+    startLoop,
+  ]);
 
   const animateSpeaking = useCallback(() => {
     Animated.timing(orbOpacity, {
@@ -762,7 +820,18 @@ export default function VoiceMode({
         ),
       );
     });
-  }, []);
+  }, [
+    bgPulse,
+    halo2Opacity,
+    halo2Scale,
+    haloOpacity,
+    haloScale,
+    innerGlow,
+    orbOpacity,
+    orbScale,
+    speakWave,
+    startLoop,
+  ]);
 
   const cleanupRecording = useCallback(() => {
     if (meteringIntervalRef.current) {
@@ -935,7 +1004,7 @@ export default function VoiceMode({
         finishSpeakingCycle();
       }
     }
-  }, [cleanTextForSpeech, speakText]);
+  }, [cleanTextForSpeech, finishSpeakingCycle, speakText]);
 
   const enqueueSpeechChunk = useCallback(
     (chunk: string) => {
@@ -961,7 +1030,7 @@ export default function VoiceMode({
         if (isActiveRef.current) startListening();
       }, POST_SPEAK_LISTEN_DELAY);
     }
-  }, []);
+  }, [startListening]);
 
   const transcribeAudio = useCallback(
     async (formData: FormData, attempt: number = 0): Promise<string | null> => {
@@ -1078,7 +1147,7 @@ export default function VoiceMode({
       console.log("[VoiceMode] Sending to AI:", trimmed.substring(0, 80));
       onSend(trimmed);
     },
-    [onSend, addTurn, isNoiseTranscription],
+    [onSend, addTurn, isNoiseTranscription, startListening],
   );
 
   const handleTranscriptionFailure = useCallback(() => {
@@ -1094,7 +1163,7 @@ export default function VoiceMode({
         if (isActiveRef.current) startListening();
       }, 1500);
     }
-  }, []);
+  }, [startListening]);
 
   const stopAndTranscribeNative = useCallback(async () => {
     try {
@@ -1172,7 +1241,12 @@ export default function VoiceMode({
       setVoiceState("idle");
       setTimeout(() => setErrorText(""), 2000);
     }
-  }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
+  }, [
+    transcribeAudio,
+    handleTranscriptReady,
+    handleTranscriptionFailure,
+    startListening,
+  ]);
 
   const stopAndTranscribeWeb = useCallback(async () => {
     try {
@@ -1284,7 +1358,12 @@ export default function VoiceMode({
       setVoiceState("idle");
       setTimeout(() => setErrorText(""), 2000);
     }
-  }, [transcribeAudio, handleTranscriptReady, handleTranscriptionFailure]);
+  }, [
+    transcribeAudio,
+    handleTranscriptReady,
+    handleTranscriptionFailure,
+    startListening,
+  ]);
 
   const startListeningNative = useCallback(async () => {
     try {
