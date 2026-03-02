@@ -111,6 +111,51 @@ For full operational policy and update discipline, follow the runbook in `docs/C
 npm run start
 ```
 
+## Optional: Apple Intelligence / ExecuTorch Backends (Beta)
+
+This project keeps CoreML as the default runtime, but the helper in `utils/appleIntelligence.ts` now supports a backend strategy:
+
+- iOS first tries [`react-native-apple-llm`](https://github.com/deveix/react-native-apple-llm)
+- iOS/Android can use [`react-native-executorch`](https://www.npmjs.com/package/react-native-executorch) as fallback
+
+### Install
+
+```bash
+npm install react-native-apple-llm react-native-executorch
+npx pod-install
+```
+
+### Use the helper wrapper
+
+```ts
+import {
+  generateBestOnDeviceText,
+  getBestOnDeviceLLMBackend,
+} from "@/utils/appleIntelligence";
+
+const backend = await getBestOnDeviceLLMBackend();
+
+const text = await generateBestOnDeviceText("Summarize this conversation.", {
+  appleInstructions: "You are a concise mobile assistant.",
+  executorch: {
+    modelSource: "file:///path/to/model.pte",
+    tokenizerSource: "file:///path/to/tokenizer.json",
+    tokenizerConfigSource: "file:///path/to/tokenizer_config.json",
+    systemPrompt: "You are a concise mobile assistant.",
+    contextWindowLength: 12,
+  },
+});
+```
+
+If neither package is installed, the helper throws a clear error so callers can fall back to CoreML.
+
+### Sideload build notes (Xcode / AltStore)
+
+- Run `npx expo prebuild --clean` after adding native dependencies.
+- For Xcode device builds, open `ios/*.xcworkspace`, ensure signing team is set, and build with a Development profile.
+- For AltStore sideloading, export a signed `.ipa` from Xcode Organizer and install it via AltStore on-device.
+- Keep iOS deployment target and Pod setup aligned with your Expo SDK and package requirements.
+
 ### Native iOS Stabilization Before Prebuild
 
 ```bash
