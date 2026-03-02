@@ -16,12 +16,12 @@ describe("NativeCoreMLProvider", () => {
     };
   }
 
-  it("falls back to cpuOnly and retries generate after execution-plan failure", async () => {
+  it("falls back to cpuOnly and retries generate after native compute-unit failure", async () => {
     const bridge = createBridgeMock();
     const planBuildError = new Error(
-      "CoreML could not build an execution plan for this model on this device.",
+      "Failed to build model execution plan with native failure.",
     ) as Error & { code: number };
-    planBuildError.code = 104;
+    planBuildError.code = -4;
 
     bridge.generate
       .mockRejectedValueOnce(planBuildError)
@@ -49,9 +49,8 @@ describe("NativeCoreMLProvider", () => {
   it("does not retry generate when computeUnits is already cpuOnly", async () => {
     const bridge = createBridgeMock();
     const planBuildError = new Error(
-      "CoreML could not build an execution plan for this model on this device.",
-    ) as Error & { code: number };
-    planBuildError.code = 104;
+      "Failed to build the model execution plan using a model architecture file.",
+    );
 
     bridge.generate.mockRejectedValueOnce(planBuildError);
 
