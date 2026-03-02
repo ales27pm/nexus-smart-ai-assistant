@@ -22,13 +22,8 @@ export function useCoreMLChat(
   const [loadStatus, setLoadStatus] = useState<CoreMLLoadStatusEvent>({
     state: "downloading model",
   });
-  const managerRef = useRef<CoreMLManager>(manager);
   const activeManagerRef = useRef<CoreMLManager | null>(null);
   const { isRunning, runExclusive } = useAsyncOperation();
-
-  useEffect(() => {
-    managerRef.current = manager;
-  }, [manager]);
 
   useEffect(() => {
     let disposed = false;
@@ -38,7 +33,7 @@ export function useCoreMLChat(
 
       try {
         setLoadStatus({ state: "downloading model" });
-        const managerInstance = managerRef.current;
+        const managerInstance = manager;
         await managerInstance.initialize(loadOptions);
 
         if (!disposed) {
@@ -83,7 +78,7 @@ export function useCoreMLChat(
         });
       }
     };
-  }, [loadOptions]);
+  }, [loadOptions, manager]);
 
   const generate = useCallback(
     async (systemPrompt: string, userText: string, signal?: AbortSignal) => {
