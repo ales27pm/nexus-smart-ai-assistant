@@ -15,6 +15,7 @@ export function recognizeOnce(
   module: SpeechModule,
   timeoutMs: number,
 ): RecognitionResult {
+  let isActive = true;
   let transcript = "";
   let settled = false;
 
@@ -27,21 +28,22 @@ export function recognizeOnce(
   });
 
   const timeout = setTimeout(() => {
-    if (!settled) {
-      settled = true;
-      cleanUp();
+    if (!isActive) return;
+    finalize(() => {
       rejectFn(new Error("No speech detected in time"));
-    }
+    });
   }, timeoutMs);
 
   const resultSub = module.addListener(
     "result",
     (event: ExpoSpeechRecognitionResultEvent) => {
+      if (!isActive) return;
+
       transcript = event.results?.[0]?.transcript ?? transcript;
-      if (event.isFinal && transcript && !settled) {
-        settled = true;
-        cleanUp();
-        resolveFn(transcript);
+      if (event.isFinal && transcript) {
+        finalize(() => {
+          resolveFn(transcript);
+        });
       }
     },
   );
@@ -49,28 +51,28 @@ export function recognizeOnce(
   const errorSub = module.addListener(
     "error",
     (event: ExpoSpeechRecognitionErrorEvent) => {
-      if (!settled) {
-        settled = true;
-        cleanUp();
+      if (!isActive) return;
+
+      finalize(() => {
         rejectFn(
           new Error(
             event.message ?? event.error ?? "Speech recognition failed",
           ),
         );
-      }
+      });
     },
   );
 
   const endSub = module.addListener("end", () => {
-    if (!settled) {
-      settled = true;
-      cleanUp();
+    if (!isActive) return;
+
+    finalize(() => {
       if (transcript) {
         resolveFn(transcript);
       } else {
         rejectFn(new Error("No speech detected"));
       }
-    }
+    });
   });
 
   function cleanUp() {
@@ -85,12 +87,19 @@ export function recognizeOnce(
     }
   }
 
+  function finalize(onFinalize: () => void) {
+    if (!isActive || settled) return;
+
+    isActive = false;
+    settled = true;
+    cleanUp();
+    onFinalize();
+  }
+
   function cancel() {
-    if (!settled) {
-      settled = true;
-      cleanUp();
+    finalize(() => {
       rejectFn(new Error("Speech recognition cancelled"));
-    }
+    });
   }
 
   return { promise, cancel };
