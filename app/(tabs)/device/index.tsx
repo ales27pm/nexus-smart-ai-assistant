@@ -24,8 +24,6 @@ import {
   DEFAULT_COREML_BOS_TOKEN_ID,
   DEFAULT_COREML_EOS_TOKEN_ID,
   DEFAULT_COREML_LOAD_OPTIONS,
-  DEFAULT_COREML_TOKENIZER_MERGES_PATH,
-  DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
   buildCoreMLChatPrompt,
   CoreMLBridge,
   CoreMLLoadUxState,
@@ -166,19 +164,10 @@ export default function DeviceNativeHubScreen() {
   const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
   const [coreMLLoadState, setCoreMLLoadState] =
     useState<CoreMLLoadUxState>("ready");
-  const [coreMLModelName, setCoreMLModelName] = useState(
-    DEFAULT_COREML_LOAD_OPTIONS.modelName ?? "MyLLM",
-  );
   const [coreMLPrompt, setCoreMLPrompt] = useState(
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
-  const [coreMLVocabPath, setCoreMLVocabPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER_VOCAB_PATH,
-  );
-  const [coreMLMergesPath, setCoreMLMergesPath] = useState<string>(
-    DEFAULT_COREML_TOKENIZER_MERGES_PATH,
-  );
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
@@ -220,21 +209,13 @@ export default function DeviceNativeHubScreen() {
             "CoreML module not available (iOS dev build + prebuild required)",
           );
         }
-        const selectedModelName = coreMLModelName.trim();
-        const baseOptions = {
-          ...DEFAULT_COREML_LOAD_OPTIONS,
-          modelName:
-            selectedModelName ||
-            DEFAULT_COREML_LOAD_OPTIONS.modelName ||
-            "MyLLM",
-        };
 
         setCoreMLLoadState("downloading model");
         const prepared = await ensureCoreMLModelAssets();
 
         setCoreMLLoadState("verifying model");
         const loadOptions = withPreferredCoreMLModelSource(
-          baseOptions,
+          DEFAULT_COREML_LOAD_OPTIONS,
           prepared?.modelPath,
         );
         const info = await coreML.loadModel(loadOptions);
@@ -244,7 +225,7 @@ export default function DeviceNativeHubScreen() {
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, coreMLModelName, runSafely]);
+  }, [coreML, runSafely]);
 
   const runCoreMLGenerate = useCallback(async () => {
     await runSafely(
@@ -258,19 +239,11 @@ export default function DeviceNativeHubScreen() {
 
         let loaded = await coreML.isLoaded();
         if (!loaded) {
-          const selectedModelName = coreMLModelName.trim();
-          const baseOptions = {
-            ...DEFAULT_COREML_LOAD_OPTIONS,
-            modelName:
-              selectedModelName ||
-              DEFAULT_COREML_LOAD_OPTIONS.modelName ||
-              "MyLLM",
-          };
           setCoreMLLoadState("downloading model");
           const prepared = await ensureCoreMLModelAssets();
           setCoreMLLoadState("verifying model");
           const loadOptions = withPreferredCoreMLModelSource(
-            baseOptions,
+            DEFAULT_COREML_LOAD_OPTIONS,
             prepared?.modelPath,
           );
           await coreML.loadModel(loadOptions);
@@ -280,18 +253,14 @@ export default function DeviceNativeHubScreen() {
 
         if (!loaded) {
           throw new Error(
-            "CoreML model failed to load. Verify the model name and bundled .mlmodelc asset.",
+            "CoreML model failed to load. Verify runtime model assets and bundled tokenizer files.",
           );
         }
 
-        const vocabPath =
-          coreMLVocabPath.trim() || DEFAULT_COREML_TOKENIZER_VOCAB_PATH;
-        const mergesPath =
-          coreMLMergesPath.trim() || DEFAULT_COREML_TOKENIZER_MERGES_PATH;
         const tokenizer = {
           kind: "byte_level_bpe" as const,
-          vocabJsonAssetPath: vocabPath,
-          mergesTxtAssetPath: mergesPath,
+          vocabJsonAssetPath: "module:tokenizers/byte_level_bpe/vocab.json",
+          mergesTxtAssetPath: "module:tokenizers/byte_level_bpe/merges.txt",
           bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
           eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
         };
@@ -312,14 +281,7 @@ export default function DeviceNativeHubScreen() {
       },
       { isCoreMLAction: true },
     );
-  }, [
-    coreML,
-    coreMLModelName,
-    coreMLPrompt,
-    coreMLVocabPath,
-    coreMLMergesPath,
-    runSafely,
-  ]);
+  }, [coreML, coreMLPrompt, runSafely]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
@@ -509,34 +471,13 @@ export default function DeviceNativeHubScreen() {
         )}
         <Text style={styles.result}>{coreMLStatus}</Text>
         <Text style={styles.result}>CoreML load state: {coreMLLoadState}</Text>
-        <TextInput
-          value={coreMLModelName}
-          onChangeText={setCoreMLModelName}
-          placeholder='Model name in iOS bundle (e.g. "MyLLM" -> MyLLM.mlmodelc)'
-          placeholderTextColor={Colors.dark.textTertiary}
-          style={styles.input}
-        />
         <TouchableOpacity
           style={styles.button}
           onPress={loadCoreMLModel}
           disabled={!isCoreMLAvailable}
         >
-          <Text style={styles.buttonText}>Load CoreML model</Text>
+          <Text style={styles.buttonText}>Download + load CoreML model</Text>
         </TouchableOpacity>
-        <TextInput
-          value={coreMLVocabPath}
-          onChangeText={setCoreMLVocabPath}
-          placeholder="Tokenizer vocab path (byte_level_bpe: .../vocab.json, gpt2_bpe: .../gpt2-vocab.json)"
-          placeholderTextColor={Colors.dark.textTertiary}
-          style={styles.input}
-        />
-        <TextInput
-          value={coreMLMergesPath}
-          onChangeText={setCoreMLMergesPath}
-          placeholder="Tokenizer merges path (byte_level_bpe: .../merges.txt, gpt2_bpe: .../gpt2-merges.txt)"
-          placeholderTextColor={Colors.dark.textTertiary}
-          style={styles.input}
-        />
         <TextInput
           value={coreMLPrompt}
           onChangeText={setCoreMLPrompt}
@@ -556,9 +497,9 @@ export default function DeviceNativeHubScreen() {
           Output: {coreMLOutput ? coreMLOutput : "—"}
         </Text>
         <Text style={styles.result}>
-          Notes: CoreML model must be bundled as a compiled .mlmodelc. Tokenizer
-          kind may be byte_level_bpe or gpt2_bpe, and vocab/merges paths must
-          match that tokenizer asset set.
+          Notes: This flow auto-uses the active model and tokenizer from runtime
+          config. If loading fails, refresh model assets and rebuild iOS native
+          resources.
         </Text>
       </View>
 
