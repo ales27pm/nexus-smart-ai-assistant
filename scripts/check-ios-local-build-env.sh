@@ -7,7 +7,7 @@ print_version() {
   local label="$1"
   shift
   local version_output
-  version_output="$($@ 2>&1 | head -n 1)"
+  version_output="$("$@" 2>&1 | head -n 1)"
   echo "✅ ${label}: ${version_output}"
 }
 
@@ -30,18 +30,35 @@ else
 fi
 
 if command -v fastlane >/dev/null 2>&1; then
-  echo "✅ fastlane found: $(command -v fastlane)"
+  print_version "fastlane" fastlane --version
 else
   missing_tools+=("fastlane")
 fi
 
 if [ ${#missing_tools[@]} -gt 0 ]; then
   echo "❌ Missing required toolchain components: ${missing_tools[*]}"
-  cat <<'MSG'
-Install missing tools and rerun the check:
-  - fastlane: gem install fastlane --user-install (or brew install fastlane)
-  - Xcode CLT: xcode-select --install
-MSG
+  echo "Install missing tools and rerun the check:"
+
+  for tool in "${missing_tools[@]}"; do
+    case "$tool" in
+      fastlane)
+        echo "  - fastlane: gem install fastlane --user-install (or brew install fastlane)"
+        ;;
+      node)
+        echo "  - node: install from https://nodejs.org/en/download/ (or brew install node)"
+        ;;
+      ruby)
+        echo "  - ruby: install via your package manager or a version manager (rbenv/rvm/asdf)"
+        ;;
+      xcodebuild)
+        echo "  - xcodebuild (Xcode Command Line Tools): xcode-select --install"
+        ;;
+      *)
+        echo "  - ${tool}: install and ensure it is available on PATH"
+        ;;
+    esac
+  done
+
   exit 1
 fi
 
