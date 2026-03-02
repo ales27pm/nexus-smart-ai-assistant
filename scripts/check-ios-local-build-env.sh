@@ -21,17 +21,18 @@ print_version() {
   local label="$1"
   shift
 
-  local command_output
-  local command_status
+  local command_output=""
+  local command_status=0
 
-  if command_output="$("$@" 2>&1)"; then
-    command_status=0
-  else
-    command_status=$?
-  fi
+  # Guard command execution so set -e does not terminate the script when
+  # version probing fails for an installed tool.
+  set +e
+  command_output="$("$@" 2>&1)"
+  command_status=$?
+  set -e
 
   local version_output
-  version_output="$(printf '%s\n' "${command_output}" | head -n 1)"
+  IFS=$'\n' read -r version_output _ <<<"${command_output}"
 
   if [ "${command_status}" -eq 0 ]; then
     echo "✅ ${label}: ${version_output}"
