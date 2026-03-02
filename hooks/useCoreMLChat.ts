@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import { CoreMLError, CoreMLLoadModelOptions } from "@/utils/coreml";
+import {
+  CoreMLError,
+  CoreMLLoadModelOptions,
+  CoreMLLoadUxState,
+} from "@/utils/coreml";
 import { CoreMLManager, coreMLManager } from "@/utils/coreMLManager";
 import { reportError } from "@/utils/globalErrorHandler";
 import { useAsyncOperation } from "@/hooks/useAsyncOperation";
 
 type CoreMLLoadStatusEvent = {
-  state: "downloading model" | "ready" | "failed—retry";
+  state: CoreMLLoadUxState;
   detail?: string;
 };
 
@@ -62,7 +66,7 @@ export function useCoreMLChat(
       }
     }
 
-    boot();
+    void boot();
 
     return () => {
       disposed = true;

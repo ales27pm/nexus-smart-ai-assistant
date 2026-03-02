@@ -4,6 +4,7 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -21,18 +22,16 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
-  DEFAULT_COREML_BOS_TOKEN_ID,
-  DEFAULT_COREML_EOS_TOKEN_ID,
-  DEFAULT_COREML_LOAD_OPTIONS,
-  buildCoreMLChatPrompt,
-  CoreMLBridge,
+  CoreMLGenerateOptions,
+  CoreMLLoadModelOptions,
   CoreMLLoadUxState,
+  DEFAULT_COREML_GENERATE_OPTIONS,
+  DEFAULT_COREML_LOAD_OPTIONS,
   toActionableCoreMLError,
-  withPreferredCoreMLModelSource,
 } from "@/utils/coreml";
 import { iosToolsService } from "@/utils/iosToolsService";
 import { reportError } from "@/utils/globalErrorHandler";
-import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
+import { coreMLManager } from "@/utils/coreMLManager";
 
 type SafeActionOptions = {
   isCoreMLAction?: boolean;
@@ -160,8 +159,15 @@ export default function DeviceNativeHubScreen() {
   const [status, setStatus] = useState("Idle");
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [coreML, setCoreML] = useState<CoreMLBridge | null>(null);
-  const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
+  const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not loaded");
+  const [coreMLLoadOptions, setCoreMLLoadOptions] =
+    useState<CoreMLLoadModelOptions>(() => ({
+      ...DEFAULT_COREML_LOAD_OPTIONS,
+    }));
+  const [coreMLGenerateOptions, setCoreMLGenerateOptions] =
+    useState<CoreMLGenerateOptions>(() => ({
+      ...DEFAULT_COREML_GENERATE_OPTIONS,
+    }));
   const [coreMLLoadState, setCoreMLLoadState] =
     useState<CoreMLLoadUxState>("ready");
   const [coreMLPrompt, setCoreMLPrompt] = useState(
@@ -170,7 +176,7 @@ export default function DeviceNativeHubScreen() {
   const [coreMLOutput, setCoreMLOutput] = useState("");
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
-  const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
+  const isCoreMLAvailable = Platform.OS === "ios";
 
   useEffect(() => {
     void runSafely("Load note", async () => {
@@ -184,104 +190,55 @@ export default function DeviceNativeHubScreen() {
     }
 
     if (Platform.OS === "ios") {
-      import("@/modules/expo-coreml-llm")
-        .then((mod: any) => {
-          if (mod?.CoreMLLLM) {
-            setCoreML(mod.CoreMLLLM as CoreMLBridge);
-            setCoreMLStatus("CoreML LLM: linked (not loaded)");
-          }
-        })
-        .catch((error) => {
-          console.warn("CoreML module unavailable", error);
-          setCoreMLStatus(
-            "CoreML LLM: not linked (run expo prebuild + dev build)",
-          );
-        });
+      void runSafely(
+        "CoreML auto-initialize",
+        async () => {
+          setCoreMLLoadState("downloading model");
+          await coreMLManager.initialize(coreMLLoadOptions);
+          setCoreMLLoadState("ready");
+          setCoreMLStatus("CoreML LLM: ready");
+        },
+        { isCoreMLAction: true },
+      );
     }
-  }, [runSafely]);
+  }, [coreMLLoadOptions, runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
       "CoreML load",
       async () => {
-        if (!coreML) {
-          throw new Error(
-            "CoreML module not available (iOS dev build + prebuild required)",
-          );
-        }
-
         setCoreMLLoadState("downloading model");
-        const prepared = await ensureCoreMLModelAssets();
-
-        setCoreMLLoadState("verifying model");
-        const loadOptions = withPreferredCoreMLModelSource(
-          DEFAULT_COREML_LOAD_OPTIONS,
-          prepared?.modelPath,
-        );
-        const info = await coreML.loadModel(loadOptions);
+        await coreMLManager.initialize(coreMLLoadOptions);
         setCoreMLLoadState("ready");
-        setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
+        setCoreMLStatus("CoreML LLM: ready");
         setStatus("CoreML model loaded");
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, runSafely]);
+  }, [coreMLLoadOptions, runSafely]);
 
   const runCoreMLGenerate = useCallback(async () => {
     await runSafely(
       "CoreML generate",
       async () => {
-        if (!coreML) {
-          throw new Error(
-            "CoreML module not available (iOS dev build + prebuild required)",
-          );
-        }
-
-        let loaded = await coreML.isLoaded();
-        if (!loaded) {
+        if (!(await coreMLManager.isReady())) {
           setCoreMLLoadState("downloading model");
-          const prepared = await ensureCoreMLModelAssets();
-          setCoreMLLoadState("verifying model");
-          const loadOptions = withPreferredCoreMLModelSource(
-            DEFAULT_COREML_LOAD_OPTIONS,
-            prepared?.modelPath,
-          );
-          await coreML.loadModel(loadOptions);
+          await coreMLManager.initialize(coreMLLoadOptions);
           setCoreMLLoadState("ready");
-          loaded = await coreML.isLoaded();
+          setCoreMLStatus("CoreML LLM: ready");
         }
 
-        if (!loaded) {
-          throw new Error(
-            "CoreML model failed to load. Verify runtime model assets and bundled tokenizer files.",
-          );
-        }
-
-        const tokenizer = {
-          kind: "byte_level_bpe" as const,
-          vocabJsonAssetPath: "module:tokenizers/byte_level_bpe/vocab.json",
-          mergesTxtAssetPath: "module:tokenizers/byte_level_bpe/merges.txt",
-          bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
-          eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-        };
-
-        const text = await coreML.generate(
-          buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
-          {
-            maxNewTokens: 160,
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
-            repetitionPenalty: 1.05,
-            tokenizer,
-          },
+        const text = await coreMLManager.generate(
+          "You are a concise assistant.",
+          coreMLPrompt,
+          coreMLGenerateOptions,
         );
         setCoreMLOutput(text);
         setStatus("CoreML generation complete");
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, coreMLPrompt, runSafely]);
+  }, [coreMLGenerateOptions, coreMLLoadOptions, coreMLPrompt, runSafely]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
@@ -478,6 +435,39 @@ export default function DeviceNativeHubScreen() {
         >
           <Text style={styles.buttonText}>Download + load CoreML model</Text>
         </TouchableOpacity>
+        <View style={styles.row}>
+          <Text style={styles.result}>Compute units</Text>
+          <View style={styles.switchRow}>
+            <Text style={styles.result}>CPU-only</Text>
+            <Switch
+              value={coreMLLoadOptions.computeUnits === "cpuOnly"}
+              onValueChange={(enabled) =>
+                setCoreMLLoadOptions((current) => ({
+                  ...current,
+                  computeUnits: enabled
+                    ? "cpuOnly"
+                    : DEFAULT_COREML_LOAD_OPTIONS.computeUnits,
+                }))
+              }
+            />
+          </View>
+        </View>
+        <TextInput
+          value={String(coreMLGenerateOptions.maxNewTokens ?? 160)}
+          onChangeText={(value) => {
+            const parsed = Number.parseInt(value, 10);
+            setCoreMLGenerateOptions((current) => ({
+              ...current,
+              maxNewTokens: Number.isFinite(parsed)
+                ? parsed
+                : current.maxNewTokens,
+            }));
+          }}
+          keyboardType="numeric"
+          placeholder="Max new tokens"
+          placeholderTextColor={Colors.dark.textTertiary}
+          style={styles.input}
+        />
         <TextInput
           value={coreMLPrompt}
           onChangeText={setCoreMLPrompt}
@@ -558,6 +548,17 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
   result: { color: Colors.dark.textSecondary, fontSize: 12, lineHeight: 17 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   mapWrap: {
     height: 170,
     borderRadius: 10,
