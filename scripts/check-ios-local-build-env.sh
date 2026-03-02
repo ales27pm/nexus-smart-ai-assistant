@@ -20,31 +20,48 @@ missing_tools=()
 print_version() {
   local label="$1"
   shift
+
+  local command_output
+  local command_status
+
+  if command_output="$("$@" 2>&1)"; then
+    command_status=0
+  else
+    command_status=$?
+  fi
+
   local version_output
-  version_output="$("$@" 2>&1 | head -n 1)"
-  echo "✅ ${label}: ${version_output}"
+  version_output="$(printf '%s\n' "${command_output}" | head -n 1)"
+
+  if [ "${command_status}" -eq 0 ]; then
+    echo "✅ ${label}: ${version_output}"
+    return 0
+  fi
+
+  echo "❌ ${label}: failed to get version (${version_output})" >&2
+  return 1
 }
 
-if command -v xcodebuild >/dev/null 2>&1; then
-  print_version "xcodebuild" xcodebuild -version
+if command -v xcodebuild >/dev/null 2>&1 && print_version "xcodebuild" xcodebuild -version; then
+  :
 else
   missing_tools+=("xcodebuild")
 fi
 
-if command -v node >/dev/null 2>&1; then
-  print_version "node" node --version
+if command -v node >/dev/null 2>&1 && print_version "node" node --version; then
+  :
 else
   missing_tools+=("node")
 fi
 
-if command -v ruby >/dev/null 2>&1; then
-  print_version "ruby" ruby --version
+if command -v ruby >/dev/null 2>&1 && print_version "ruby" ruby --version; then
+  :
 else
   missing_tools+=("ruby")
 fi
 
-if command -v fastlane >/dev/null 2>&1; then
-  print_version "fastlane" fastlane --version
+if command -v fastlane >/dev/null 2>&1 && print_version "fastlane" fastlane --version; then
+  :
 else
   missing_tools+=("fastlane")
 fi
