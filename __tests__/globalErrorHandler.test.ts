@@ -2,22 +2,24 @@ import {
   installGlobalErrorHandlers,
   reportBoundaryError,
   reportError,
+  resetHandlers,
 } from "@/utils/globalErrorHandler";
 
 describe("globalErrorHandler", () => {
-  const originalError = console.error;
-  const originalWarn = console.warn;
+  let errorSpy: jest.SpyInstance;
+  let warnSpy: jest.SpyInstance;
+  let scope: any;
 
   beforeEach(() => {
-    console.error = jest.fn();
-    console.warn = jest.fn();
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    scope = undefined;
   });
 
   afterEach(() => {
-    console.error = originalError;
-    console.warn = originalWarn;
-    delete (globalThis as any).ErrorUtils;
-    jest.resetModules();
+    resetHandlers();
+    jest.restoreAllMocks();
+    scope = undefined;
   });
 
   it("routes warning reports to console.warn", () => {
@@ -27,7 +29,7 @@ describe("globalErrorHandler", () => {
       source: "global-js",
     });
 
-    expect(console.warn).toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
   });
 
   it("reports boundary errors as fatal", () => {
@@ -35,7 +37,7 @@ describe("globalErrorHandler", () => {
       componentStack: "stack",
     } as any);
 
-    expect(console.error).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
   });
 
   it("installs and invokes global JS handler", () => {
@@ -44,38 +46,61 @@ describe("globalErrorHandler", () => {
       nextHandler(new Error("global failure"), true);
     });
 
-    (globalThis as any).ErrorUtils = {
-      getGlobalHandler: () => previousHandler,
-      setGlobalHandler,
+    scope = {
+      ErrorUtils: {
+        getGlobalHandler: () => previousHandler,
+        setGlobalHandler,
+      },
     };
 
-    installGlobalErrorHandlers();
+    installGlobalErrorHandlers(scope);
 
     expect(setGlobalHandler).toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
     expect(previousHandler).toHaveBeenCalled();
   });
 
   it("installs global handlers only once", () => {
+    const previousHandler = jest.fn();
     const setGlobalHandler = jest.fn();
 
-    jest.isolateModules(() => {
-      const previousHandler = jest.fn();
-      (globalThis as any).ErrorUtils = {
+    scope = {
+      ErrorUtils: {
         getGlobalHandler: () => previousHandler,
         setGlobalHandler,
-      };
+      },
+    };
 
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const {
-        installGlobalErrorHandlers: installAgain,
-      } = require("@/utils/globalErrorHandler");
-
-      installAgain();
-      installAgain();
-    });
+    installGlobalErrorHandlers(scope);
+    installGlobalErrorHandlers(scope);
 
     expect(setGlobalHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers and invokes unhandledrejection handler", () => {
+    const listeners: Record<string, (event: any) => void> = {};
+
+    scope = {
+      addEventListener: jest.fn(
+        (eventName: string, callback: (event: any) => void) => {
+          listeners[eventName] = callback;
+        },
+      ),
+    };
+
+    installGlobalErrorHandlers(scope);
+
+    expect(scope.addEventListener).toHaveBeenCalledWith(
+      "unhandledrejection",
+      expect.any(Function),
+    );
+
+    listeners.unhandledrejection({ reason: "rejected reason" });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("source=promise-rejection"),
+      expect.any(Error),
+    );
   });
 
   it("does not throw when metadata is unserializable", () => {
@@ -91,7 +116,7 @@ describe("globalErrorHandler", () => {
       });
     }).not.toThrow();
 
-    expect(console.error).toHaveBeenCalledWith(
+    expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining("metadata=[unserializable]"),
       expect.any(Error),
     );
