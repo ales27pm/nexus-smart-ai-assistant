@@ -46,6 +46,32 @@ describe("NativeCoreMLProvider", () => {
     );
   });
 
+  it("normalizes fallback generate failures to CoreMLError", async () => {
+    const bridge = createBridgeMock();
+    const planBuildError = new Error(
+      "Failed to build model execution plan with native failure.",
+    ) as Error & { code: number };
+    planBuildError.code = -4;
+
+    const fallbackFailure = new Error("Fallback generation failed");
+
+    bridge.generate
+      .mockRejectedValueOnce(planBuildError)
+      .mockRejectedValueOnce(fallbackFailure);
+
+    const provider = new NativeCoreMLProvider(bridge);
+    await provider.load({
+      ...DEFAULT_COREML_LOAD_OPTIONS,
+      computeUnits: "cpuAndNeuralEngine",
+    });
+
+    await expect(provider.generate("hello")).rejects.toMatchObject({
+      name: "CoreMLError",
+      message: "Fallback generation failed",
+    });
+    expect(bridge.generate).toHaveBeenCalledTimes(2);
+  });
+
   it("does not retry generate when computeUnits is already cpuOnly", async () => {
     const bridge = createBridgeMock();
     const planBuildError = new Error(
