@@ -53,6 +53,7 @@ import {
 } from "@/utils/cognition";
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { MemoryEntry, MemoryCategory } from "@/types";
+import { fetchWithTimeout } from "@/utils/fetchWithTimeout";
 
 function TypingIndicator() {
   const dots = useRef([
@@ -148,16 +149,11 @@ export default function ChatScreen() {
     async (query: string): Promise<string> => {
       console.log("[NEXUS] Web search:", query);
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(
-          () => controller.abort(),
+        const response = await fetchWithTimeout(
+          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
+          {},
           getWebSearchTimeoutMs(),
         );
-        const response = await fetch(
-          `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`,
-          { signal: controller.signal },
-        );
-        clearTimeout(timeout);
         const data = await response.json();
         const results: string[] = [];
         if (data.Abstract) results.push(`Summary: ${data.Abstract}`);
@@ -420,16 +416,16 @@ ${branchAnalyses[idx]}`,
         async execute(input: { url: string }) {
           console.log("[NEXUS] Scraping:", input.url);
           try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 10000);
-            const response = await fetch(input.url, {
-              headers: {
-                Accept: "text/html,text/plain,application/json",
-                "User-Agent": "Mozilla/5.0 (compatible; NexusBot/1.0)",
+            const response = await fetchWithTimeout(
+              input.url,
+              {
+                headers: {
+                  Accept: "text/html,text/plain,application/json",
+                  "User-Agent": "Mozilla/5.0 (compatible; NexusBot/1.0)",
+                },
               },
-              signal: controller.signal,
-            });
-            clearTimeout(timeout);
+              10000,
+            );
             const text = await response.text();
             const contentType = response.headers.get("content-type") ?? "";
             if (contentType.includes("json")) {
@@ -463,9 +459,7 @@ ${branchAnalyses[idx]}`,
                 `[NEXUS] Generating image (attempt ${attempt + 1}):`,
                 input.prompt.substring(0, 60),
               );
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 60000);
-              const response = await fetch(
+              const response = await fetchWithTimeout(
                 "https://toolkit.rork.com/images/generate/",
                 {
                   method: "POST",
@@ -474,10 +468,9 @@ ${branchAnalyses[idx]}`,
                     prompt: input.prompt,
                     size: input.size ?? "1024x1024",
                   }),
-                  signal: controller.signal,
                 },
+                60000,
               );
-              clearTimeout(timeout);
               console.log(
                 "[NEXUS] Image API status:",
                 response.status,
