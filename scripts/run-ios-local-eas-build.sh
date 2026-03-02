@@ -58,6 +58,18 @@ ensure_compatible_cocoapods() {
   fi
 }
 
+print_phase() {
+  echo "[i] ━━━ $1 ━━━"
+}
+
+print_failure_hints() {
+  echo "[i] Remediation: run ./scripts/check-ios-local-build-env.sh directly for detailed output." >&2
+  echo "[i] Verify required tools are available:" >&2
+  echo "    xcodebuild -version" >&2
+  echo "    fastlane --version" >&2
+  echo "    node --version" >&2
+}
+
 if [[ "$CLEAN_CACHE" == "1" ]]; then
   rm -rf .npm-cache
 fi
@@ -67,52 +79,36 @@ if [[ "$REPAIR_CREDENTIALS" == "1" ]]; then
   node ./scripts/repair-ios-local-credentials.mjs --repair
 fi
 
-echo "[i] ━━━ Preflight: iOS local build environment checks ━━━"
+print_phase "Preflight: iOS local build environment checks"
 if ! ./scripts/check-ios-local-build-env.sh; then
   echo "❌ Preflight failed: iOS local build environment checks did not pass." >&2
-  echo "[i] Remediation: run ./scripts/check-ios-local-build-env.sh directly for detailed output." >&2
-  echo "[i] Verify required tools are available:" >&2
-  echo "    xcodebuild -version" >&2
-  echo "    fastlane --version" >&2
-  echo "    node --version" >&2
+  print_failure_hints
   exit 1
 fi
 
 ensure_compatible_cocoapods
 
-echo "[i] ━━━ Preflight: CoreML pipeline validation ━━━"
+print_phase "Preflight: CoreML pipeline validation"
 echo "[i] Validating CoreML pipeline assets before local EAS iOS build."
 if ! npm run coreml:validate -- --strict; then
   echo "❌ Preflight failed: CoreML pipeline validation did not pass." >&2
-  echo "[i] Remediation: run ./scripts/check-ios-local-build-env.sh directly before retrying." >&2
-  echo "[i] Verify required tools are available:" >&2
-  echo "    xcodebuild -version" >&2
-  echo "    fastlane --version" >&2
-  echo "    node --version" >&2
+  print_failure_hints
   exit 1
 fi
 
-echo "[i] ━━━ Build: EAS local iOS invocation ━━━"
+print_phase "Build: EAS local iOS invocation"
 if [[ "$SKIP_AUTO_FINGERPRINT" == "1" ]]; then
   echo "[i] Skipping EAS auto fingerprint to avoid known 'balanced is not a function' failures during local builds."
   echo "[i] Pass --auto-fingerprint to re-enable EAS automatic fingerprint computation."
   if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 npx eas build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed (auto fingerprint disabled)." >&2
-    echo "[i] Remediation: run ./scripts/check-ios-local-build-env.sh directly, then retry this script." >&2
-    echo "[i] Verify required tools are available:" >&2
-    echo "    xcodebuild -version" >&2
-    echo "    fastlane --version" >&2
-    echo "    node --version" >&2
+    print_failure_hints
     exit 1
   fi
 else
   if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed." >&2
-    echo "[i] Remediation: run ./scripts/check-ios-local-build-env.sh directly, then retry this script." >&2
-    echo "[i] Verify required tools are available:" >&2
-    echo "    xcodebuild -version" >&2
-    echo "    fastlane --version" >&2
-    echo "    node --version" >&2
+    print_failure_hints
     exit 1
   fi
 fi
