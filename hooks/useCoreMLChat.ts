@@ -1,30 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
-import { CoreMLError } from "@/utils/coreml";
-import {
-  CoreMLLLMService,
-  CoreMLLoadStatusEvent,
-  ILLMService,
-} from "@/utils/llmService";
+import { CoreMLError, CoreMLLoadModelOptions } from "@/utils/coreml";
+import { CoreMLManager, coreMLManager } from "@/utils/coreMLManager";
 import { reportError } from "@/utils/globalErrorHandler";
 import { useAsyncOperation } from "@/hooks/useAsyncOperation";
 
-export function useCoreMLChat(service?: ILLMService) {
+type CoreMLLoadStatusEvent = {
+  state: "downloading model" | "ready" | "failed—retry";
+  detail?: string;
+};
+
+export function useCoreMLChat(
+  manager: CoreMLManager = coreMLManager,
+  loadOptions?: CoreMLLoadModelOptions,
+) {
   const [isAvailable, setIsAvailable] = useState(false);
   const [loadStatus, setLoadStatus] = useState<CoreMLLoadStatusEvent>({
     state: "downloading model",
   });
-  const serviceInstanceRef = useRef<ILLMService>(
-    service ?? new CoreMLLLMService(),
-  );
-  const serviceRef = useRef<ILLMService | null>(null);
+  const managerRef = useRef<CoreMLManager>(manager);
+  const activeManagerRef = useRef<CoreMLManager | null>(null);
   const { isRunning, runExclusive } = useAsyncOperation();
 
   useEffect(() => {
-    if (service) {
-      serviceInstanceRef.current = service;
-    }
-  }, [service]);
+    managerRef.current = manager;
+  }, [manager]);
 
   useEffect(() => {
     let disposed = false;
@@ -33,18 +33,16 @@ export function useCoreMLChat(service?: ILLMService) {
       if (Platform.OS !== "ios") return;
 
       try {
-        const serviceInstance = serviceInstanceRef.current;
-        await serviceInstance.initialize(undefined, (event) => {
-          if (!disposed) {
-            setLoadStatus(event);
-          }
-        });
+        setLoadStatus({ state: "downloading model" });
+        const managerInstance = managerRef.current;
+        await managerInstance.initialize(loadOptions);
 
         if (!disposed) {
-          serviceRef.current = serviceInstance;
+          activeManagerRef.current = managerInstance;
           setIsAvailable(true);
+          setLoadStatus({ state: "ready" });
         } else {
-          await serviceInstance.dispose();
+          await managerInstance.dispose();
         }
       } catch (error) {
         reportError({
@@ -54,7 +52,7 @@ export function useCoreMLChat(service?: ILLMService) {
           metadata: { scope: "useCoreMLChat.boot" },
         });
         if (!disposed) {
-          serviceRef.current = null;
+          activeManagerRef.current = null;
           setIsAvailable(false);
           setLoadStatus({
             state: "failed—retry",
@@ -68,10 +66,10 @@ export function useCoreMLChat(service?: ILLMService) {
 
     return () => {
       disposed = true;
-      const latestService = serviceRef.current;
-      serviceRef.current = null;
-      if (latestService) {
-        latestService.dispose().catch((error) => {
+      const latestManager = activeManagerRef.current;
+      activeManagerRef.current = null;
+      if (latestManager) {
+        latestManager.dispose().catch((error) => {
           reportError({
             error: error instanceof Error ? error : new Error(String(error)),
             severity: "warning",
@@ -81,26 +79,20 @@ export function useCoreMLChat(service?: ILLMService) {
         });
       }
     };
-  }, []);
+  }, [loadOptions]);
 
   const generate = useCallback(
     async (systemPrompt: string, userText: string, signal?: AbortSignal) => {
-      const activeService = serviceRef.current;
+      const activeManager = activeManagerRef.current;
 
-      if (!activeService) {
+      if (!activeManager) {
         throw new CoreMLError(
           "CoreML module not linked. Run: npm i, npx expo prebuild --clean, pod install, then rebuild iOS dev client.",
         );
       }
 
       return runExclusive(
-        () =>
-          activeService.generateChatResponse(
-            systemPrompt,
-            userText,
-            undefined,
-            signal,
-          ),
+        () => activeManager.generate(systemPrompt, userText, undefined, signal),
         () =>
           new CoreMLError(
             "CoreML generation already in progress. Please wait for the current request to finish.",
@@ -114,7 +106,7 @@ export function useCoreMLChat(service?: ILLMService) {
     isAvailable,
     isGenerating: isRunning,
     generate,
-    service: serviceRef.current,
+    service: activeManagerRef.current,
     loadStatus,
   };
 }
