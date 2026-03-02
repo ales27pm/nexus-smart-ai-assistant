@@ -54,6 +54,7 @@ import {
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { MemoryEntry, MemoryCategory } from "@/types";
 import { fetchWithTimeout } from "@/utils/fetchWithTimeout";
+import { validateWebScrapeUrl } from "@/utils/webScrape";
 
 function TypingIndicator() {
   const dots = useRef([
@@ -414,10 +415,16 @@ ${branchAnalyses[idx]}`,
           url: z.string().describe("URL to fetch"),
         }),
         async execute(input: { url: string }) {
-          console.log("[NEXUS] Scraping:", input.url);
+          const { safeUrl, errorMessage } = validateWebScrapeUrl(input.url);
+
+          if (!safeUrl) {
+            return errorMessage;
+          }
+
+          console.log("[NEXUS] Scraping:", safeUrl);
           try {
             const response = await fetchWithTimeout(
-              input.url,
+              safeUrl,
               {
                 headers: {
                   Accept: "text/html,text/plain,application/json",
@@ -429,7 +436,7 @@ ${branchAnalyses[idx]}`,
             const text = await response.text();
             const contentType = response.headers.get("content-type") ?? "";
             if (contentType.includes("json")) {
-              return `JSON from ${input.url}:\n\`\`\`json\n${JSON.stringify(JSON.parse(text), null, 2).substring(0, 3000)}\n\`\`\``;
+              return `JSON from ${safeUrl}:\n\`\`\`json\n${JSON.stringify(JSON.parse(text), null, 2).substring(0, 3000)}\n\`\`\``;
             }
             const cleaned = text
               .replace(/<script[\s\S]*?<\/script>/gi, "")
@@ -437,9 +444,9 @@ ${branchAnalyses[idx]}`,
               .replace(/<[^>]*>/g, " ")
               .replace(/\s+/g, " ")
               .trim();
-            return `Content from ${input.url} (${cleaned.length} chars):\n\n${cleaned.substring(0, 3000)}`;
+            return `Content from ${safeUrl} (${cleaned.length} chars):\n\n${cleaned.substring(0, 3000)}`;
           } catch (e: unknown) {
-            return `Failed to fetch ${input.url}: ${e instanceof Error ? e.message : "Unknown error"}`;
+            return `Failed to fetch ${safeUrl}: ${e instanceof Error ? e.message : "Unknown error"}`;
           }
         },
       }),
