@@ -145,7 +145,11 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
       };
 
       await this.load(fallbackOptions, { forceReload: true });
-      return await this.bridge.generate(prompt, options);
+      try {
+        return await this.bridge.generate(prompt, options);
+      } catch (fallbackError) {
+        throw normalizeCoreMLError(fallbackError);
+      }
     }
   }
 
