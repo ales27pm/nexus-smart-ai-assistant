@@ -1,9 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Alert,
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -14,6 +21,7 @@ import {
   CalendarDays,
   Contact,
   Database,
+  LucideIcon,
   Navigation,
   Phone,
   Send,
@@ -21,18 +29,16 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
-  DEFAULT_COREML_BOS_TOKEN_ID,
-  DEFAULT_COREML_EOS_TOKEN_ID,
-  DEFAULT_COREML_LOAD_OPTIONS,
-  buildCoreMLChatPrompt,
-  CoreMLBridge,
+  CoreMLGenerateOptions,
+  CoreMLLoadModelOptions,
   CoreMLLoadUxState,
+  DEFAULT_COREML_GENERATE_OPTIONS,
+  DEFAULT_COREML_LOAD_OPTIONS,
   toActionableCoreMLError,
-  withPreferredCoreMLModelSource,
 } from "@/utils/coreml";
 import { iosToolsService } from "@/utils/iosToolsService";
 import { reportError } from "@/utils/globalErrorHandler";
-import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
+import { coreMLManager } from "@/utils/coreMLManager";
 
 type SafeActionOptions = {
   isCoreMLAction?: boolean;
@@ -43,6 +49,49 @@ type SafeAction = (
   fn: () => Promise<void>,
   options?: SafeActionOptions,
 ) => Promise<void>;
+
+type SectionCardProps = {
+  icon: LucideIcon;
+  iconColor: string;
+  title: string;
+  children: ReactNode;
+};
+
+type CoreMLSectionProps = {
+  isAvailable: boolean;
+  status: string;
+  loadState: CoreMLLoadUxState;
+  prompt: string;
+  output: string;
+  loadOptions: CoreMLLoadModelOptions;
+  generateOptions: CoreMLGenerateOptions;
+  onPromptChange: (next: string) => void;
+  onLoadOptionsChange: React.Dispatch<
+    React.SetStateAction<CoreMLLoadModelOptions>
+  >;
+  onGenerateOptionsChange: React.Dispatch<
+    React.SetStateAction<CoreMLGenerateOptions>
+  >;
+  onLoadModel: () => void;
+  onGenerate: () => void;
+};
+
+function SectionCard({
+  icon: Icon,
+  iconColor,
+  title,
+  children,
+}: SectionCardProps) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.sectionHeader}>
+        <Icon size={14} color={iconColor} />
+        <Text style={styles.sectionTitle}>{title}</Text>
+      </View>
+      {children}
+    </View>
+  );
+}
 
 function useSafeAction(
   setStatus: React.Dispatch<React.SetStateAction<string>>,
@@ -118,11 +167,11 @@ function DeviceNativeHubLocationSection({
   );
 
   return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Navigation size={14} color={Colors.dark.cyan} />
-        <Text style={styles.sectionTitle}>GPS + native maps</Text>
-      </View>
+    <SectionCard
+      icon={Navigation}
+      iconColor={Colors.dark.cyan}
+      title="GPS + native maps"
+    >
       <TouchableOpacity style={styles.button} onPress={handleGetLocation}>
         <Text style={styles.buttonText}>Get current location</Text>
       </TouchableOpacity>
@@ -144,6 +193,96 @@ function DeviceNativeHubLocationSection({
           Press {'"'}Get current location{'"'} to show the map.
         </Text>
       )}
+    </SectionCard>
+  );
+}
+
+function CoreMLSection({
+  isAvailable,
+  status,
+  loadState,
+  prompt,
+  output,
+  loadOptions,
+  generateOptions,
+  onPromptChange,
+  onLoadOptionsChange,
+  onGenerateOptionsChange,
+  onLoadModel,
+  onGenerate,
+}: CoreMLSectionProps) {
+  return (
+    <View
+      style={[styles.section, !isAvailable && styles.sectionDisabled]}
+      pointerEvents={isAvailable ? "auto" : "none"}
+    >
+      <View style={styles.sectionHeader}>
+        <Brain size={14} color={Colors.dark.cyan} />
+        <Text style={styles.sectionTitle}>On-device CoreML LLM (iOS)</Text>
+      </View>
+      {!isAvailable && (
+        <Text style={styles.result}>
+          On-device CoreML controls are available on iOS dev builds with the
+          native module linked. This platform uses server-side generation.
+        </Text>
+      )}
+      <Text style={styles.result}>{status}</Text>
+      <Text style={styles.result}>CoreML load state: {loadState}</Text>
+      <TouchableOpacity style={styles.button} onPress={onLoadModel}>
+        <Text style={styles.buttonText}>Download + load CoreML model</Text>
+      </TouchableOpacity>
+
+      <View style={styles.row}>
+        <Text style={styles.result}>Compute units</Text>
+        <View style={styles.switchRow}>
+          <Text style={styles.result}>CPU-only</Text>
+          <Switch
+            value={loadOptions.computeUnits === "cpuOnly"}
+            onValueChange={(enabled) =>
+              onLoadOptionsChange((current) => ({
+                ...current,
+                computeUnits: enabled
+                  ? "cpuOnly"
+                  : DEFAULT_COREML_LOAD_OPTIONS.computeUnits,
+              }))
+            }
+          />
+        </View>
+      </View>
+
+      <TextInput
+        value={String(generateOptions.maxNewTokens ?? 160)}
+        onChangeText={(value) => {
+          const parsed = Number.parseInt(value, 10);
+          onGenerateOptionsChange((current) => ({
+            ...current,
+            maxNewTokens: Number.isFinite(parsed)
+              ? parsed
+              : current.maxNewTokens,
+          }));
+        }}
+        keyboardType="numeric"
+        placeholder="Max new tokens"
+        placeholderTextColor={Colors.dark.textTertiary}
+        style={styles.input}
+      />
+      <TextInput
+        value={prompt}
+        onChangeText={onPromptChange}
+        placeholder="Prompt"
+        placeholderTextColor={Colors.dark.textTertiary}
+        style={[styles.input, styles.promptInput]}
+        multiline
+      />
+      <TouchableOpacity style={styles.button} onPress={onGenerate}>
+        <Text style={styles.buttonText}>Generate locally</Text>
+      </TouchableOpacity>
+      <Text style={styles.result}>Output: {output || "—"}</Text>
+      <Text style={styles.result}>
+        Notes: This flow auto-uses the active model and tokenizer from runtime
+        config. If loading fails, refresh model assets and rebuild iOS native
+        resources.
+      </Text>
     </View>
   );
 }
@@ -160,8 +299,15 @@ export default function DeviceNativeHubScreen() {
   const [status, setStatus] = useState("Idle");
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
-  const [coreML, setCoreML] = useState<CoreMLBridge | null>(null);
-  const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not linked");
+  const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not loaded");
+  const [coreMLLoadOptions, setCoreMLLoadOptions] =
+    useState<CoreMLLoadModelOptions>(() => ({
+      ...DEFAULT_COREML_LOAD_OPTIONS,
+    }));
+  const [coreMLGenerateOptions, setCoreMLGenerateOptions] =
+    useState<CoreMLGenerateOptions>(() => ({
+      ...DEFAULT_COREML_GENERATE_OPTIONS,
+    }));
   const [coreMLLoadState, setCoreMLLoadState] =
     useState<CoreMLLoadUxState>("ready");
   const [coreMLPrompt, setCoreMLPrompt] = useState(
@@ -170,7 +316,7 @@ export default function DeviceNativeHubScreen() {
   const [coreMLOutput, setCoreMLOutput] = useState("");
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
-  const isCoreMLAvailable = Platform.OS === "ios" && !!coreML;
+  const isCoreMLAvailable = Platform.OS === "ios";
 
   useEffect(() => {
     void runSafely("Load note", async () => {
@@ -184,104 +330,55 @@ export default function DeviceNativeHubScreen() {
     }
 
     if (Platform.OS === "ios") {
-      import("@/modules/expo-coreml-llm")
-        .then((mod: any) => {
-          if (mod?.CoreMLLLM) {
-            setCoreML(mod.CoreMLLLM as CoreMLBridge);
-            setCoreMLStatus("CoreML LLM: linked (not loaded)");
-          }
-        })
-        .catch((error) => {
-          console.warn("CoreML module unavailable", error);
-          setCoreMLStatus(
-            "CoreML LLM: not linked (run expo prebuild + dev build)",
-          );
-        });
+      void runSafely(
+        "CoreML auto-initialize",
+        async () => {
+          setCoreMLLoadState("downloading model");
+          await coreMLManager.initialize(coreMLLoadOptions);
+          setCoreMLLoadState("ready");
+          setCoreMLStatus("CoreML LLM: ready");
+        },
+        { isCoreMLAction: true },
+      );
     }
-  }, [runSafely]);
+  }, [coreMLLoadOptions, runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
       "CoreML load",
       async () => {
-        if (!coreML) {
-          throw new Error(
-            "CoreML module not available (iOS dev build + prebuild required)",
-          );
-        }
-
         setCoreMLLoadState("downloading model");
-        const prepared = await ensureCoreMLModelAssets();
-
-        setCoreMLLoadState("verifying model");
-        const loadOptions = withPreferredCoreMLModelSource(
-          DEFAULT_COREML_LOAD_OPTIONS,
-          prepared?.modelPath,
-        );
-        const info = await coreML.loadModel(loadOptions);
+        await coreMLManager.initialize(coreMLLoadOptions);
         setCoreMLLoadState("ready");
-        setCoreMLStatus(`CoreML LLM loaded: ${JSON.stringify(info)}`);
+        setCoreMLStatus("CoreML LLM: ready");
         setStatus("CoreML model loaded");
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, runSafely]);
+  }, [coreMLLoadOptions, runSafely]);
 
   const runCoreMLGenerate = useCallback(async () => {
     await runSafely(
       "CoreML generate",
       async () => {
-        if (!coreML) {
-          throw new Error(
-            "CoreML module not available (iOS dev build + prebuild required)",
-          );
-        }
-
-        let loaded = await coreML.isLoaded();
-        if (!loaded) {
+        if (!(await coreMLManager.isReady())) {
           setCoreMLLoadState("downloading model");
-          const prepared = await ensureCoreMLModelAssets();
-          setCoreMLLoadState("verifying model");
-          const loadOptions = withPreferredCoreMLModelSource(
-            DEFAULT_COREML_LOAD_OPTIONS,
-            prepared?.modelPath,
-          );
-          await coreML.loadModel(loadOptions);
+          await coreMLManager.initialize(coreMLLoadOptions);
           setCoreMLLoadState("ready");
-          loaded = await coreML.isLoaded();
+          setCoreMLStatus("CoreML LLM: ready");
         }
 
-        if (!loaded) {
-          throw new Error(
-            "CoreML model failed to load. Verify runtime model assets and bundled tokenizer files.",
-          );
-        }
-
-        const tokenizer = {
-          kind: "byte_level_bpe" as const,
-          vocabJsonAssetPath: "module:tokenizers/byte_level_bpe/vocab.json",
-          mergesTxtAssetPath: "module:tokenizers/byte_level_bpe/merges.txt",
-          bosTokenId: DEFAULT_COREML_BOS_TOKEN_ID,
-          eosTokenId: DEFAULT_COREML_EOS_TOKEN_ID,
-        };
-
-        const text = await coreML.generate(
-          buildCoreMLChatPrompt("You are a concise assistant.", coreMLPrompt),
-          {
-            maxNewTokens: 160,
-            temperature: 0.8,
-            topK: 40,
-            topP: 0.95,
-            repetitionPenalty: 1.05,
-            tokenizer,
-          },
+        const text = await coreMLManager.generate(
+          "You are a concise assistant.",
+          coreMLPrompt,
+          coreMLGenerateOptions,
         );
         setCoreMLOutput(text);
         setStatus("CoreML generation complete");
       },
       { isCoreMLAction: true },
     );
-  }, [coreML, coreMLPrompt, runSafely]);
+  }, [coreMLGenerateOptions, coreMLLoadOptions, coreMLPrompt, runSafely]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
@@ -325,13 +422,11 @@ export default function DeviceNativeHubScreen() {
         iOS native features for on-device workflows and diagnostics research.
       </Text>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Database size={14} color={Colors.dark.accent} />
-          <Text style={styles.sectionTitle}>
-            Local storage + vector database
-          </Text>
-        </View>
+      <SectionCard
+        icon={Database}
+        iconColor={Colors.dark.accent}
+        title="Local storage + vector database"
+      >
         <TextInput
           value={note}
           onChangeText={setNote}
@@ -357,18 +452,18 @@ export default function DeviceNativeHubScreen() {
             • {item.content} ({item.score.toFixed(3)})
           </Text>
         ))}
-      </View>
+      </SectionCard>
 
       <DeviceNativeHubLocationSection
         MapViewNative={MapViewNative}
         runSafely={runSafely}
       />
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Volume2 size={14} color={Colors.dark.warning} />
-          <Text style={styles.sectionTitle}>Audio, TTS, STT</Text>
-        </View>
+      <SectionCard
+        icon={Volume2}
+        iconColor={Colors.dark.warning}
+        title="Audio, TTS, STT"
+      >
         <TouchableOpacity
           style={styles.button}
           onPress={() =>
@@ -390,13 +485,13 @@ export default function DeviceNativeHubScreen() {
           <Text style={styles.buttonText}>Capture speech-to-text</Text>
         </TouchableOpacity>
         <Text style={styles.result}>Transcript: {speechTranscript || "—"}</Text>
-      </View>
+      </SectionCard>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <CalendarDays size={14} color={Colors.dark.purple} />
-          <Text style={styles.sectionTitle}>Calendar + contacts</Text>
-        </View>
+      <SectionCard
+        icon={CalendarDays}
+        iconColor={Colors.dark.purple}
+        title="Calendar + contacts"
+      >
         <TouchableOpacity
           style={styles.button}
           onPress={() =>
@@ -420,13 +515,13 @@ export default function DeviceNativeHubScreen() {
           <Text style={styles.buttonText}>Read primary contact</Text>
         </TouchableOpacity>
         <Text style={styles.result}>Contact: {contact}</Text>
-      </View>
+      </SectionCard>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Phone size={14} color={Colors.dark.rose} />
-          <Text style={styles.sectionTitle}>Phone + messages</Text>
-        </View>
+      <SectionCard
+        icon={Phone}
+        iconColor={Colors.dark.rose}
+        title="Phone + messages"
+      >
         <TouchableOpacity
           style={styles.button}
           onPress={() =>
@@ -448,71 +543,42 @@ export default function DeviceNativeHubScreen() {
         >
           <Text style={styles.buttonText}>Open SMS composer</Text>
         </TouchableOpacity>
-      </View>
+      </SectionCard>
 
       <View style={styles.status}>
         <Send size={12} color={Colors.dark.textSecondary} />
         <Text style={styles.statusText}>{status}</Text>
       </View>
 
-      <View
-        style={[styles.section, !isCoreMLAvailable && styles.sectionDisabled]}
-        pointerEvents={isCoreMLAvailable ? "auto" : "none"}
-      >
-        <View style={styles.sectionHeader}>
-          <Brain size={14} color={Colors.dark.cyan} />
-          <Text style={styles.sectionTitle}>On-device CoreML LLM (iOS)</Text>
-        </View>
-        {!isCoreMLAvailable && (
-          <Text style={styles.result}>
-            On-device CoreML controls are available on iOS dev builds with the
-            native module linked. This platform uses server-side generation.
-          </Text>
-        )}
-        <Text style={styles.result}>{coreMLStatus}</Text>
-        <Text style={styles.result}>CoreML load state: {coreMLLoadState}</Text>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={loadCoreMLModel}
-          disabled={!isCoreMLAvailable}
-        >
-          <Text style={styles.buttonText}>Download + load CoreML model</Text>
-        </TouchableOpacity>
-        <TextInput
-          value={coreMLPrompt}
-          onChangeText={setCoreMLPrompt}
-          placeholder="Prompt"
-          placeholderTextColor={Colors.dark.textTertiary}
-          style={[styles.input, { minHeight: 80, textAlignVertical: "top" }]}
-          multiline
-        />
-        <TouchableOpacity
-          style={styles.button}
-          onPress={runCoreMLGenerate}
-          disabled={!isCoreMLAvailable}
-        >
-          <Text style={styles.buttonText}>Generate locally</Text>
-        </TouchableOpacity>
-        <Text style={styles.result}>
-          Output: {coreMLOutput ? coreMLOutput : "—"}
-        </Text>
-        <Text style={styles.result}>
-          Notes: This flow auto-uses the active model and tokenizer from runtime
-          config. If loading fails, refresh model assets and rebuild iOS native
-          resources.
-        </Text>
-      </View>
+      <CoreMLSection
+        isAvailable={isCoreMLAvailable}
+        status={coreMLStatus}
+        loadState={coreMLLoadState}
+        prompt={coreMLPrompt}
+        output={coreMLOutput}
+        loadOptions={coreMLLoadOptions}
+        generateOptions={coreMLGenerateOptions}
+        onPromptChange={setCoreMLPrompt}
+        onLoadOptionsChange={setCoreMLLoadOptions}
+        onGenerateOptionsChange={setCoreMLGenerateOptions}
+        onLoadModel={() => {
+          void loadCoreMLModel();
+        }}
+        onGenerate={() => {
+          void runCoreMLGenerate();
+        }}
+      />
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Contact size={14} color={Colors.dark.accent} />
-          <Text style={styles.sectionTitle}>Build note</Text>
-        </View>
+      <SectionCard
+        icon={Contact}
+        iconColor={Colors.dark.accent}
+        title="Build note"
+      >
         <Text style={styles.result}>
           For full iOS native behavior, run this in a development build on a
           physical device (Xcode/EAS/AltStore).
         </Text>
-      </View>
+      </SectionCard>
     </ScrollView>
   );
 }
@@ -542,6 +608,10 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     fontSize: 12,
   },
+  promptInput: {
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
   button: {
     backgroundColor: Colors.dark.surfaceElevated,
     borderWidth: 1,
@@ -558,6 +628,17 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: Colors.dark.text, fontSize: 12, fontWeight: "600" },
   result: { color: Colors.dark.textSecondary, fontSize: 12, lineHeight: 17 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   mapWrap: {
     height: 170,
     borderRadius: 10,
