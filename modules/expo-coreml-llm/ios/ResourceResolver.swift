@@ -1,6 +1,89 @@
 import Foundation
 
 enum ResourceResolver {
+  private static let logPrefix = "[ExpoCoreMLLLM][ResourceResolver]"
+
+  private static func log(_ message: String) {
+    NSLog("%@ %@", logPrefix, message)
+  }
+
+  private static func bundleURLDescription(_ url: URL?) -> String {
+    url?.path ?? "<nil>"
+  }
+
+  private static func scanMatchingBundles(in root: URL, prefix: String) -> [URL] {
+    guard let e = FileManager.default.enumerator(
+      at: root,
+      includingPropertiesForKeys: [.isDirectoryKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      return []
+    }
+
+    var results: [URL] = []
+    for case let url as URL in e where url.pathExtension == "bundle" {
+      let name = url.deletingPathExtension().lastPathComponent
+      if name.hasPrefix(prefix) {
+        results.append(url)
+      }
+    }
+
+    return results
+  }
+
+  private static func modelDirectoryListings(in bundle: Bundle) -> [String: [String]] {
+    let fm = FileManager.default
+    let modelRoots = [
+      bundle.bundleURL.appendingPathComponent("models", isDirectory: true),
+      bundle.bundleURL
+    ]
+
+    var listings: [String: [String]] = [:]
+    for root in modelRoots {
+      let path = root.path
+      var isDir: ObjCBool = false
+      guard fm.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+        listings[path] = ["<missing>"]
+        continue
+      }
+
+      do {
+        let files = try fm.contentsOfDirectory(
+          at: root,
+          includingPropertiesForKeys: [.isDirectoryKey],
+          options: [.skipsHiddenFiles]
+        )
+        let names = files
+          .map(\.lastPathComponent)
+          .sorted()
+        listings[path] = names.isEmpty ? ["<empty>"] : names
+      } catch {
+        listings[path] = ["<error: \(error.localizedDescription)>"]
+      }
+    }
+
+    return listings
+  }
+
+
+  private static func discoveredResourceBundleURLs(prefix: String = "ExpoCoreMLLLMResources") -> [String] {
+    let moduleBundle = Bundle(for: ExpoCoreMLLLMModule.self)
+    let mainBundle = Bundle.main
+
+    var urls: [String] = []
+    if let directModule = moduleBundle.url(forResource: prefix, withExtension: "bundle") {
+      urls.append(directModule.path)
+    }
+    if let directMain = mainBundle.url(forResource: prefix, withExtension: "bundle") {
+      urls.append(directMain.path)
+    }
+
+    urls.append(contentsOf: scanMatchingBundles(in: moduleBundle.bundleURL, prefix: prefix).map(\.path))
+    urls.append(contentsOf: scanMatchingBundles(in: mainBundle.bundleURL, prefix: prefix).map(\.path))
+
+    return Array(Set(urls)).sorted()
+  }
+
   private static func findFirstDirectoryResource(
     in bundle: Bundle,
     withExtension ext: String
@@ -68,16 +151,45 @@ enum ResourceResolver {
 
   static func resourceBundle() -> Bundle? {
     let moduleBundle = Bundle(for: ExpoCoreMLLLMModule.self)
+    let mainBundle = Bundle.main
+    let moduleRoot = moduleBundle.bundleURL
+    let mainRoot = mainBundle.bundleURL
 
-    if let url = moduleBundle.url(forResource: "ExpoCoreMLLLMResources", withExtension: "bundle"),
+    log("module bundle path: \(bundleURLDescription(moduleRoot))")
+    log("main bundle path: \(bundleURLDescription(mainRoot))")
+
+    let moduleDirectURL = moduleBundle.url(forResource: "ExpoCoreMLLLMResources", withExtension: "bundle")
+    let mainDirectURL = mainBundle.url(forResource: "ExpoCoreMLLLMResources", withExtension: "bundle")
+
+    log("direct lookup module has ExpoCoreMLLLMResources.bundle: \(moduleDirectURL != nil)")
+    log("direct lookup main has ExpoCoreMLLLMResources.bundle: \(mainDirectURL != nil)")
+
+    if let url = moduleDirectURL,
        let b = Bundle(url: url) {
+      log("using resource bundle from module direct lookup: \(url.path)")
       return b
     }
 
-    if let url = Bundle.main.url(forResource: "ExpoCoreMLLLMResources", withExtension: "bundle"),
+    if let url = mainDirectURL,
        let b = Bundle(url: url) {
+      log("using resource bundle from main direct lookup: \(url.path)")
       return b
     }
+
+    let moduleMatches = scanMatchingBundles(in: moduleRoot, prefix: "ExpoCoreMLLLMResources")
+    let mainMatches = scanMatchingBundles(in: mainRoot, prefix: "ExpoCoreMLLLMResources")
+
+    log("fallback prefix bundle scan (module): \(moduleMatches.map(\.path))")
+    log("fallback prefix bundle scan (main): \(mainMatches.map(\.path))")
+
+    for match in moduleMatches + mainMatches {
+      if let b = Bundle(url: match) {
+        log("using resource bundle from prefix scan: \(match.path)")
+        return b
+      }
+    }
+
+    log("resource bundle not found after direct lookup and prefix scan")
 
     return nil
   }
@@ -150,7 +262,17 @@ enum ResourceResolver {
     }
 
     guard let b = resourceBundle() else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 21, userInfo: [NSLocalizedDescriptionKey: "Resource bundle not found"])
+      let discovered = discoveredResourceBundleURLs()
+      let candidateListings: [String: [String]] = [:]
+
+      log("resource bundle missing while resolving model \(file)")
+      log("discovered bundle URLs during failure: \(discovered)")
+
+      throw NSError(domain: "ExpoCoreMLLLM", code: 21, userInfo: [
+        NSLocalizedDescriptionKey: "Resource bundle not found",
+        "discoveredBundleURLs": discovered,
+        "candidateModelDirectoryListings": candidateListings
+      ])
     }
 
     if file.hasSuffix(".mlpackage") {
@@ -213,8 +335,17 @@ enum ResourceResolver {
       return url
     }
 
+    let listing = modelDirectoryListings(in: b)
+    let bundleURLs = discoveredResourceBundleURLs() + [b.bundleURL.path]
+    let uniqueBundleURLs = Array(Set(bundleURLs)).sorted()
+    log("model resolution failed for \(file)")
+    log("resolved resource bundle URLs: \(uniqueBundleURLs)")
+    log("candidate model directory listings: \(listing)")
+
     throw NSError(domain: "ExpoCoreMLLLM", code: 22, userInfo: [
-      NSLocalizedDescriptionKey: "Model \(file) not found in ios/resources/models."
+      NSLocalizedDescriptionKey: "Model \(file) not found in ios/resources/models.",
+      "resolvedBundleURLs": uniqueBundleURLs,
+      "candidateModelDirectoryListings": listing
     ])
   }
 }

@@ -55,6 +55,40 @@ export class CoreMLError extends Error {
 }
 
 export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
+
+export type CoreMLModelPresetId = "fp16" | "int8" | "int4Lut";
+
+export type CoreMLModelPreset = {
+  id: CoreMLModelPresetId;
+  label: string;
+  modelFile: string;
+  detail: string;
+};
+
+export const COREML_MODEL_PRESETS: readonly CoreMLModelPreset[] = [
+  {
+    id: "fp16",
+    label: "FP16",
+    modelFile: "Dolphin3.0-Llama3.2-3B-fp16.mlpackage",
+    detail: "Full precision (best quality, largest memory footprint).",
+  },
+  {
+    id: "int8",
+    label: "INT8",
+    modelFile: "Dolphin3.0-Llama3.2-3B-int8.mlpackage",
+    detail: "8-bit quantized (balanced speed and quality).",
+  },
+  {
+    id: "int4Lut",
+    label: "INT4-LUT",
+    modelFile: "Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage",
+    detail:
+      "Palettized/lookup-table compressed weights (lowest memory footprint).",
+  },
+] as const;
+
+export const DEFAULT_COREML_MODEL_PRESET_ID: CoreMLModelPresetId = "int4Lut";
+
 export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
 export const DEFAULT_COREML_BOS_TOKEN_ID = modelManifest.bosTokenId;
 export const DEFAULT_COREML_TOKENIZER_VOCAB_PATH =

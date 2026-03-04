@@ -29,9 +29,12 @@ import {
 } from "lucide-react-native";
 import Colors from "@/constants/colors";
 import {
+  COREML_MODEL_PRESETS,
   CoreMLGenerateOptions,
   CoreMLLoadModelOptions,
   CoreMLLoadUxState,
+  CoreMLModelPreset,
+  CoreMLModelPresetId,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
   toActionableCoreMLError,
@@ -65,6 +68,9 @@ type CoreMLSectionProps = {
   output: string;
   loadOptions: CoreMLLoadModelOptions;
   generateOptions: CoreMLGenerateOptions;
+  modelPresets: readonly CoreMLModelPreset[];
+  selectedModelPresetId: CoreMLModelPresetId;
+  onSelectModelPreset: (presetId: CoreMLModelPresetId) => void;
   onPromptChange: (next: string) => void;
   onLoadOptionsChange: React.Dispatch<
     React.SetStateAction<CoreMLLoadModelOptions>
@@ -205,6 +211,9 @@ function CoreMLSection({
   output,
   loadOptions,
   generateOptions,
+  modelPresets,
+  selectedModelPresetId,
+  onSelectModelPreset,
   onPromptChange,
   onLoadOptionsChange,
   onGenerateOptionsChange,
@@ -228,6 +237,40 @@ function CoreMLSection({
       )}
       <Text style={styles.result}>{status}</Text>
       <Text style={styles.result}>CoreML load state: {loadState}</Text>
+      <Text style={styles.result}>Model preset</Text>
+      <View style={styles.presetRow}>
+        {modelPresets.map((preset) => {
+          const isSelected = preset.id === selectedModelPresetId;
+          return (
+            <TouchableOpacity
+              key={preset.id}
+              style={[styles.presetChip, isSelected && styles.presetChipActive]}
+              onPress={() => onSelectModelPreset(preset.id)}
+            >
+              <Text
+                style={[
+                  styles.presetChipText,
+                  isSelected && styles.presetChipTextActive,
+                ]}
+              >
+                {preset.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.result}>
+        {
+          modelPresets.find((preset) => preset.id === selectedModelPresetId)
+            ?.modelFile
+        }
+      </Text>
+      <Text style={styles.result}>
+        {
+          modelPresets.find((preset) => preset.id === selectedModelPresetId)
+            ?.detail
+        }
+      </Text>
       <TouchableOpacity style={styles.button} onPress={onLoadModel}>
         <Text style={styles.buttonText}>Download + load CoreML model</Text>
       </TouchableOpacity>
@@ -279,8 +322,8 @@ function CoreMLSection({
       </TouchableOpacity>
       <Text style={styles.result}>Output: {output || "—"}</Text>
       <Text style={styles.result}>
-        Notes: This flow auto-uses the active model and tokenizer from runtime
-        config. If loading fails, refresh model assets and rebuild iOS native
+        Notes: Pick a preset that matches the packaged/downloaded model variant,
+        then load. If loading fails, refresh model assets and rebuild iOS native
         resources.
       </Text>
     </View>
@@ -314,9 +357,29 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
+  const [selectedModelPresetId, setSelectedModelPresetId] =
+    useState<CoreMLModelPresetId>("int4Lut");
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios";
+
+  const handleModelPresetSelect = useCallback(
+    (presetId: CoreMLModelPresetId) => {
+      const preset = COREML_MODEL_PRESETS.find((item) => item.id === presetId);
+      if (!preset) {
+        return;
+      }
+
+      setSelectedModelPresetId(presetId);
+      setCoreMLLoadOptions((current) => ({
+        ...current,
+        modelFile: preset.modelFile,
+        modelPath: undefined,
+      }));
+      setCoreMLStatus(`CoreML LLM: preset ${preset.label} selected`);
+    },
+    [],
+  );
 
   useEffect(() => {
     void runSafely("Load note", async () => {
@@ -558,6 +621,9 @@ export default function DeviceNativeHubScreen() {
         output={coreMLOutput}
         loadOptions={coreMLLoadOptions}
         generateOptions={coreMLGenerateOptions}
+        modelPresets={COREML_MODEL_PRESETS}
+        selectedModelPresetId={selectedModelPresetId}
+        onSelectModelPreset={handleModelPresetSelect}
         onPromptChange={setCoreMLPrompt}
         onLoadOptionsChange={setCoreMLLoadOptions}
         onGenerateOptionsChange={setCoreMLGenerateOptions}
@@ -638,6 +704,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  presetRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  presetChip: {
+    flex: 1,
+    backgroundColor: Colors.dark.inputBackground,
+    borderColor: Colors.dark.borderSubtle,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  presetChipActive: {
+    borderColor: Colors.dark.accent,
+    backgroundColor: Colors.dark.surfaceElevated,
+  },
+  presetChipText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  presetChipTextActive: {
+    color: Colors.dark.text,
   },
   mapWrap: {
     height: 170,
