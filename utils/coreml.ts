@@ -23,6 +23,7 @@ export type CoreMLLoadModelOptions = {
 
 export type CoreMLLoadUxState =
   | "downloading model"
+  | "downloading model (unknown total size)"
   | "verifying model"
   | "ready"
   | "failed—retry";

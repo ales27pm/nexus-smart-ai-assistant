@@ -121,6 +121,24 @@ class ProgressEmitter<T> {
 const ensureModelProgressEmitter =
   new ProgressEmitter<ModelAssetProgressEvent>();
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const fractionDigits = unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
+}
+
 function normalizeDirectory(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
 }
@@ -636,13 +654,20 @@ async function prepareVersion(
         version,
         descriptor,
         (writtenBytes, expectedBytes) => {
-          const fileProgress =
-            expectedBytes > 0 ? writtenBytes / expectedBytes : 0;
+          const hasExpectedSize = expectedBytes > 0;
+          const fileProgress = hasExpectedSize
+            ? writtenBytes / expectedBytes
+            : 0;
           const overall = (index + fileProgress) / totalFiles;
           onProgress?.({
             stage: "downloading",
-            message: `Downloading ${descriptor.path} (${Math.round(fileProgress * 100)}%)`,
-            progress: Math.min(0.85, overall * 0.8 + 0.05),
+            message: hasExpectedSize
+              ? `Downloading ${descriptor.path} (${Math.round(fileProgress * 100)}%)`
+              : `Downloading ${descriptor.path} (${formatBytes(writtenBytes)} downloaded)`,
+            progress: Math.min(
+              0.85,
+              (hasExpectedSize ? overall : completedRatio) * 0.8 + 0.05,
+            ),
             filePath: descriptor.path,
           });
         },
