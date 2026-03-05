@@ -18,6 +18,7 @@ enum Types {
   enum LLMError: Int {
     case modelMissing = 101
     case outOfMemory = 102
+    case coreMLCompilation = 105
     case tokenBasedModelMissingTokenizer = 122
   }
 

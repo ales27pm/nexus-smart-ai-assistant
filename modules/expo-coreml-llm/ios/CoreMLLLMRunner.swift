@@ -47,7 +47,7 @@ final class CoreMLLLMRunner {
 
     let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: sourceURL.path) else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
       ])
     }
@@ -62,36 +62,45 @@ final class CoreMLLLMRunner {
       return cacheURL
     }
 
+    var compiledTempURL: URL?
     do {
       Self.log("Compiling CoreML model from source: \(sourceURL.path)")
-      let compiledTempURL = try MLModel.compileModel(at: sourceURL)
+      compiledTempURL = try MLModel.compileModel(at: sourceURL)
+      guard let compiledTempURL else {
+        throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+          NSLocalizedDescriptionKey: "CoreML compileModel returned no compiled model URL for: \(sourceURL.path)",
+        ])
+      }
+
       try fileManager.createDirectory(
         at: cacheURL.deletingLastPathComponent(),
         withIntermediateDirectories: true,
         attributes: nil
       )
 
-      let stagingURL = cacheURL
-        .deletingPathExtension()
-        .appendingPathExtension("staging-\(UUID().uuidString).mlmodelc")
-
-      if fileManager.fileExists(atPath: stagingURL.path) {
-        try fileManager.removeItem(at: stagingURL)
-      }
-      try fileManager.copyItem(at: compiledTempURL, to: stagingURL)
-
       if fileManager.fileExists(atPath: cacheURL.path) {
-        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: stagingURL)
+        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
       } else {
-        try fileManager.moveItem(at: stagingURL, to: cacheURL)
+        try fileManager.moveItem(at: compiledTempURL, to: cacheURL)
       }
 
       Self.log("Compiled model stored at: \(cacheURL.path)")
       return cacheURL
     } catch {
+      if let compiledTempURL,
+         fileManager.fileExists(atPath: compiledTempURL.path) {
+        do {
+          try fileManager.removeItem(at: compiledTempURL)
+          Self.log("Removed stale compiled temp model after failure: \(compiledTempURL.path)")
+        } catch {
+          let cleanupError = error as NSError
+          Self.log("Failed to remove compiled temp model after failure: \(cleanupError.domain)(\(cleanupError.code))")
+        }
+      }
+
       let nsError = error as NSError
       Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code))")
-      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
         NSUnderlyingErrorKey: error,
       ])
@@ -122,7 +131,7 @@ final class CoreMLLLMRunner {
     let fileManager = FileManager.default
     var isDir: ObjCBool = false
     guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDir) else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
       ])
     }
@@ -139,7 +148,7 @@ final class CoreMLLLMRunner {
       includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
       options: [.skipsHiddenFiles]
     ) else {
-      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "Unable to enumerate CoreML source directory at path: \(sourceURL.path)",
       ])
     }
@@ -192,7 +201,7 @@ final class CoreMLLLMRunner {
     do {
       loadableModelURL = try ensureCompiledModelURL(sourceURL: modelURL)
     } catch {
-      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelLoadFailed.rawValue, userInfo: [
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelMissing.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "Unable to prepare CoreML model for loading.",
         NSUnderlyingErrorKey: error,
       ])
