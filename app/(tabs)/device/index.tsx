@@ -75,6 +75,7 @@ type CoreMLSectionProps = {
   loadProgress: number;
   verboseEvents: readonly string[];
   coreMLIndeterminateDownload: boolean;
+  coreMLProgressStageLabel: string;
   onSelectModelPreset: (presetId: CoreMLModelPresetId) => void;
   onPromptChange: (next: string) => void;
   onLoadOptionsChange: React.Dispatch<
@@ -221,6 +222,7 @@ function CoreMLSection({
   loadProgress,
   verboseEvents,
   coreMLIndeterminateDownload,
+  coreMLProgressStageLabel,
   onSelectModelPreset,
   onPromptChange,
   onLoadOptionsChange,
@@ -249,7 +251,7 @@ function CoreMLSection({
       <Text style={styles.result}>{status}</Text>
       <Text style={styles.result}>CoreML load state: {loadState}</Text>
       <Text style={styles.result}>
-        Progress: {Math.round(loadProgress * 100)}%
+        Progress ({coreMLProgressStageLabel}): {Math.round(loadProgress * 100)}%
         {coreMLIndeterminateDownload
           ? " (current file total size unknown)"
           : ""}
@@ -392,6 +394,8 @@ export default function DeviceNativeHubScreen() {
   const [coreMLIndeterminateDownload, setCoreMLIndeterminateDownload] =
     useState(false);
   const [coreMLVerboseEvents, setCoreMLVerboseEvents] = useState<string[]>([]);
+  const [coreMLProgressStageLabel, setCoreMLProgressStageLabel] =
+    useState("idle");
   const [selectedModelPresetId, setSelectedModelPresetId] =
     useState<CoreMLModelPresetId>(DEFAULT_COREML_MODEL_PRESET_ID);
 
@@ -401,6 +405,13 @@ export default function DeviceNativeHubScreen() {
   const handleCoreMLProgress = useCallback(
     (event: CoreMLInitializationEvent) => {
       setCoreMLLoadProgress(Math.max(0, Math.min(1, event.progress)));
+      setCoreMLProgressStageLabel(
+        event.stage === "verifying"
+          ? "verifying"
+          : event.stage === "downloading"
+            ? "downloading"
+            : event.stage,
+      );
       if (event.stage === "downloading") {
         setCoreMLIndeterminateDownload(event.message.includes("downloaded)"));
       }
@@ -427,6 +438,7 @@ export default function DeviceNativeHubScreen() {
     setCoreMLLoadProgress(0);
     setCoreMLIndeterminateDownload(false);
     setCoreMLVerboseEvents([]);
+    setCoreMLProgressStageLabel("idle");
   }, []);
 
   const handleModelPresetSelect = useCallback(
@@ -744,6 +756,7 @@ export default function DeviceNativeHubScreen() {
         loadProgress={coreMLLoadProgress}
         verboseEvents={coreMLVerboseEvents}
         coreMLIndeterminateDownload={coreMLIndeterminateDownload}
+        coreMLProgressStageLabel={coreMLProgressStageLabel}
         onSelectModelPreset={handleModelPresetSelect}
         onPromptChange={setCoreMLPrompt}
         onLoadOptionsChange={setCoreMLLoadOptions}

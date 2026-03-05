@@ -33,6 +33,8 @@ export type ModelAssetProgressEvent = {
   message: string;
   progress: number;
   filePath?: string;
+  bytesProcessed?: number;
+  totalBytes?: number;
 };
 
 type ModelAssetProgressCallback = (event: ModelAssetProgressEvent) => void;
@@ -199,7 +201,10 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
-async function hashFileSha256(path: string): Promise<string> {
+async function hashFileSha256(
+  path: string,
+  onProgress?: (hashedBytes: number, totalBytes: number) => void,
+): Promise<string> {
   const chunkSize = 1024 * 1024;
   const info = await FileSystem.getInfoAsync(path);
   if (!info.exists || typeof info.size !== "number") {
@@ -207,6 +212,7 @@ async function hashFileSha256(path: string): Promise<string> {
   }
 
   const hasher = sha256.create();
+  let hashedBytes = 0;
 
   for (let position = 0; position < info.size; position += chunkSize) {
     const length = Math.min(chunkSize, info.size - position);
@@ -216,6 +222,8 @@ async function hashFileSha256(path: string): Promise<string> {
       length,
     });
     hasher.update(Buffer.from(chunk, "base64"));
+    hashedBytes += length;
+    onProgress?.(hashedBytes, info.size);
   }
 
   return hasher.hex();
@@ -224,13 +232,14 @@ async function hashFileSha256(path: string): Promise<string> {
 async function validateFileHash(
   path: string,
   expectedHash: string,
+  onProgress?: (hashedBytes: number, totalBytes: number) => void,
 ): Promise<boolean> {
   const info = await FileSystem.getInfoAsync(path);
   if (!info.exists || info.size === 0) {
     return false;
   }
 
-  const digest = await hashFileSha256(path);
+  const digest = await hashFileSha256(path, onProgress);
   return digest.toLowerCase() === expectedHash.toLowerCase();
 }
 
@@ -556,6 +565,7 @@ async function ensureFileDownloaded(
   version: RuntimeModelVersion,
   descriptor: DownloadFileDescriptor,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
+  onVerificationProgress?: (hashedBytes: number, totalBytes: number) => void,
 ): Promise<{
   downloaded: boolean;
   bytesWritten: number;
@@ -569,6 +579,7 @@ async function ensureFileDownloaded(
   const validExisting = await validateFileHash(
     targetPath,
     descriptor.expectedHash,
+    onVerificationProgress,
   );
   if (validExisting) {
     return { downloaded: false, bytesWritten: 0, attempts: 0, source: "cache" };
@@ -585,6 +596,7 @@ async function ensureFileDownloaded(
   const validDownloaded = await validateFileHash(
     targetPath,
     descriptor.expectedHash,
+    onVerificationProgress,
   );
   if (!validDownloaded) {
     await deleteIfExists(targetPath);
@@ -698,6 +710,8 @@ async function prepareVersion(
   });
 
   if (!alreadyInstalled) {
+    const VERIFICATION_PROGRESS_START = 0.86;
+    const VERIFICATION_PROGRESS_END = 0.94;
     const descriptors = toDownloadDescriptors(version.files);
     for (const [index, descriptor] of descriptors.entries()) {
       const completedRatio = index / totalFiles;
@@ -729,6 +743,27 @@ async function prepareVersion(
             filePath: descriptor.path,
           });
         },
+        (hashedBytes, totalBytes) => {
+          const safeTotalBytes = Math.max(totalBytes, 1);
+          const fileHashProgress = hashedBytes / safeTotalBytes;
+          const overallHashProgress = (index + fileHashProgress) / totalFiles;
+          const boundedProgress =
+            VERIFICATION_PROGRESS_START +
+            overallHashProgress *
+              (VERIFICATION_PROGRESS_END - VERIFICATION_PROGRESS_START);
+
+          onProgress?.({
+            stage: "verifying",
+            message: `Verifying ${descriptor.path} (${formatBytes(hashedBytes)} / ${formatBytes(totalBytes)})`,
+            progress: Math.max(
+              VERIFICATION_PROGRESS_START,
+              Math.min(VERIFICATION_PROGRESS_END, boundedProgress),
+            ),
+            filePath: descriptor.path,
+            bytesProcessed: hashedBytes,
+            totalBytes,
+          });
+        },
       );
       downloadedAny = downloadedAny || result.downloaded;
       bytesWritten += result.bytesWritten;
@@ -738,7 +773,10 @@ async function prepareVersion(
       onProgress?.({
         stage: "verifying",
         message: `Verified ${descriptor.path}`,
-        progress: Math.min(0.9, ((index + 1) / totalFiles) * 0.85 + 0.05),
+        progress:
+          VERIFICATION_PROGRESS_START +
+          ((index + 1) / totalFiles) *
+            (VERIFICATION_PROGRESS_END - VERIFICATION_PROGRESS_START),
         filePath: descriptor.path,
       });
     }
