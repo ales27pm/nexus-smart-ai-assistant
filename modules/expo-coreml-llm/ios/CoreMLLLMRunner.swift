@@ -1,5 +1,6 @@
 import Foundation
 import CoreML
+import CryptoKit
 
 final class CoreMLLLMRunner {
   private static let logPrefix = "[ExpoCoreMLLLM][CoreMLLLMRunner]"
@@ -33,29 +34,71 @@ final class CoreMLLLMRunner {
     NSLog("%@ %@", logPrefix, message)
   }
 
-  private func prepareModelURLForLoading(_ url: URL) throws -> URL {
-    // CoreML can load .mlmodelc directly, but raw .mlpackage/.mlmodel files may
-    // require compilation on-device when they are downloaded at runtime.
-    if url.pathExtension == "mlmodelc" {
-      return url
+  private func ensureCompiledModelURL(sourceURL: URL) throws -> URL {
+    let sourceExt = sourceURL.pathExtension.lowercased()
+    if sourceExt == "mlmodelc" {
+      return sourceURL
     }
 
-    if url.pathExtension != "mlpackage" && url.pathExtension != "mlmodel" {
-      return url
+    guard sourceExt == "mlpackage" || sourceExt == "mlmodel" else {
+      return sourceURL
+    }
+
+    let fileManager = FileManager.default
+    let cacheURL = try compiledCacheURL(for: sourceURL)
+
+    if fileManager.fileExists(atPath: cacheURL.path) {
+      Self.log("Using cached compiled model at: \(cacheURL.path)")
+      return cacheURL
     }
 
     do {
-      let compiledURL = try MLModel.compileModel(at: url)
-      Self.log("Compiled model at runtime: \(url.lastPathComponent) -> \(compiledURL.lastPathComponent)")
-      return compiledURL
+      Self.log("Compiling CoreML model from source: \(sourceURL.path)")
+      let compiledTempURL = try MLModel.compileModel(at: sourceURL)
+      try fileManager.createDirectory(
+        at: cacheURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true,
+        attributes: nil
+      )
+
+      if fileManager.fileExists(atPath: cacheURL.path) {
+        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
+      } else {
+        try fileManager.copyItem(at: compiledTempURL, to: cacheURL)
+      }
+
+      Self.log("Compiled model stored at: \(cacheURL.path)")
+      return cacheURL
     } catch {
       let nsError = error as NSError
-      Self.log("Model compilation failed for \(url.path): \(nsError.domain)(\(nsError.code))")
+      Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code))")
       throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
-        NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(url.path)",
+        NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
         NSUnderlyingErrorKey: error,
       ])
     }
+  }
+
+  private func compiledCacheURL(for sourceURL: URL) throws -> URL {
+    let fileManager = FileManager.default
+    let appSupport = try fileManager.url(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+
+    let sourceAttributes = try? fileManager.attributesOfItem(atPath: sourceURL.path)
+    let modifiedAt = (sourceAttributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+    let sourceSignature = "\(sourceURL.path)|\(modifiedAt)"
+    let digest = SHA256.hash(data: Data(sourceSignature.utf8))
+    let hash = digest.map { String(format: "%02x", $0) }.joined()
+
+    return appSupport
+      .appendingPathComponent("ExpoCoreMLLLM", isDirectory: true)
+      .appendingPathComponent("compiled-models", isDirectory: true)
+      .appendingPathComponent(hash)
+      .appendingPathExtension("mlmodelc")
   }
 
   func unload() {
@@ -90,7 +133,7 @@ final class CoreMLLLMRunner {
 
     let loadableModelURL: URL
     do {
-      loadableModelURL = try prepareModelURLForLoading(modelURL)
+      loadableModelURL = try ensureCompiledModelURL(sourceURL: modelURL)
     } catch {
       throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelLoadFailed.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "Unable to prepare CoreML model for loading.",
