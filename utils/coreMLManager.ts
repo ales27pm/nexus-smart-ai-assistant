@@ -16,14 +16,25 @@ import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
 
 export type CoreMLInitializationEvent = ModelAssetProgressEvent;
+export type CoreMLManagerState = "Idle" | "Loading" | "Ready" | "Disposing";
+
+export type CoreMLManagerStateEvent = {
+  previousState: CoreMLManagerState;
+  state: CoreMLManagerState;
+};
 
 type CoreMLInitializationProgressCallback = (
   event: CoreMLInitializationEvent,
 ) => void;
 
+type CoreMLManagerStateListener = (event: CoreMLManagerStateEvent) => void;
+
 export class CoreMLManager {
   private provider: ICoreMLProvider;
   private busy = false;
+  private state: CoreMLManagerState = "Idle";
+  private transitionQueue: Promise<void> = Promise.resolve();
+  private stateListeners = new Set<CoreMLManagerStateListener>();
   private currentOptions: CoreMLLoadModelOptions = {
     ...DEFAULT_COREML_LOAD_OPTIONS,
   };
@@ -36,57 +47,75 @@ export class CoreMLManager {
     opts: CoreMLLoadModelOptions = {},
     onProgress?: CoreMLInitializationProgressCallback,
   ): Promise<void> {
-    let resolvedOpts: CoreMLLoadModelOptions = {
-      ...DEFAULT_COREML_LOAD_OPTIONS,
-      ...opts,
-    };
+    return this.queueTransition(async () => {
+      await this.performInitialize(opts, onProgress);
+    });
+  }
 
-    if (Platform.OS === "ios") {
-      try {
-        onProgress?.({
-          stage: "preparing",
-          message: "Preparing CoreML model assets",
-          progress: 0.01,
-        });
-        const prepared = await ensureCoreMLModelAssets(onProgress);
-        resolvedOpts = withPreferredCoreMLModelSource(
-          resolvedOpts,
-          prepared?.modelPath,
-        );
-      } catch (error) {
-        if (!__DEV__) {
-          throw error;
+  private async performInitialize(
+    opts: CoreMLLoadModelOptions = {},
+    onProgress?: CoreMLInitializationProgressCallback,
+  ): Promise<void> {
+    this.setState("Loading");
+
+    try {
+      let resolvedOpts: CoreMLLoadModelOptions = {
+        ...DEFAULT_COREML_LOAD_OPTIONS,
+        ...opts,
+      };
+
+      if (Platform.OS === "ios") {
+        try {
+          onProgress?.({
+            stage: "preparing",
+            message: "Preparing CoreML model assets",
+            progress: 0.01,
+          });
+          const prepared = await ensureCoreMLModelAssets(onProgress);
+          resolvedOpts = withPreferredCoreMLModelSource(
+            resolvedOpts,
+            prepared?.modelPath,
+          );
+        } catch (error) {
+          if (!__DEV__) {
+            throw error;
+          }
+
+          console.warn(
+            "[CoreMLManager] model asset preparation failed; falling back to bundled model in __DEV__",
+            error,
+          );
+          resolvedOpts = withPreferredCoreMLModelSource(resolvedOpts, null);
         }
-
-        console.warn(
-          "[CoreMLManager] model asset preparation failed; falling back to bundled model in __DEV__",
-          error,
-        );
-        resolvedOpts = withPreferredCoreMLModelSource(resolvedOpts, null);
       }
-    }
 
-    const isLoaded = await this.provider.isLoaded();
-    if (isLoaded) {
-      const oldKey = JSON.stringify(this.currentOptions);
-      const newKey = JSON.stringify(resolvedOpts);
-      if (oldKey === newKey) {
-        return;
+      const isLoaded = await this.provider.isLoaded();
+      if (isLoaded) {
+        const oldKey = JSON.stringify(this.currentOptions);
+        const newKey = JSON.stringify(resolvedOpts);
+        if (oldKey === newKey) {
+          this.setState("Ready");
+          return;
+        }
       }
-    }
 
-    onProgress?.({
-      stage: "activating",
-      message: "Loading CoreML model into runtime",
-      progress: 0.97,
-    });
-    await this.provider.load(resolvedOpts, { forceReload: true });
-    this.currentOptions = { ...resolvedOpts };
-    onProgress?.({
-      stage: "ready",
-      message: "CoreML model loaded and ready",
-      progress: 1,
-    });
+      onProgress?.({
+        stage: "activating",
+        message: "Loading CoreML model into runtime",
+        progress: 0.97,
+      });
+      await this.provider.load(resolvedOpts, { forceReload: true });
+      this.currentOptions = { ...resolvedOpts };
+      this.setState("Ready");
+      onProgress?.({
+        stage: "ready",
+        message: "CoreML model loaded and ready",
+        progress: 1,
+      });
+    } catch (error) {
+      this.setState("Idle");
+      throw error;
+    }
   }
 
   async generate(
@@ -136,8 +165,12 @@ export class CoreMLManager {
   }
 
   async dispose(): Promise<void> {
-    await this.provider.unload();
-    this.currentOptions = { ...DEFAULT_COREML_LOAD_OPTIONS };
+    return this.queueTransition(async () => {
+      this.setState("Disposing");
+      await this.provider.unload();
+      this.currentOptions = { ...DEFAULT_COREML_LOAD_OPTIONS };
+      this.setState("Idle");
+    });
   }
 
   async isReady(): Promise<boolean> {
@@ -146,6 +179,39 @@ export class CoreMLManager {
 
   getActiveComputeUnits(): CoreMLLoadModelOptions["computeUnits"] | null {
     return this.provider.getActiveComputeUnits();
+  }
+
+  getState(): CoreMLManagerState {
+    return this.state;
+  }
+
+  onStateChange(listener: CoreMLManagerStateListener): () => void {
+    this.stateListeners.add(listener);
+    return () => {
+      this.stateListeners.delete(listener);
+    };
+  }
+
+  private setState(state: CoreMLManagerState) {
+    if (this.state === state) {
+      return;
+    }
+
+    const previousState = this.state;
+    this.state = state;
+
+    this.stateListeners.forEach((listener) => {
+      listener({ previousState, state });
+    });
+  }
+
+  private queueTransition<T>(transition: () => Promise<T>): Promise<T> {
+    const queued = this.transitionQueue.then(transition, transition);
+    this.transitionQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
   }
 }
 

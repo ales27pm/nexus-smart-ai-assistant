@@ -141,6 +141,60 @@ describe("CoreMLManager", () => {
     expect(provider.load).toHaveBeenCalledTimes(1);
   });
 
+  it("serializes dispose and initialize transitions", async () => {
+    let releaseUnload: (() => void) | null = null;
+    const unloadStarted = new Promise<void>((resolve) => {
+      releaseUnload = resolve;
+    });
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn().mockImplementation(() => unloadStarted),
+      cancel: jest.fn(),
+      isLoaded: jest.fn().mockResolvedValue(false),
+    };
+
+    const manager = new CoreMLManager(provider as any);
+
+    const disposePromise = manager.dispose();
+    const initializePromise = manager.initialize();
+
+    await Promise.resolve();
+    expect(provider.unload).toHaveBeenCalledTimes(1);
+    expect(provider.load).not.toHaveBeenCalled();
+
+    releaseUnload?.();
+    await disposePromise;
+    await initializePromise;
+
+    expect(provider.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("publishes deterministic state transitions", async () => {
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn().mockResolvedValue(undefined),
+      cancel: jest.fn(),
+      isLoaded: jest.fn().mockResolvedValue(false),
+    };
+
+    const manager = new CoreMLManager(provider as any);
+    const states: string[] = [];
+    const unsubscribe = manager.onStateChange(({ state }) => {
+      states.push(state);
+    });
+
+    await manager.initialize();
+    await manager.dispose();
+
+    unsubscribe();
+
+    expect(states).toEqual(["Loading", "Ready", "Disposing", "Idle"]);
+    expect(manager.getState()).toBe("Idle");
+  });
+
   it("throws outside __DEV__ when model preparation fails", async () => {
     const previousDev = global.__DEV__;
     (global as any).__DEV__ = false;

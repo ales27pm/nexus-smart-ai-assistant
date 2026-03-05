@@ -5,13 +5,32 @@ import {
   CoreMLLoadModelOptions,
   CoreMLLoadUxState,
 } from "@/utils/coreml";
-import { CoreMLManager, coreMLManager } from "@/utils/coreMLManager";
+import {
+  CoreMLManager,
+  CoreMLManagerState,
+  coreMLManager,
+} from "@/utils/coreMLManager";
 import { reportError } from "@/utils/globalErrorHandler";
 import { useAsyncOperation } from "@/hooks/useAsyncOperation";
 
 type CoreMLLoadStatusEvent = {
   state: CoreMLLoadUxState;
   detail?: string;
+};
+
+const toLoadUxState = (state: CoreMLManagerState): CoreMLLoadUxState => {
+  switch (state) {
+    case "Idle":
+      return "downloading model";
+    case "Loading":
+      return "verifying model";
+    case "Disposing":
+      return "verifying model";
+    case "Ready":
+      return "ready";
+    default:
+      return "downloading model";
+  }
 };
 
 export function useCoreMLChat(
@@ -29,51 +48,52 @@ export function useCoreMLChat(
   const { isRunning, runExclusive } = useAsyncOperation();
 
   useEffect(() => {
-    let disposed = false;
+    if (Platform.OS !== "ios") return;
 
-    async function boot() {
-      if (Platform.OS !== "ios") return;
+    activeManagerRef.current = manager;
 
-      try {
-        setLoadStatus({ state: "downloading model" });
-        const managerInstance = manager;
-        await managerInstance.initialize(loadOptions);
+    const syncFromState = (state: CoreMLManagerState) => {
+      setLoadStatus((current) => ({
+        state: toLoadUxState(state),
+        detail: state === "Ready" ? undefined : current.detail,
+      }));
+      setIsAvailable(state === "Ready");
+      setActiveComputeUnits(
+        state === "Ready" ? manager.getActiveComputeUnits() : null,
+      );
+    };
 
-        if (!disposed) {
-          activeManagerRef.current = managerInstance;
-          setIsAvailable(true);
-          setActiveComputeUnits(managerInstance.getActiveComputeUnits());
-          setLoadStatus({ state: "ready" });
-        } else {
-          await managerInstance.dispose();
-        }
-      } catch (error) {
+    syncFromState(manager.getState());
+    const unsubscribe = manager.onStateChange(({ state }) => {
+      syncFromState(state);
+    });
+
+    void manager
+      .initialize(loadOptions)
+      .then(() => {
+        activeManagerRef.current = manager;
+      })
+      .catch((error) => {
         reportError({
           error: error instanceof Error ? error : new Error(String(error)),
           severity: "error",
           source: "global-js",
           metadata: { scope: "useCoreMLChat.boot" },
         });
-        if (!disposed) {
-          activeManagerRef.current = null;
-          setIsAvailable(false);
-          setActiveComputeUnits(null);
-          setLoadStatus({
-            state: "failed—retry",
-            detail: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    }
-
-    void boot();
+        activeManagerRef.current = null;
+        setIsAvailable(false);
+        setActiveComputeUnits(null);
+        setLoadStatus({
+          state: "failed—retry",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+      });
 
     return () => {
-      disposed = true;
       const latestManager = activeManagerRef.current;
       activeManagerRef.current = null;
+      unsubscribe();
       if (latestManager) {
-        setActiveComputeUnits(null);
         latestManager.dispose().catch((error) => {
           reportError({
             error: error instanceof Error ? error : new Error(String(error)),
