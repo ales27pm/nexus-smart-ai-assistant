@@ -3,7 +3,7 @@ import TestRenderer, { act } from "react-test-renderer";
 
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { CoreMLLoadModelOptions } from "@/utils/coreml";
-import { CoreMLManager } from "@/utils/coreMLManager";
+import { CoreMLManager, CoreMLManagerState } from "@/utils/coreMLManager";
 
 jest.mock("react-native", () => ({
   Platform: {
@@ -17,24 +17,47 @@ jest.mock("@/utils/globalErrorHandler", () => ({
 
 type ManagerMock = Pick<
   CoreMLManager,
-  "initialize" | "dispose" | "generate" | "getActiveComputeUnits"
+  | "initialize"
+  | "dispose"
+  | "generate"
+  | "getActiveComputeUnits"
+  | "getState"
+  | "onStateChange"
 >;
 
-function createManagerMock(): {
+function createManagerMock(initialState: CoreMLManagerState = "Idle"): {
   manager: CoreMLManager;
   initialize: jest.Mock<Promise<void>, [CoreMLLoadModelOptions | undefined]>;
   dispose: jest.Mock<Promise<void>, []>;
 } {
-  const initialize = jest.fn(async () => undefined);
-  const dispose = jest.fn(async () => undefined);
+  const listeners = new Set<(event: { state: CoreMLManagerState }) => void>();
+  let state = initialState;
+
+  const initialize = jest.fn(async () => {
+    state = "Ready";
+    listeners.forEach((listener) => listener({ state }));
+  });
+  const dispose = jest.fn(async () => {
+    state = "Idle";
+    listeners.forEach((listener) => listener({ state }));
+  });
   const generate = jest.fn(async () => "ok");
   const getActiveComputeUnits = jest.fn(() => "all");
+  const getState = jest.fn(() => state);
+  const onStateChange = jest.fn(
+    (listener: (event: { state: CoreMLManagerState }) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  );
 
   const manager: ManagerMock = {
     initialize,
     dispose,
     generate,
     getActiveComputeUnits,
+    getState,
+    onStateChange,
   };
 
   return {
