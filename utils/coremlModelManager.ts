@@ -74,21 +74,52 @@ type ManagerState = {
 };
 
 let ensureModelPromise: Promise<ModelAssetReadyResult | null> | null = null;
-const ensureModelProgressListeners = new Set<ModelAssetProgressCallback>();
-let latestEnsureModelProgressEvent: ModelAssetProgressEvent | null = null;
 
-function emitEnsureModelProgress(event: ModelAssetProgressEvent): void {
-  latestEnsureModelProgressEvent = event;
-  for (const listener of ensureModelProgressListeners) {
-    try {
-      listener(event);
-    } catch (error) {
-      console.warn(`${LOG_PREFIX} progress listener callback failed`, {
-        error: error instanceof Error ? error.message : String(error),
-      });
+function logProgressListenerError(error: unknown): void {
+  console.warn(`${LOG_PREFIX} progress listener callback failed`, {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+class ProgressEmitter<T> {
+  private listeners = new Set<(event: T) => void>();
+  private lastEvent: T | null = null;
+
+  emit(event: T): void {
+    this.lastEvent = event;
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        logProgressListenerError(error);
+      }
     }
   }
+
+  subscribe(listener: (event: T) => void): () => void {
+    this.listeners.add(listener);
+
+    if (this.lastEvent) {
+      try {
+        listener(this.lastEvent);
+      } catch (error) {
+        logProgressListenerError(error);
+      }
+    }
+
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  clear(): void {
+    this.listeners.clear();
+    this.lastEvent = null;
+  }
 }
+
+const ensureModelProgressEmitter =
+  new ProgressEmitter<ModelAssetProgressEvent>();
 
 function normalizeDirectory(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
@@ -207,13 +238,139 @@ type DownloadResult = {
   source: string;
 };
 
+type InactivityTimeoutRunOptions<T> = {
+  timeoutMs: number;
+  timeoutMessage: string;
+  operation: (markActivity: () => void) => Promise<T>;
+  onTimeout: () => Promise<unknown>;
+};
+
+async function runWithInactivityTimeout<T>({
+  timeoutMs,
+  timeoutMessage,
+  operation,
+  onTimeout,
+}: InactivityTimeoutRunOptions<T>): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+
+    const clearTimer = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+    };
+
+    const settle = (fn: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimer();
+      fn();
+    };
+
+    const scheduleTimeout = () => {
+      clearTimer();
+      timeoutId = setTimeout(() => {
+        settle(() => {
+          void onTimeout()
+            .catch(() => undefined)
+            .finally(() => {
+              reject(new Error(timeoutMessage));
+            });
+        });
+      }, timeoutMs);
+    };
+
+    const markActivity = () => {
+      if (!settled) {
+        scheduleTimeout();
+      }
+    };
+
+    scheduleTimeout();
+
+    void operation(markActivity)
+      .then((result) => {
+        settle(() => {
+          resolve(result);
+        });
+      })
+      .catch((error) => {
+        settle(() => {
+          reject(error);
+        });
+      });
+  });
+}
+
+async function downloadResumableWithStallTimeout(
+  source: string,
+  destination: string,
+  descriptorPath: string,
+  onProgress?: (writtenBytes: number, expectedBytes: number) => void,
+): Promise<{
+  response: Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>;
+  bytesWritten: number;
+}> {
+  let bytesWritten = 0;
+  let resumable: FileSystem.DownloadResumable | null = null;
+
+  const response = await runWithInactivityTimeout<
+    Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>
+  >({
+    timeoutMs: DOWNLOAD_ATTEMPT_TIMEOUT_MS,
+    timeoutMessage: `Download stalled for ${descriptorPath} after ${DOWNLOAD_ATTEMPT_TIMEOUT_MS}ms`,
+    operation: async (markActivity) => {
+      resumable = FileSystem.createDownloadResumable(
+        source,
+        destination,
+        {},
+        (progress) => {
+          bytesWritten = progress.totalBytesWritten;
+          markActivity();
+          onProgress?.(
+            progress.totalBytesWritten,
+            progress.totalBytesExpectedToWrite,
+          );
+        },
+      );
+
+      return resumable.downloadAsync();
+    },
+    onTimeout: async () => {
+      await resumable?.pauseAsync();
+    },
+  });
+
+  if (!resumable) {
+    throw new Error(`Download could not be initialized for ${descriptorPath}`);
+  }
+
+  return { response, bytesWritten };
+}
+
+async function resolveBytesWritten(
+  currentBytes: number,
+  destination: string,
+): Promise<number> {
+  if (currentBytes > 0) {
+    return currentBytes;
+  }
+
+  const fileInfo = await FileSystem.getInfoAsync(destination);
+  return typeof fileInfo.size === "number" ? fileInfo.size : 0;
+}
+
 async function downloadWithFallbackSources(
   descriptor: DownloadFileDescriptor,
   destination: string,
   retries: number,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
 ): Promise<DownloadResult> {
-  let bytesWritten = 0;
   let attemptCount = 0;
   let lastError: unknown = null;
 
@@ -223,47 +380,14 @@ async function downloadWithFallbackSources(
       attempt += 1;
       attemptCount += 1;
 
-      const resumable = FileSystem.createDownloadResumable(
-        source,
-        destination,
-        {},
-        (progress) => {
-          bytesWritten = progress.totalBytesWritten;
-          onProgress?.(
-            progress.totalBytesWritten,
-            progress.totalBytesExpectedToWrite,
-          );
-        },
-      );
-
       try {
-        let timeoutId: ReturnType<typeof setTimeout> | undefined;
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            void resumable
-              .pauseAsync()
-              .catch(() => undefined)
-              .finally(() => {
-                reject(
-                  new Error(
-                    `Download stalled for ${descriptor.path} after ${DOWNLOAD_ATTEMPT_TIMEOUT_MS}ms`,
-                  ),
-                );
-              });
-          }, DOWNLOAD_ATTEMPT_TIMEOUT_MS);
-        });
-
-        let response: Awaited<ReturnType<typeof resumable.downloadAsync>>;
-        try {
-          response = await Promise.race([
-            resumable.downloadAsync(),
-            timeoutPromise,
-          ]);
-        } finally {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
-        }
+        const { response, bytesWritten } =
+          await downloadResumableWithStallTimeout(
+            source,
+            destination,
+            descriptor.path,
+            onProgress,
+          );
 
         if (!response || response.status !== 200) {
           throw new Error(
@@ -271,12 +395,16 @@ async function downloadWithFallbackSources(
           );
         }
 
-        if (bytesWritten <= 0) {
-          const fileInfo = await FileSystem.getInfoAsync(destination);
-          bytesWritten = typeof fileInfo.size === "number" ? fileInfo.size : 0;
-        }
+        const finalBytesWritten = await resolveBytesWritten(
+          bytesWritten,
+          destination,
+        );
 
-        return { bytesWritten, attempts: attemptCount, source };
+        return {
+          bytesWritten: finalBytesWritten,
+          attempts: attemptCount,
+          source,
+        };
       } catch (error) {
         lastError = error;
         console.warn(`${LOG_PREFIX} download attempt failed`, {
@@ -479,7 +607,7 @@ async function prepareVersion(
   const startedAt = Date.now();
   let bytesWritten = 0;
   let totalAttempts = 0;
-  let lastDownloadSource = "cache";
+  const downloadSources = new Set<string>();
   let downloadedAny = false;
 
   await ensureDirectory(getModelsRootDirectory());
@@ -522,7 +650,7 @@ async function prepareVersion(
       downloadedAny = downloadedAny || result.downloaded;
       bytesWritten += result.bytesWritten;
       totalAttempts += result.attempts;
-      lastDownloadSource = result.source;
+      downloadSources.add(result.source);
 
       onProgress?.({
         stage: "verifying",
@@ -557,6 +685,13 @@ async function prepareVersion(
     progress: 1,
   });
 
+  const aggregatedSource =
+    downloadSources.size === 0
+      ? "cache"
+      : downloadSources.size === 1
+        ? Array.from(downloadSources)[0]
+        : "mixed";
+
   return {
     modelDirectory: getModelDirectory(version.id),
     modelPath,
@@ -567,7 +702,7 @@ async function prepareVersion(
       durationMs: Date.now() - startedAt,
       attempts: totalAttempts,
       bytesWritten,
-      source: lastDownloadSource,
+      source: aggregatedSource,
     },
   };
 }
@@ -639,35 +774,23 @@ async function ensureModelAssetsInternal(
 export async function ensureCoreMLModelAssets(
   onProgress?: ModelAssetProgressCallback,
 ): Promise<ModelAssetReadyResult | null> {
-  if (onProgress) {
-    ensureModelProgressListeners.add(onProgress);
-    if (latestEnsureModelProgressEvent) {
-      try {
-        onProgress(latestEnsureModelProgressEvent);
-      } catch (error) {
-        console.warn(`${LOG_PREFIX} progress listener callback failed`, {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
+  const unsubscribe = onProgress
+    ? ensureModelProgressEmitter.subscribe(onProgress)
+    : undefined;
 
   if (!ensureModelPromise) {
-    ensureModelPromise = ensureModelAssetsInternal(
-      emitEnsureModelProgress,
+    ensureModelPromise = ensureModelAssetsInternal((event) =>
+      ensureModelProgressEmitter.emit(event),
     ).finally(() => {
       ensureModelPromise = null;
-      ensureModelProgressListeners.clear();
-      latestEnsureModelProgressEvent = null;
+      ensureModelProgressEmitter.clear();
     });
   }
 
   try {
     return await ensureModelPromise;
   } finally {
-    if (onProgress) {
-      ensureModelProgressListeners.delete(onProgress);
-    }
+    unsubscribe?.();
   }
 }
 

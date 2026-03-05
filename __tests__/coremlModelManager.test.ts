@@ -25,6 +25,7 @@ describe("coremlModelManager", () => {
     const files = new Map<string, string>();
     const dirs = new Set<string>();
     const payload = "model-data";
+    const expectedSource = "https://example.com/model";
     const expectedHash = sha256(payload);
     const downloadGate = createDeferred<{ status: number }>();
 
@@ -117,7 +118,7 @@ describe("coremlModelManager", () => {
               {
                 path: "model.mlpackage",
                 sha256: expectedHash,
-                sources: ["https://example.com/model"],
+                sources: [expectedSource],
               },
             ],
           },
@@ -148,6 +149,11 @@ describe("coremlModelManager", () => {
     await expect(firstCall).resolves.toEqual(
       expect.objectContaining({
         modelPath: "/docs/coreml-models/v1/model.mlpackage",
+        telemetry: expect.objectContaining({
+          attempts: 1,
+          bytesWritten: payload.length,
+          source: expectedSource,
+        }),
       }),
     );
     await expect(secondCall).resolves.toEqual(
