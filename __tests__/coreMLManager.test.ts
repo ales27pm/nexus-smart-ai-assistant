@@ -2,6 +2,8 @@ import { CoreMLError } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { CoreMLManager } from "@/utils/coreMLManager";
 
+import { createDeferred, flushMicrotasks } from "./utils/asyncTestUtils";
+
 jest.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));

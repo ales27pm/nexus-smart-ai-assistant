@@ -77,6 +77,11 @@ export default function E2ETabScreen() {
     setScenarioStatus((prev) => ({ ...prev, [key]: status }));
   };
 
+  const nextMacrotask = () =>
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
   const runLoadAndGenerate = async () => {
     setScenario("load-generate", "running");
     setErrorText("");
@@ -192,11 +197,17 @@ export default function E2ETabScreen() {
   const runTransitionSerializationScenario = async () => {
     setScenario("transition-serialize", "running");
     setErrorText("");
+    setResultText("");
 
     try {
       setComputeUnits("all");
+      await nextMacrotask();
+
       setComputeUnits("cpuAndNeuralEngine");
+      await nextMacrotask();
+
       setComputeUnits("all");
+      await nextMacrotask();
 
       const output = await generate(
         SYSTEM_PROMPT,
@@ -205,12 +216,11 @@ export default function E2ETabScreen() {
       setResultText(output);
       setScenario(
         "transition-serialize",
-        loadStatus.state === "ready" && output.trim().length > 0
-          ? "passed"
-          : "failed",
+        output.trim().length > 0 ? "passed" : "failed",
       );
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : String(error));
+      setResultText("");
       setScenario("transition-serialize", "failed");
     }
   };

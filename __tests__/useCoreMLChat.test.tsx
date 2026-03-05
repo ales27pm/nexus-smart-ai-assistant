@@ -5,6 +5,8 @@ import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { CoreMLLoadModelOptions } from "@/utils/coreml";
 import { CoreMLManager, CoreMLManagerState } from "@/utils/coreMLManager";
 
+import { createDeferred } from "./utils/asyncTestUtils";
+
 jest.mock("react-native", () => ({
   Platform: {
     OS: "ios",
