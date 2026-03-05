@@ -3,6 +3,8 @@ require 'json'
 package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
 Pod::Spec.new do |s|
+  ios_deployment_target = '18.0'
+
   s.name         = package['name']
   s.version      = package['version']
   s.summary      = 'On-device Core ML LLM runner (iOS) for Expo'
@@ -11,7 +13,7 @@ Pod::Spec.new do |s|
   s.license      = { :type => 'MIT' }
   s.author       = { 'local' => 'local' }
   # Require newer iOS version for APIs used in Swift (MLState, cpuAndNeuralEngine)
-  s.platforms    = { :ios => '18.0' }
+  s.platforms    = { :ios => ios_deployment_target }
   s.source       = { :path => '.' }
   s.static_framework = true
 
