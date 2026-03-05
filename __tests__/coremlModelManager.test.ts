@@ -18,9 +18,44 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve };
 }
 
+type AppStateChangeHandler = (state: string) => void;
+
+function setupReactNativeMock(initialState = "active") {
+  let currentState = initialState;
+  const listeners = new Set<AppStateChangeHandler>();
+
+  jest.doMock("react-native", () => ({
+    AppState: {
+      get currentState() {
+        return currentState;
+      },
+      addEventListener: jest.fn(
+        (_eventType: "change", listener: AppStateChangeHandler) => {
+          listeners.add(listener);
+          return {
+            remove: () => {
+              listeners.delete(listener);
+            },
+          };
+        },
+      ),
+    },
+  }));
+
+  return {
+    setState(nextState: string) {
+      currentState = nextState;
+      for (const listener of listeners) {
+        listener(nextState);
+      }
+    },
+  };
+}
+
 describe("coremlModelManager", () => {
   it("replays latest progress to late concurrent listeners", async () => {
     jest.resetModules();
+    setupReactNativeMock("active");
 
     const files = new Map<string, string>();
     const dirs = new Set<string>();
@@ -165,6 +200,7 @@ describe("coremlModelManager", () => {
 
   it("reports byte-based download message when expected size is unknown", async () => {
     jest.resetModules();
+    setupReactNativeMock("active");
 
     const files = new Map<string, string>();
     const dirs = new Set<string>();
@@ -296,5 +332,59 @@ describe("coremlModelManager", () => {
         progress: 0.05,
       }),
     );
+  });
+
+  it("defers inactivity timeout while app is backgrounded", async () => {
+    jest.resetModules();
+    jest.useFakeTimers();
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { __coreMLModelManagerTestUtils } =
+      require("@/utils/coremlModelManager") as typeof import("@/utils/coremlModelManager");
+
+    const events = new Set<(state: string) => void>();
+    let appState = "background";
+    const onForegroundRequired = jest.fn();
+    const onTimeout = jest.fn(async () => undefined);
+
+    const opGate = createDeferred<string>();
+
+    const runPromise = __coreMLModelManagerTestUtils.runWithInactivityTimeout({
+      timeoutMs: 100,
+      timeoutMessage: "stalled",
+      operation: async () => opGate.promise,
+      onTimeout,
+      onForegroundRequired,
+      getCurrentAppState: () => appState,
+      subscribeToAppState: (listener) => {
+        events.add(listener);
+        return {
+          remove: () => {
+            events.delete(listener);
+          },
+        };
+      },
+    });
+
+    await Promise.resolve();
+
+    jest.advanceTimersByTime(1_000);
+    await Promise.resolve();
+
+    expect(onForegroundRequired).toHaveBeenCalledTimes(1);
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    appState = "active";
+    for (const listener of events) {
+      listener("active");
+    }
+
+    jest.advanceTimersByTime(101);
+    await Promise.resolve();
+
+    await expect(runPromise).rejects.toThrow("stalled");
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
   });
 });

@@ -7,6 +7,7 @@ import {
 } from "@/utils/modelManifest";
 import { Buffer } from "buffer";
 import { sha256 } from "js-sha256";
+import { AppState } from "react-native";
 
 const LOG_PREFIX = "[CoreMLModelManager]";
 const DEFAULT_RETRY_COUNT = 3;
@@ -261,6 +262,11 @@ type InactivityTimeoutRunOptions<T> = {
   timeoutMessage: string;
   operation: (markActivity: () => void) => Promise<T>;
   onTimeout: () => Promise<unknown>;
+  onForegroundRequired?: () => void;
+  getCurrentAppState?: () => string;
+  subscribeToAppState?: (listener: (state: string) => void) => {
+    remove: () => void;
+  };
 };
 
 async function runWithInactivityTimeout<T>({
@@ -268,10 +274,32 @@ async function runWithInactivityTimeout<T>({
   timeoutMessage,
   operation,
   onTimeout,
+  onForegroundRequired,
+  getCurrentAppState = () => AppState.currentState,
+  subscribeToAppState = (listener) =>
+    AppState.addEventListener("change", listener),
 }: InactivityTimeoutRunOptions<T>): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
+    let foregroundRequiredNotified = false;
+    const appStateSubscription = subscribeToAppState((nextState) => {
+      if (settled) {
+        return;
+      }
+
+      if (nextState === "active") {
+        foregroundRequiredNotified = false;
+        scheduleTimeout();
+        return;
+      }
+
+      clearTimer();
+      if (!foregroundRequiredNotified) {
+        foregroundRequiredNotified = true;
+        onForegroundRequired?.();
+      }
+    });
 
     const clearTimer = () => {
       if (timeoutId) {
@@ -287,10 +315,20 @@ async function runWithInactivityTimeout<T>({
 
       settled = true;
       clearTimer();
+      appStateSubscription.remove();
       fn();
     };
 
     const scheduleTimeout = () => {
+      if (getCurrentAppState() !== "active") {
+        clearTimer();
+        if (!foregroundRequiredNotified) {
+          foregroundRequiredNotified = true;
+          onForegroundRequired?.();
+        }
+        return;
+      }
+
       clearTimer();
       timeoutId = setTimeout(() => {
         settle(() => {
@@ -325,6 +363,10 @@ async function runWithInactivityTimeout<T>({
   });
 }
 
+export const __coreMLModelManagerTestUtils = {
+  runWithInactivityTimeout,
+};
+
 async function downloadResumableWithStallTimeout(
   source: string,
   destination: string,
@@ -336,6 +378,7 @@ async function downloadResumableWithStallTimeout(
 }> {
   let bytesWritten = 0;
   let resumable: FileSystem.DownloadResumable | null = null;
+  let didEmitForegroundRequired = false;
 
   const response = await runWithInactivityTimeout<
     Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>
@@ -361,6 +404,21 @@ async function downloadResumableWithStallTimeout(
     },
     onTimeout: async () => {
       await resumable?.pauseAsync();
+    },
+    onForegroundRequired: () => {
+      if (didEmitForegroundRequired) {
+        return;
+      }
+
+      didEmitForegroundRequired = true;
+      const message = `App is in background. Bring the app to foreground to resume real-time progress updates for ${descriptorPath}.`;
+      console.info(`${LOG_PREFIX} ${message}`);
+      ensureModelProgressEmitter.emit({
+        stage: "downloading",
+        message,
+        progress: 0,
+        filePath: descriptorPath,
+      });
     },
   });
 
