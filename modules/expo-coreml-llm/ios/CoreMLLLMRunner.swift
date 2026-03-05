@@ -49,13 +49,10 @@ final class CoreMLLLMRunner {
   func load(options: Types.LoadModelOptions) throws -> Types.ModelInfo {
     let modelURL: URL
     do {
-      modelURL = try ResourceResolver.resolveModelURL(
-        modelFile: options.modelFile ?? options.modelName,
-        modelPath: options.modelPath
-      )
+      modelURL = try ResourceResolver.resolveModelURL(modelPath: options.modelPath)
     } catch {
       throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelMissing.rawValue, userInfo: [
-        NSLocalizedDescriptionKey: "Missing CoreML model resource. Verify bundled .mlpackage exists.",
+        NSLocalizedDescriptionKey: "Missing CoreML model resource. Provide a valid modelPath pointing to a downloaded model in app-accessible storage.",
         NSUnderlyingErrorKey: error,
       ])
     }

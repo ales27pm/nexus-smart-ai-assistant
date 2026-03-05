@@ -22,9 +22,7 @@ enum Types {
   }
 
   struct LoadModelOptions {
-    let modelFile: String?
     let modelPath: String?
-    let modelName: String?
 
     let inputIdsName: String
     let attentionMaskName: String
@@ -37,9 +35,7 @@ enum Types {
     let computeUnits: CoreMLComputeUnits
 
     init(from dict: [String: Any]) throws {
-      self.modelFile = dict["modelFile"] as? String
       self.modelPath = dict["modelPath"] as? String
-      self.modelName = dict["modelName"] as? String
 
       self.inputIdsName = (dict["inputIdsName"] as? String) ?? "input_ids"
       self.attentionMaskName = (dict["attentionMaskName"] as? String) ?? "attention_mask"

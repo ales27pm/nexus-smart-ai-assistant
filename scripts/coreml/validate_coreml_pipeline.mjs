@@ -163,15 +163,100 @@ function runCoreMLToolsInspection({ repoRootPath, modelDir, io, strict }) {
   return { issues, notes };
 }
 
+function isValidSha256(sha) {
+  return typeof sha === "string" && /^[a-f0-9]{64}$/i.test(sha);
+}
+
+function validateRuntimeManifest(runtimeManifest) {
+  const issues = [];
+  const notes = [];
+
+  if (!runtimeManifest || typeof runtimeManifest !== "object") {
+    issues.push("coreml-runtime-manifest.json must be a JSON object");
+    return { issues, notes };
+  }
+
+  const versions = runtimeManifest.versions;
+  if (!Array.isArray(versions) || versions.length < 1) {
+    issues.push(
+      "coreml-runtime-manifest.json versions must contain at least one entry",
+    );
+    return { issues, notes };
+  }
+
+  const activeVersion = versions.find(
+    (version) => version?.id === runtimeManifest.activeVersionId,
+  );
+
+  if (!activeVersion) {
+    issues.push(
+      `activeVersionId ${String(runtimeManifest.activeVersionId)} does not match any versions[*].id`,
+    );
+    return { issues, notes };
+  }
+
+  if (!Array.isArray(activeVersion.files) || activeVersion.files.length < 1) {
+    issues.push(
+      `active version ${activeVersion.id} must define versions[*].files`,
+    );
+    return { issues, notes };
+  }
+
+  for (const [index, file] of activeVersion.files.entries()) {
+    const filePath = `versions[${versions.indexOf(activeVersion)}].files[${index}]`;
+
+    if (typeof file?.path !== "string" || file.path.trim().length === 0) {
+      issues.push(`${filePath}.path must be a non-empty string`);
+    }
+
+    if (!isValidSha256(file?.sha256)) {
+      issues.push(`${filePath}.sha256 must be a 64-character hex digest`);
+    }
+
+    if (!Array.isArray(file?.sources) || file.sources.length < 1) {
+      issues.push(`${filePath}.sources must include at least one URL`);
+      continue;
+    }
+
+    for (const [sourceIndex, source] of file.sources.entries()) {
+      if (typeof source !== "string" || source.trim().length === 0) {
+        issues.push(
+          `${filePath}.sources[${sourceIndex}] must be a non-empty string URL`,
+        );
+        continue;
+      }
+
+      try {
+        const parsed = new URL(source);
+        if (!["https:", "http:"].includes(parsed.protocol)) {
+          issues.push(
+            `${filePath}.sources[${sourceIndex}] must use http/https URL scheme`,
+          );
+        }
+      } catch {
+        issues.push(`${filePath}.sources[${sourceIndex}] is not a valid URL`);
+      }
+    }
+  }
+
+  notes.push(
+    `OK runtime manifest activeVersionId=${activeVersion.id} declares ${activeVersion.files.length} downloadable file(s) with URL/hash metadata`,
+  );
+
+  return { issues, notes };
+}
+
 async function run() {
   const { strict } = parseArgs(process.argv.slice(2));
   const { manifestPath, manifest } = await readCoreMLManifest(repoRoot);
   const io = getIOExpectationsFromManifest(manifest);
 
-  const modelDir = path.join(
+  const runtimeManifestPath = path.join(
     repoRoot,
-    "modules/expo-coreml-llm/ios/resources/models",
-    manifest.activeModel,
+    "coreml-runtime-manifest.json",
+  );
+  const runtimeManifest = JSON.parse(
+    await readFile(runtimeManifestPath, "utf8"),
   );
 
   const tokenizerBundle = getTokenizerBundlePathsFromManifest(manifest);
@@ -189,6 +274,10 @@ async function run() {
   const issues = [];
   const notes = [];
 
+  const runtimeManifestValidation = validateRuntimeManifest(runtimeManifest);
+  issues.push(...runtimeManifestValidation.issues);
+  notes.push(...runtimeManifestValidation.notes);
+
   const tokenizerCacheKey = getTokenizerCacheKeyFromManifest(manifest);
   const tokenizerCacheDir = path.join(
     repoRoot,
@@ -197,61 +286,34 @@ async function run() {
   );
   const tokenizerJsonPath = path.join(tokenizerCacheDir, "tokenizer.json");
 
-  const modelExists = await exists(modelDir);
-  if (!modelExists) {
-    issues.push(
-      `Model asset missing. Expected directory: ${modelDir} (from coreml-config.json activeModel=${manifest.activeModel})`,
-    );
-  }
-
-  if (modelExists) {
-    const modelStats = await stat(modelDir);
+  const localModelDir = path.join(
+    repoRoot,
+    ".hf_models/Dolphin3.0-CoreML",
+    manifest.activeModel,
+  );
+  if (await exists(localModelDir)) {
+    const modelStats = await stat(localModelDir);
     if (!modelStats.isDirectory()) {
-      issues.push(`Model path exists but is not a directory: ${modelDir}`);
-    }
-
-    const coreMLDataDir = path.join(modelDir, "Data/com.apple.CoreML");
-    const modelMilPath = path.join(coreMLDataDir, "model.mil");
-    const modelMLModelPath = path.join(coreMLDataDir, "model.mlmodel");
-    const hasCoreMLDataDir = await exists(coreMLDataDir);
-
-    if (!hasCoreMLDataDir) {
-      notes.push(
-        `WARN CoreML data directory ${path.relative(repoRoot, coreMLDataDir)} was not found.`,
+      issues.push(
+        `Local model cache exists but is not a directory: ${localModelDir}`,
       );
     } else {
-      const [hasModelMil, hasModelMLModel] = await Promise.all([
-        exists(modelMilPath),
-        exists(modelMLModelPath),
-      ]);
-
-      if (!hasModelMil && !hasModelMLModel) {
-        notes.push(
-          `WARN neither model.mil nor model.mlmodel was found under ${path.relative(repoRoot, coreMLDataDir)}.`,
-        );
-      } else if (hasModelMil && hasModelMLModel) {
-        notes.push(
-          `OK found model.mil at ${path.relative(repoRoot, modelMilPath)} and model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)}.`,
-        );
-      } else if (hasModelMil) {
-        notes.push(
-          `OK found model.mil at ${path.relative(repoRoot, modelMilPath)}.`,
-        );
-      } else if (hasModelMLModel) {
-        notes.push(
-          `OK found model.mlmodel at ${path.relative(repoRoot, modelMLModelPath)} (model.mil is optional for this package format).`,
-        );
-      }
+      notes.push(
+        `OK local model cache detected for optional deep inspection: ${path.relative(repoRoot, localModelDir)}`,
+      );
+      const deepInspection = runCoreMLToolsInspection({
+        repoRootPath: repoRoot,
+        modelDir: localModelDir,
+        io,
+        strict,
+      });
+      issues.push(...deepInspection.issues);
+      notes.push(...deepInspection.notes);
     }
-
-    const deepInspection = runCoreMLToolsInspection({
-      repoRootPath: repoRoot,
-      modelDir,
-      io,
-      strict,
-    });
-    issues.push(...deepInspection.issues);
-    notes.push(...deepInspection.notes);
+  } else {
+    notes.push(
+      `INFO local model cache not found at ${path.relative(repoRoot, localModelDir)}; skipping deep CoreML IO inspection (download-on-device lifecycle).`,
+    );
   }
 
   if (await exists(tokenizerJsonPath)) {
@@ -295,6 +357,7 @@ async function run() {
   );
 
   console.log("[coreml-validate] Manifest", manifestPath);
+  console.log("[coreml-validate] Runtime manifest", runtimeManifestPath);
   console.log(
     `[coreml-validate] activeModel=${manifest.activeModel} computeUnits=${manifest.computeUnits} contextLimit=${manifest.contextLimit}`,
   );

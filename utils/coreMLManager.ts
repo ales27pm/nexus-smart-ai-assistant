@@ -9,7 +9,7 @@ import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   toActionableCoreMLError,
-  withPreferredCoreMLModelSource,
+  withPreparedCoreMLModelPath,
 } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
@@ -72,20 +72,24 @@ export class CoreMLManager {
             progress: 0.01,
           });
           const prepared = await ensureCoreMLModelAssets(onProgress);
-          resolvedOpts = withPreferredCoreMLModelSource(
+          if (!prepared?.modelPath) {
+            throw new CoreMLError(
+              "CoreML model setup failed: downloaded assets are unavailable. Please check your network connection and free storage, then try again.",
+            );
+          }
+          resolvedOpts = withPreparedCoreMLModelPath(
             resolvedOpts,
             prepared?.modelPath,
           );
         } catch (error) {
-          if (!__DEV__) {
-            throw error;
-          }
-
-          console.warn(
-            "[CoreMLManager] model asset preparation failed; falling back to bundled model in __DEV__",
+          const detail = error instanceof Error ? error.message : String(error);
+          console.error(
+            "[CoreMLManager] model download/setup failed during initialization",
             error,
           );
-          resolvedOpts = withPreferredCoreMLModelSource(resolvedOpts, null);
+          throw new CoreMLError(
+            `CoreML model setup failed: unable to download or prepare model assets. Check connectivity and available storage, then retry. (${detail})`,
+          );
         }
       }
 

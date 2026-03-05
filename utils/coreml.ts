@@ -54,8 +54,6 @@ export class CoreMLError extends Error {
   }
 }
 
-export const DEFAULT_COREML_MODEL_FILE = modelManifest.activeModel;
-
 export type CoreMLModelPresetId = "fp16" | "int8" | "int4Lut";
 
 export type CoreMLModelPreset = {
@@ -105,7 +103,6 @@ export const DEFAULT_COREML_TOKENIZER = {
 } as const;
 
 export const DEFAULT_COREML_LOAD_OPTIONS: CoreMLLoadModelOptions = {
-  modelFile: DEFAULT_COREML_MODEL_FILE,
   inputIdsName: "input_ids",
   attentionMaskName: "attention_mask",
   cachePositionName: "cache_position",
@@ -115,23 +112,43 @@ export const DEFAULT_COREML_LOAD_OPTIONS: CoreMLLoadModelOptions = {
   maxContext: modelManifest.contextLimit,
 };
 
-export function withPreferredCoreMLModelSource(
+export function withPreparedCoreMLModelPath(
   baseOptions: CoreMLLoadModelOptions,
-  downloadedModelPath: string | null | undefined,
+  preparedModelPath: string | null | undefined,
 ): CoreMLLoadModelOptions {
-  const normalizedPath = downloadedModelPath?.trim();
+  const normalizedPath = preparedModelPath?.trim();
 
-  if (normalizedPath) {
-    const nextOptions: CoreMLLoadModelOptions = {
-      ...baseOptions,
-      modelPath: normalizedPath,
-    };
-    delete nextOptions.modelFile;
-    return nextOptions;
+  if (!normalizedPath) {
+    throw new CoreMLError(
+      "CoreML modelPath is required and must come from prepared/downloaded assets.",
+      20,
+    );
   }
 
-  const nextOptions: CoreMLLoadModelOptions = { ...baseOptions };
-  delete nextOptions.modelPath;
+  const nextOptions: CoreMLLoadModelOptions = {
+    ...baseOptions,
+    modelPath: normalizedPath,
+  };
+  delete nextOptions.modelFile;
+  return nextOptions;
+}
+
+export function requireCoreMLModelPath(
+  options: CoreMLLoadModelOptions,
+): CoreMLLoadModelOptions {
+  const normalizedPath = options.modelPath?.trim();
+  if (!normalizedPath) {
+    throw new CoreMLError(
+      "CoreML modelPath is required and must come from prepared/downloaded assets.",
+      20,
+    );
+  }
+
+  const nextOptions: CoreMLLoadModelOptions = {
+    ...options,
+    modelPath: normalizedPath,
+  };
+  delete nextOptions.modelFile;
   return nextOptions;
 }
 
@@ -234,7 +251,7 @@ export function normalizeCoreMLError(error: unknown): CoreMLError {
 export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
   10: "CoreML resource bundle missing. Run prebuild + pod install, then rebuild the iOS app.",
   12: "Tokenizer asset missing from bundle. Run the tokenizer install step before building iOS.",
-  20: "No CoreML model selected. Provide modelFile/modelPath and retry.",
+  20: "No CoreML model selected. Provide modelPath from prepared assets and retry.",
   21: "CoreML resource bundle not found. Re-run prebuild and install pods.",
   22: "CoreML model file not found in bundle. Redownload model assets and rebuild.",
   101: "CoreML model resource missing. Redownload model assets and rebuild the app.",
