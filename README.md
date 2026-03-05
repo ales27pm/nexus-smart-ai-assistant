@@ -89,8 +89,11 @@ npm run coreml:fetch
 # Validate manifest-declared assets/checksums
 npm run coreml:validate
 
-# Inspect model I/O metadata
+# Inspect model I/O metadata (defaults to .hf_models cache)
 npm run coreml:inspect
+
+# Or inspect an explicit downloaded model path
+npm run coreml:inspect -- /absolute/path/to/Dolphin3.0-Llama3.2-3B-int4-lut.mlpackage
 ```
 
 ### Manifest Governance

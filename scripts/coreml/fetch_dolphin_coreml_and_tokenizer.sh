@@ -65,7 +65,7 @@ if [ -z "$TOKENIZER_MERGES_FILE" ] || [ "$TOKENIZER_MERGES_FILE" = "null" ]; the
   exit 10
 fi
 
-MODEL_DEST="$ROOT_DIR/modules/expo-coreml-llm/ios/resources/models"
+MODEL_CACHE_ROOT="$ROOT_DIR/.hf_models/Dolphin3.0-CoreML"
 TOKENIZER_CACHE_KEY="$(printf "%s" "$TOKENIZER_REPO" | sed -E 's#^.*/##; s/[^[:alnum:]]+/_/g; s/^_+//; s/_+$//;' | tr "[:upper:]" "[:lower:]")"
 if [ -z "$TOKENIZER_CACHE_KEY" ]; then TOKENIZER_CACHE_KEY="tokenizer"; fi
 TOK_DEST="$ROOT_DIR/.hf_tokenizer_cache/$TOKENIZER_CACHE_KEY"
@@ -73,7 +73,7 @@ TOK_BUNDLE_DIR="$ROOT_DIR/$TOKENIZER_BUNDLE_DIR_MANIFEST"
 TOK_BUNDLE_VOCAB="$TOK_BUNDLE_DIR/$TOKENIZER_VOCAB_FILE"
 TOK_BUNDLE_MERGES="$TOK_BUNDLE_DIR/$TOKENIZER_MERGES_FILE"
 
-mkdir -p "$MODEL_DEST" "$TOK_DEST" "$TOK_BUNDLE_DIR"
+mkdir -p "$MODEL_CACHE_ROOT" "$TOK_DEST" "$TOK_BUNDLE_DIR"
 
 if ! command -v hf >/dev/null 2>&1; then
   echo "[i] 'hf' CLI not found; attempting safe installation via pipx/pip..."
@@ -95,16 +95,20 @@ if ! command -v hf >/dev/null 2>&1; then
 fi
 
 echo "[i] Downloading CoreML model: $COREML_REPO -> $MODEL_FILE"
-HF_ARGS=(download "$COREML_REPO" --include "$MODEL_FILE/**" --include "$MODEL_FILE/*" --local-dir "$ROOT_DIR/.hf_models/Dolphin3.0-CoreML")
+HF_ARGS=(download "$COREML_REPO" --include "$MODEL_FILE/**" --include "$MODEL_FILE/*" --local-dir "$MODEL_CACHE_ROOT")
 if [[ -n "${HF_TOKEN:-}" ]]; then HF_ARGS+=(--token "$HF_TOKEN"); fi
 hf "${HF_ARGS[@]}"
 
 : "${MODEL_FILE:?MODEL_FILE cannot be empty}"
-rm -rf "$MODEL_DEST/$MODEL_FILE"
-cp -R "$ROOT_DIR/.hf_models/Dolphin3.0-CoreML/$MODEL_FILE" "$MODEL_DEST/$MODEL_FILE"
+MODEL_LOCAL_PATH="$MODEL_CACHE_ROOT/$MODEL_FILE"
 
-echo "[✓] Model installed at:"
-echo "    $MODEL_DEST/$MODEL_FILE"
+if [[ ! -d "$MODEL_LOCAL_PATH" ]]; then
+  echo "[x] Downloaded model directory missing: $MODEL_LOCAL_PATH" >&2
+  exit 1
+fi
+
+echo "[✓] Model cached at:"
+echo "    $MODEL_LOCAL_PATH"
 
 echo "[i] Downloading tokenizer files from: $TOKENIZER_REPO"
 echo "[i] Tokenizer cache key: $TOKENIZER_CACHE_KEY"
@@ -147,7 +151,7 @@ echo "    $TOK_BUNDLE_DIR"
 
 echo
 echo "[next] Inspect CoreML IO:"
-echo "    python3 scripts/coreml/inspect_coreml_io.py \"$MODEL_DEST/$MODEL_FILE\""
+echo "    python3 scripts/coreml/inspect_coreml_io.py \"$MODEL_LOCAL_PATH\""
 
 
 echo "[i] Validating CoreML pipeline artifacts against manifest"
@@ -158,7 +162,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "[i] python3 not installed; skipping deep CoreML IO inspection"
 elif python3 -c "import coremltools" >/dev/null 2>&1; then
   echo "[i] Running deep CoreML IO inspection via coremltools"
-  node "$ROOT_DIR/scripts/coreml/run_coreml_inspect.mjs"
+  node "$ROOT_DIR/scripts/coreml/run_coreml_inspect.mjs" "$MODEL_LOCAL_PATH"
 else
   echo "[i] coremltools not installed; skipping deep CoreML IO inspection"
   echo "    Install: python3 -m pip install --upgrade coremltools"
