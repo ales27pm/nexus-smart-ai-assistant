@@ -142,7 +142,8 @@ if (expoResult.error) {
 }
 
 if (expoResult.signal) {
-  throw new Error(`expo run:ios terminated by signal ${expoResult.signal}.`);
+  console.error(`expo run:ios terminated by signal ${expoResult.signal}.`);
+  process.exit(1);
 }
 
 if (typeof expoResult.status === "number" && expoResult.status !== 0) {
