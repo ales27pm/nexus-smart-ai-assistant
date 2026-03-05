@@ -337,10 +337,14 @@ export default function DeviceNativeHubScreen() {
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not loaded");
-  const [coreMLLoadOptions, setCoreMLLoadOptions] =
-    useState<CoreMLLoadModelOptions>(() => ({
+  const initialCoreMLLoadOptions = useMemo<CoreMLLoadModelOptions>(
+    () => ({
       ...DEFAULT_COREML_LOAD_OPTIONS,
-    }));
+    }),
+    [],
+  );
+  const [coreMLLoadOptions, setCoreMLLoadOptions] =
+    useState<CoreMLLoadModelOptions>(initialCoreMLLoadOptions);
   const [coreMLGenerateOptions, setCoreMLGenerateOptions] =
     useState<CoreMLGenerateOptions>(() => ({
       ...DEFAULT_COREML_GENERATE_OPTIONS,
@@ -365,6 +369,11 @@ export default function DeviceNativeHubScreen() {
       }
 
       setSelectedModelPresetId(presetId);
+      setCoreMLLoadOptions((current) => ({
+        ...current,
+        modelFile: preset.modelFile,
+        modelPath: undefined,
+      }));
       setCoreMLStatus(`CoreML LLM: preset ${preset.label} selected`);
     },
     [],
@@ -395,20 +404,24 @@ export default function DeviceNativeHubScreen() {
         .then((module) => setMapViewNative(() => module.default))
         .catch((error) => console.warn("react-native-maps unavailable", error));
     }
+  }, [runSafely]);
 
-    if (Platform.OS === "ios") {
-      void runSafely(
-        "CoreML auto-initialize",
-        async () => {
-          setCoreMLLoadState("downloading model");
-          await coreMLManager.initialize(coreMLLoadOptions);
-          setCoreMLLoadState("ready");
-          setCoreMLStatus("CoreML LLM: ready");
-        },
-        { isCoreMLAction: true },
-      );
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      return;
     }
-  }, [coreMLLoadOptions, runSafely]);
+
+    void runSafely(
+      "CoreML auto-initialize",
+      async () => {
+        setCoreMLLoadState("downloading model");
+        await coreMLManager.initialize(initialCoreMLLoadOptions);
+        setCoreMLLoadState("ready");
+        setCoreMLStatus("CoreML LLM: ready");
+      },
+      { isCoreMLAction: true },
+    );
+  }, [initialCoreMLLoadOptions, runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
