@@ -92,18 +92,20 @@ This script is a prerequisite for the Expo prebuild phase. It audits the CocoaPo
 
 ## 5. CI/CD Pipeline and EAS Build Automation
 
-Our `ios.yml` workflow enforces deterministic builds through a strict sequence of validation and compilation stages.
+Our iOS CI/CD source-of-truth is `fastlane/Fastfile`. GitHub Actions (`.github/workflows/ios.yml`) and Codemagic (`codemagic.yaml`) both call the same Fastlane lanes to keep build, test, and signing behavior aligned.
 
 ### Critical Pipeline Stages
 
 1. JS dependency enforcement: Uses `npm ci` to ensure strict adherence to `package-lock.json`.
 2. Hard-fail validation: Executes `npm run coreml:validate -- --strict`. Failure here halts the pipeline before expensive macOS runners are fully consumed.
 3. CocoaPods clean install: Executes `rm -rf ios/Pods` followed by `pod install --repo-update` within the `ios` directory to ensure zero artifact persistence.
-4. Scheme resolution: The pipeline uses a Ruby one-liner to parse `xcodebuild -list -json` output, identifying all available schemes for the workspace or project.
+4. Scheme/workspace resolution: Fastlane lane helpers resolve workspace/project + scheme once and pass them into `scan`, `gym`, and `build_ios_app`, removing duplicated shell discovery logic from CI YAML.
 
-### Testable Scheme Resolution
+### Fastlane Lane Parity
 
-The CI queries `xcodebuild -showTestPlans`. If a scheme has an associated test plan, the pipeline sets `CAN_RUN_TESTS=true` and prioritizes build-for-testing. If no test plan is discovered, it falls back to a standard build to verify compilation.
+- **GitHub Actions** runs `fastlane ios ci_simulator` (which executes `ci_build_for_testing` then `ci_test_without_building` via `scan`).
+- **Codemagic** runs `fastlane ios codemagic_ipa` (which signs and exports the IPA via `build_ios_app`).
+- **Local EAS fallback** remains `scripts/run-ios-local-eas-build.sh`; it is explicitly _not_ the CI source-of-truth path.
 
 ---
 
@@ -134,4 +136,4 @@ The `NativeCoreMLProvider` maps native failures to actionable hints via `toActio
 
 - **Monthly**: Audit `coreml-runtime-manifest.json` against new hardware specifications.
 - **Per release**: Synchronize `minimumAppSupportedSchemaVersion` with any changes to native `Types.swift` or `Sampling.swift` logic.
-- **CI updates**: Update the Ruby-based scheme resolution logic if migrating to nested Xcode workspaces.
+- **CI updates**: Update `fastlane/Fastfile` project-context helpers if migrating to nested Xcode workspaces or custom scheme naming.
