@@ -17,6 +17,16 @@ fi
 
 missing_tools=()
 
+
+required_eas_cli_version="18.18.0"
+required_fastlane_version="2.222.0"
+
+version_ge() {
+  local current="$1"
+  local required="$2"
+  [[ "$(printf '%s\n' "$required" "$current" | sort -V | tail -n1)" == "$current" ]]
+}
+
 print_version() {
   local label="$1"
   shift
@@ -62,9 +72,23 @@ else
 fi
 
 if command -v fastlane >/dev/null 2>&1 && print_version "fastlane" fastlane --version; then
-  :
+  fastlane_version="$(fastlane --version 2>/dev/null | sed -E 's/.*fastlane ([0-9]+(\.[0-9]+){1,2}).*/\1/' | head -n1)"
+  if [[ -n "$fastlane_version" ]] && ! version_ge "$fastlane_version" "$required_fastlane_version"; then
+    echo "❌ fastlane ${fastlane_version} is too old. Require >= ${required_fastlane_version} for current Xcode export compatibility." >&2
+    missing_tools+=("fastlane")
+  fi
 else
   missing_tools+=("fastlane")
+fi
+
+if command -v eas >/dev/null 2>&1 && print_version "eas" eas --version; then
+  eas_cli_version="$(eas --version 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  if [[ -n "$eas_cli_version" ]] && ! version_ge "$eas_cli_version" "$required_eas_cli_version"; then
+    echo "❌ eas-cli ${eas_cli_version} is too old. Require >= ${required_eas_cli_version} so local iOS export uses app-store-connect." >&2
+    missing_tools+=("eas")
+  fi
+else
+  missing_tools+=("eas")
 fi
 
 if [ ${#missing_tools[@]} -gt 0 ]; then
@@ -74,7 +98,10 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
   for tool in "${missing_tools[@]}"; do
     case "$tool" in
       fastlane)
-        echo "  - fastlane: gem install fastlane --user-install (or brew install fastlane)"
+        echo "  - fastlane: gem install fastlane --user-install (minimum ${required_fastlane_version}) (or brew install fastlane)"
+        ;;
+      eas)
+        echo "  - eas-cli: npm install -g eas-cli@latest (minimum ${required_eas_cli_version})"
         ;;
       node)
         echo "  - node: install from https://nodejs.org/en/download/ (or brew install node)"

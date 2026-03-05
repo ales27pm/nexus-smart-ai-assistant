@@ -16,7 +16,13 @@ Outputs:
   - credentials/ios/profile.mobileprovision
   - credentials.json
 
+Version minimums for local iOS packaging/export consistency:
+  - Xcode: 15.4+ (xcodebuild/export pipeline aligned with current Apple export method semantics)
+  - fastlane: 2.222.0+ (compatible with recent Xcode and App Store Connect export flow)
+  - eas-cli: 18.18.0+ (local iOS export emits `app-store-connect` instead of deprecated `app-store`)
+
 Notes:
   - Requires macOS + fastlane.
   - If keychain private-key export prompts, allow access.
   - If login is interactive, create FASTLANE_SESSION first for CI/non-interactive use.
+  - Validate local toolchain before exporting: ./scripts/check-ios-local-build-env.sh
