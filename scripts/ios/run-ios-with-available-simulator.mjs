@@ -18,7 +18,53 @@ function run(command, args, options = {}) {
   });
 }
 
+function ensureDarwinWithXcode() {
+  if (process.platform !== "darwin") {
+    throw new Error(
+      "`npm run ios` requires macOS with Xcode tools installed. Use this script on macOS, or run platform-specific alternatives such as `npm run android`.",
+    );
+  }
+
+  const xcrunVersion = run("xcrun", ["--version"]);
+  if (xcrunVersion.error || xcrunVersion.status !== 0) {
+    throw new Error(
+      "Unable to run `xcrun`. Ensure Xcode and Xcode Command Line Tools are installed and selected (`xcode-select --install`, then `sudo xcode-select -s /Applications/Xcode.app`).",
+    );
+  }
+}
+
+function parseSimctlJson(listResult) {
+  try {
+    return JSON.parse(listResult.stdout);
+  } catch (error) {
+    const stdoutPreview =
+      typeof listResult.stdout === "string"
+        ? listResult.stdout.slice(0, 1000)
+        : "";
+    const stderrPreview =
+      typeof listResult.stderr === "string"
+        ? listResult.stderr.slice(0, 1000)
+        : "";
+    const originalMessage =
+      error instanceof Error ? error.message : String(error);
+
+    let message =
+      "Failed to parse JSON output from `xcrun simctl list devices available --json`.\n" +
+      `Original error: ${originalMessage}\n` +
+      "stdout (truncated):\n" +
+      stdoutPreview;
+
+    if (stderrPreview) {
+      message += "\nstderr (truncated):\n" + stderrPreview;
+    }
+
+    throw new Error(message);
+  }
+}
+
 function resolveSimulatorName() {
+  ensureDarwinWithXcode();
+
   const listResult = run("xcrun", [
     "simctl",
     "list",
@@ -33,7 +79,7 @@ function resolveSimulatorName() {
     );
   }
 
-  const parsed = JSON.parse(listResult.stdout);
+  const parsed = parseSimctlJson(listResult);
   const runtimes = Object.values(parsed.devices ?? {});
   const availableDevices = runtimes
     .flatMap((runtimeDevices) => runtimeDevices)
@@ -85,6 +131,10 @@ const expoResult = spawnSync(
 
 if (expoResult.error) {
   throw expoResult.error;
+}
+
+if (expoResult.signal) {
+  throw new Error(`expo run:ios terminated by signal ${expoResult.signal}.`);
 }
 
 if (typeof expoResult.status === "number" && expoResult.status !== 0) {
