@@ -8,6 +8,22 @@ SKIP_AUTO_FINGERPRINT="1"
 REQUIRED_EAS_CLI_VERSION="18.18.0"
 EAS_RUNNER=()
 
+resolve_local_eas_binary() {
+  if [[ -x "./node_modules/.bin/eas" ]]; then
+    printf '%s\n' "./node_modules/.bin/eas"
+    return 0
+  fi
+
+  local npm_bin
+  npm_bin="$(npm bin 2>/dev/null || true)"
+  if [[ -n "$npm_bin" && -x "$npm_bin/eas" ]]; then
+    printf '%s\n' "$npm_bin/eas"
+    return 0
+  fi
+
+  return 1
+}
+
 version_ge() {
   local current="$1"
   local required="$2"
@@ -96,7 +112,7 @@ print_failure_hints() {
 }
 
 resolve_eas_runner() {
-  local eas_raw_output eas_version
+  local eas_raw_output eas_version local_eas_bin
 
   if command -v eas >/dev/null 2>&1; then
     eas_raw_output="$(eas --version 2>&1 || true)"
@@ -115,6 +131,23 @@ resolve_eas_runner() {
     fi
   else
     echo "[i] Global eas-cli not found; using pinned npx fallback."
+  fi
+
+  if local_eas_bin="$(resolve_local_eas_binary)"; then
+    eas_raw_output="$($local_eas_bin --version 2>&1 || true)"
+    eas_version="$(extract_semver "$eas_raw_output")"
+
+    if [[ -n "$eas_version" ]] && version_ge "$eas_version" "$REQUIRED_EAS_CLI_VERSION"; then
+      EAS_RUNNER=("$local_eas_bin")
+      echo "[i] Using project-local eas-cli ${eas_version} (${local_eas_bin})."
+      return 0
+    fi
+
+    if [[ -n "$eas_version" ]]; then
+      echo "[i] Project-local eas-cli ${eas_version} is below required ${REQUIRED_EAS_CLI_VERSION}; using pinned npx fallback."
+    else
+      echo "[i] Could not parse project-local eas-cli version; using pinned npx fallback."
+    fi
   fi
 
   EAS_RUNNER=(npx -y eas-cli@">=${REQUIRED_EAS_CLI_VERSION}")
