@@ -71,4 +71,12 @@ describe("CoreML native e2e flows", () => {
       "Diagnostic message: Bridge timeout detected. Please retry from the diagnostics UI.",
     );
   });
+
+  it("runs transition serialization scenario", async () => {
+    await element(by.id("e2e-run-transition-serialize")).tap();
+
+    await waitFor(element(by.id("e2e-scenario-transition-serialize")))
+      .toHaveText("Transition serialization under rapid reconfigure: passed")
+      .withTimeout(120000);
+  });
 });

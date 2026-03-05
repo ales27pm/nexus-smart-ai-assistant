@@ -28,7 +28,8 @@ type ScenarioKey =
   | "cancel"
   | "diagnostic-delay"
   | "diagnostic-memory-backoff"
-  | "diagnostic-timeout-ux";
+  | "diagnostic-timeout-ux"
+  | "transition-serialize";
 
 const scenarioTitle: Record<ScenarioKey, string> = {
   "load-generate": "Model load + generate",
@@ -37,6 +38,7 @@ const scenarioTitle: Record<ScenarioKey, string> = {
   "diagnostic-delay": "Diagnostic delay promise",
   "diagnostic-memory-backoff": "Memory-pressure backoff recovery",
   "diagnostic-timeout-ux": "Bridge timeout UX messaging",
+  "transition-serialize": "Transition serialization under rapid reconfigure",
 };
 
 export default function E2ETabScreen() {
@@ -55,6 +57,7 @@ export default function E2ETabScreen() {
     "diagnostic-delay": "idle",
     "diagnostic-memory-backoff": "idle",
     "diagnostic-timeout-ux": "idle",
+    "transition-serialize": "idle",
   });
 
   const loadOptions = useMemo<CoreMLLoadModelOptions>(
@@ -186,6 +189,32 @@ export default function E2ETabScreen() {
     }
   };
 
+  const runTransitionSerializationScenario = async () => {
+    setScenario("transition-serialize", "running");
+    setErrorText("");
+
+    try {
+      setComputeUnits("all");
+      setComputeUnits("cpuAndNeuralEngine");
+      setComputeUnits("all");
+
+      const output = await generate(
+        SYSTEM_PROMPT,
+        "Confirm transition serialization test in one sentence.",
+      );
+      setResultText(output);
+      setScenario(
+        "transition-serialize",
+        loadStatus.state === "ready" && output.trim().length > 0
+          ? "passed"
+          : "failed",
+      );
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error));
+      setScenario("transition-serialize", "failed");
+    }
+  };
+
   const cancelActiveGeneration = () => {
     abortControllerRef.current?.abort();
   };
@@ -285,6 +314,14 @@ export default function E2ETabScreen() {
         onPress={runTimeoutUXScenario}
       >
         <Text style={styles.buttonText}>Run timeout UX scenario</Text>
+      </Pressable>
+
+      <Pressable
+        testID="e2e-run-transition-serialize"
+        style={styles.button}
+        onPress={runTransitionSerializationScenario}
+      >
+        <Text style={styles.buttonText}>Run transition serialization</Text>
       </Pressable>
 
       {isGenerating ? (
