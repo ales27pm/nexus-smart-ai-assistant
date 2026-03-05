@@ -78,6 +78,50 @@ describe("CoreMLManager", () => {
     );
   });
 
+  it("emits progress events during initialize", async () => {
+    ensureCoreMLModelAssetsMock.mockImplementation(async (onProgress) => {
+      onProgress?.({
+        stage: "downloading",
+        message: "Downloading model",
+        progress: 0.4,
+      });
+      onProgress?.({
+        stage: "ready",
+        message: "Model ready",
+        progress: 1,
+      });
+
+      return {
+        modelDirectory: "/documents/coreml-models/model/",
+        modelPath: "/documents/coreml-models/model/model.mlpackage",
+        downloaded: true,
+        activeVersionId: "model",
+      };
+    });
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn().mockResolvedValue(false),
+    };
+
+    const manager = new CoreMLManager(provider as any);
+    const onProgress = jest.fn();
+    await manager.initialize({ modelFile: "bundled.mlpackage" }, onProgress);
+
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "preparing" }),
+    );
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "downloading", progress: 0.4 }),
+    );
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "ready", progress: 1 }),
+    );
+  });
+
   it("skips reload when already loaded with identical options", async () => {
     const provider = {
       load: jest.fn().mockResolvedValue(undefined),

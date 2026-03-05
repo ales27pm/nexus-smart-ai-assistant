@@ -12,7 +12,14 @@ import {
   withPreferredCoreMLModelSource,
 } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
+import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
+
+export type CoreMLInitializationEvent = ModelAssetProgressEvent;
+
+type CoreMLInitializationProgressCallback = (
+  event: CoreMLInitializationEvent,
+) => void;
 
 export class CoreMLManager {
   private provider: ICoreMLProvider;
@@ -25,7 +32,10 @@ export class CoreMLManager {
     this.provider = provider;
   }
 
-  async initialize(opts: CoreMLLoadModelOptions = {}): Promise<void> {
+  async initialize(
+    opts: CoreMLLoadModelOptions = {},
+    onProgress?: CoreMLInitializationProgressCallback,
+  ): Promise<void> {
     let resolvedOpts: CoreMLLoadModelOptions = {
       ...DEFAULT_COREML_LOAD_OPTIONS,
       ...opts,
@@ -33,7 +43,12 @@ export class CoreMLManager {
 
     if (Platform.OS === "ios") {
       try {
-        const prepared = await ensureCoreMLModelAssets();
+        onProgress?.({
+          stage: "preparing",
+          message: "Preparing CoreML model assets",
+          progress: 0.01,
+        });
+        const prepared = await ensureCoreMLModelAssets(onProgress);
         resolvedOpts = withPreferredCoreMLModelSource(
           resolvedOpts,
           prepared?.modelPath,
@@ -60,8 +75,18 @@ export class CoreMLManager {
       }
     }
 
+    onProgress?.({
+      stage: "activating",
+      message: "Loading CoreML model into runtime",
+      progress: 0.97,
+    });
     await this.provider.load(resolvedOpts, { forceReload: true });
     this.currentOptions = { ...resolvedOpts };
+    onProgress?.({
+      stage: "ready",
+      message: "CoreML model loaded and ready",
+      progress: 1,
+    });
   }
 
   async generate(
