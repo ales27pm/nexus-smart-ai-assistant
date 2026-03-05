@@ -15,7 +15,10 @@ jest.mock("@/utils/globalErrorHandler", () => ({
   reportError: jest.fn(),
 }));
 
-type ManagerMock = Pick<CoreMLManager, "initialize" | "dispose" | "generate">;
+type ManagerMock = Pick<
+  CoreMLManager,
+  "initialize" | "dispose" | "generate" | "getActiveComputeUnits"
+>;
 
 function createManagerMock(): {
   manager: CoreMLManager;
@@ -25,11 +28,13 @@ function createManagerMock(): {
   const initialize = jest.fn(async () => undefined);
   const dispose = jest.fn(async () => undefined);
   const generate = jest.fn(async () => "ok");
+  const getActiveComputeUnits = jest.fn(() => "all");
 
   const manager: ManagerMock = {
     initialize,
     dispose,
     generate,
+    getActiveComputeUnits,
   };
 
   return {

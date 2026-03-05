@@ -22,6 +22,7 @@ export interface ICoreMLProvider {
   unload(): Promise<void>;
   cancel(): Promise<void>;
   isLoaded(): Promise<boolean>;
+  getActiveComputeUnits(): CoreMLLoadModelOptions["computeUnits"] | null;
 }
 
 function normalizeLoadOptions(
@@ -176,5 +177,9 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
     } catch (error) {
       throw normalizeCoreMLError(error);
     }
+  }
+
+  getActiveComputeUnits(): CoreMLLoadModelOptions["computeUnits"] | null {
+    return this.activeLoadOptions?.computeUnits ?? null;
   }
 }

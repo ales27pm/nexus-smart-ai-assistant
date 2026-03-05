@@ -143,6 +143,10 @@ export class CoreMLManager {
   async isReady(): Promise<boolean> {
     return this.provider.isLoaded();
   }
+
+  getActiveComputeUnits(): CoreMLLoadModelOptions["computeUnits"] | null {
+    return this.provider.getActiveComputeUnits();
+  }
 }
 
 export const coreMLManager = new CoreMLManager();

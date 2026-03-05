@@ -23,6 +23,9 @@ export function useCoreMLChat(
     state: "downloading model",
   });
   const activeManagerRef = useRef<CoreMLManager | null>(null);
+  const [activeComputeUnits, setActiveComputeUnits] = useState<
+    CoreMLLoadModelOptions["computeUnits"] | null
+  >(null);
   const { isRunning, runExclusive } = useAsyncOperation();
 
   useEffect(() => {
@@ -39,6 +42,7 @@ export function useCoreMLChat(
         if (!disposed) {
           activeManagerRef.current = managerInstance;
           setIsAvailable(true);
+          setActiveComputeUnits(managerInstance.getActiveComputeUnits());
           setLoadStatus({ state: "ready" });
         } else {
           await managerInstance.dispose();
@@ -53,6 +57,7 @@ export function useCoreMLChat(
         if (!disposed) {
           activeManagerRef.current = null;
           setIsAvailable(false);
+          setActiveComputeUnits(null);
           setLoadStatus({
             state: "failed—retry",
             detail: error instanceof Error ? error.message : String(error),
@@ -68,6 +73,7 @@ export function useCoreMLChat(
       const latestManager = activeManagerRef.current;
       activeManagerRef.current = null;
       if (latestManager) {
+        setActiveComputeUnits(null);
         latestManager.dispose().catch((error) => {
           reportError({
             error: error instanceof Error ? error : new Error(String(error)),
@@ -91,7 +97,16 @@ export function useCoreMLChat(
       }
 
       return runExclusive(
-        () => activeManager.generate(systemPrompt, userText, undefined, signal),
+        async () => {
+          const output = await activeManager.generate(
+            systemPrompt,
+            userText,
+            undefined,
+            signal,
+          );
+          setActiveComputeUnits(activeManager.getActiveComputeUnits());
+          return output;
+        },
         () =>
           new CoreMLError(
             "CoreML generation already in progress. Please wait for the current request to finish.",
@@ -107,5 +122,6 @@ export function useCoreMLChat(
     generate,
     service: activeManagerRef.current,
     loadStatus,
+    activeComputeUnits,
   };
 }
