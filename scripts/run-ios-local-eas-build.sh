@@ -5,6 +5,19 @@ PROFILE="production"
 CLEAN_CACHE="0"
 REPAIR_CREDENTIALS="0"
 SKIP_AUTO_FINGERPRINT="1"
+REQUIRED_EAS_CLI_VERSION="18.18.0"
+EAS_RUNNER=()
+
+version_ge() {
+  local current="$1"
+  local required="$2"
+  [[ "$(printf '%s\n' "$required" "$current" | sort -V | tail -n1)" == "$current" ]]
+}
+
+extract_semver() {
+  local raw="$1"
+  printf '%s\n' "$raw" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -68,6 +81,31 @@ print_failure_hints() {
   echo "    xcodebuild -version" >&2
   echo "    fastlane --version" >&2
   echo "    node --version" >&2
+}
+
+resolve_eas_runner() {
+  local eas_raw_output eas_version
+
+  if command -v eas >/dev/null 2>&1; then
+    eas_raw_output="$(eas --version 2>&1 || true)"
+    eas_version="$(extract_semver "$eas_raw_output")"
+
+    if [[ -n "$eas_version" ]] && version_ge "$eas_version" "$REQUIRED_EAS_CLI_VERSION"; then
+      EAS_RUNNER=(eas)
+      echo "[i] Using global eas-cli ${eas_version}."
+      return 0
+    fi
+
+    if [[ -n "$eas_version" ]]; then
+      echo "[i] Global eas-cli ${eas_version} is below required ${REQUIRED_EAS_CLI_VERSION}; using pinned npx fallback."
+    else
+      echo "[i] Could not parse global eas-cli version; using pinned npx fallback."
+    fi
+  else
+    echo "[i] Global eas-cli not found; using pinned npx fallback."
+  fi
+
+  EAS_RUNNER=(npx -y eas-cli@">=${REQUIRED_EAS_CLI_VERSION}")
 }
 
 print_build_failure_diagnostics() {
@@ -166,17 +204,18 @@ if ! npm run coreml:validate -- --strict; then
 fi
 
 print_phase "Build: EAS local iOS invocation"
+resolve_eas_runner
 if [[ "$SKIP_AUTO_FINGERPRINT" == "1" ]]; then
   echo "[i] Skipping EAS auto fingerprint to avoid known 'balanced is not a function' failures during local builds."
   echo "[i] Pass --auto-fingerprint to re-enable EAS automatic fingerprint computation."
-  if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 npx eas build --profile "$PROFILE" --platform ios --local; then
+  if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 "${EAS_RUNNER[@]}" build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed (auto fingerprint disabled)." >&2
     print_build_failure_diagnostics
     print_failure_hints
     exit 1
   fi
 else
-  if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local; then
+  if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache "${EAS_RUNNER[@]}" build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed." >&2
     print_build_failure_diagnostics
     print_failure_hints
