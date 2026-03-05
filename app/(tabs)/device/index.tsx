@@ -379,6 +379,21 @@ export default function DeviceNativeHubScreen() {
     [],
   );
 
+  const loadOptionsForSelectedPreset = useMemo(() => {
+    const preset = COREML_MODEL_PRESETS.find(
+      (item) => item.id === selectedModelPresetId,
+    );
+    if (!preset) {
+      return coreMLLoadOptions;
+    }
+
+    return {
+      ...coreMLLoadOptions,
+      modelFile: preset.modelFile,
+      modelPath: undefined,
+    } satisfies CoreMLLoadModelOptions;
+  }, [coreMLLoadOptions, selectedModelPresetId]);
+
   useEffect(() => {
     void runSafely("Load note", async () => {
       setNote(await iosToolsService.loadLocalNote());
@@ -413,14 +428,15 @@ export default function DeviceNativeHubScreen() {
       "CoreML load",
       async () => {
         setCoreMLLoadState("downloading model");
-        await coreMLManager.initialize(coreMLLoadOptions);
+        setCoreMLLoadOptions(loadOptionsForSelectedPreset);
+        await coreMLManager.initialize(loadOptionsForSelectedPreset);
         setCoreMLLoadState("ready");
         setCoreMLStatus("CoreML LLM: ready");
         setStatus("CoreML model loaded");
       },
       { isCoreMLAction: true },
     );
-  }, [coreMLLoadOptions, runSafely]);
+  }, [loadOptionsForSelectedPreset, runSafely]);
 
   const runCoreMLGenerate = useCallback(async () => {
     await runSafely(
