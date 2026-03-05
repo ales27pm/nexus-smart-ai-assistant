@@ -19,7 +19,7 @@ Outputs:
 Version minimums for local iOS packaging/export consistency:
   - Xcode: 15.4+ (xcodebuild/export pipeline aligned with current Apple export method semantics)
   - fastlane: 2.222.0+ (compatible with recent Xcode and App Store Connect export flow)
-  - eas-cli: 18.18.0+ (local iOS export emits `app-store-connect` instead of deprecated `app-store`)
+  - eas-cli: 18.1.0+ (local iOS export emits `app-store-connect` instead of deprecated `app-store`)
 
 Notes:
   - Requires macOS + fastlane.
