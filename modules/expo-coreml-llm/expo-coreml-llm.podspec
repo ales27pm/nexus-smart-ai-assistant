@@ -30,8 +30,15 @@ Pod::Spec.new do |s|
   # original directory tree. If we include both tokenizer variants that contain
   # identical filenames (e.g. */vocab.json and */merges.txt), Xcode fails with:
   # "Multiple commands produce ... ExpoCoreMLLLMResources.bundle/vocab.json".
-  # Include both tokenizer families; gpt2 files use unique basenames to avoid bundle collisions.
-  resource_files = Dir.glob('ios/resources/**/*').select { |path| File.file?(path) }
+  # Include both tokenizer families while excluding legacy duplicate GPT-2
+  # basenames that collide with byte_level_bpe files.
+  legacy_duplicate_tokenizer_files = [
+    'ios/resources/tokenizers/gpt2/vocab.json',
+    'ios/resources/tokenizers/gpt2/merges.txt'
+  ]
+  resource_files = Dir.glob('ios/resources/**/*')
+    .select { |path| File.file?(path) }
+    .reject { |path| legacy_duplicate_tokenizer_files.include?(path) }
   s.resource_bundles = {
     'ExpoCoreMLLLMResources' => resource_files
   }
