@@ -2,6 +2,8 @@ import Foundation
 import CoreML
 
 final class CoreMLLLMRunner {
+  private static let logPrefix = "[ExpoCoreMLLLM][CoreMLLLMRunner]"
+
   private(set) var isLoaded: Bool = false
 
   private var model: MLModel?
@@ -26,6 +28,35 @@ final class CoreMLLLMRunner {
 
   private var tokenizerCacheKey: String?
   private var tokenizerCache: Tokenizer?
+
+  private static func log(_ message: String) {
+    NSLog("%@ %@", logPrefix, message)
+  }
+
+  private func prepareModelURLForLoading(_ url: URL) throws -> URL {
+    // CoreML can load .mlmodelc directly, but raw .mlpackage/.mlmodel files may
+    // require compilation on-device when they are downloaded at runtime.
+    if url.pathExtension == "mlmodelc" {
+      return url
+    }
+
+    if url.pathExtension != "mlpackage" && url.pathExtension != "mlmodel" {
+      return url
+    }
+
+    do {
+      let compiledURL = try MLModel.compileModel(at: url)
+      Self.log("Compiled model at runtime: \(url.lastPathComponent) -> \(compiledURL.lastPathComponent)")
+      return compiledURL
+    } catch {
+      let nsError = error as NSError
+      Self.log("Model compilation failed for \(url.path): \(nsError.domain)(\(nsError.code))")
+      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+        NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(url.path)",
+        NSUnderlyingErrorKey: error,
+      ])
+    }
+  }
 
   func unload() {
     lock.lock(); defer { lock.unlock() }
@@ -57,6 +88,16 @@ final class CoreMLLLMRunner {
       ])
     }
 
+    let loadableModelURL: URL
+    do {
+      loadableModelURL = try prepareModelURLForLoading(modelURL)
+    } catch {
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelLoadFailed.rawValue, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to prepare CoreML model for loading.",
+        NSUnderlyingErrorKey: error,
+      ])
+    }
+
     let attempts = computeUnitFallbacks(preferred: options.computeUnits)
     var loaded: MLModel?
     var loadedComputeUnits: Types.CoreMLComputeUnits?
@@ -69,7 +110,7 @@ final class CoreMLLLMRunner {
         cfg.computeUnits = computeUnits(from: unit)
         cfg.allowLowPrecisionAccumulationOnGPU = true
 
-        loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
+        loaded = try MLModel(contentsOf: loadableModelURL, configuration: cfg)
         loadedComputeUnits = unit
         break
       } catch {
@@ -149,7 +190,7 @@ final class CoreMLLLMRunner {
 
     return Types.ModelInfo(
       loaded: true,
-      modelURL: modelURL.absoluteString,
+      modelURL: loadableModelURL.absoluteString,
       computeUnits: loadedComputeUnits ?? options.computeUnits,
       expectsSingleToken: detectedSingleToken,
       hasState: detectedHasState,
