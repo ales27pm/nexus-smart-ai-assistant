@@ -2,6 +2,8 @@ import { CoreMLError } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { CoreMLManager } from "@/utils/coreMLManager";
 
+import { createDeferred, flushMicrotasks } from "./utils/asyncTestUtils";
+
 jest.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));
@@ -11,16 +13,6 @@ jest.mock("@/utils/coremlModelManager", () => ({
 }));
 
 describe("CoreMLManager", () => {
-  function createDeferred<T>() {
-    let resolve!: (value: T | PromiseLike<T>) => void;
-    let reject!: (reason?: unknown) => void;
-    const promise = new Promise<T>((res, rej) => {
-      resolve = res;
-      reject = rej;
-    });
-    return { promise, resolve, reject };
-  }
-
   function createConcurrencyAwareProvider() {
     const loadDeferred = createDeferred<void>();
     const unloadDeferred = createDeferred<void>();
@@ -66,12 +58,6 @@ describe("CoreMLManager", () => {
       getInFlightNativeOperations: () => inFlightNativeOperations,
       getMaxInFlightNativeOperations: () => maxInFlightNativeOperations,
     };
-  }
-
-  async function flushMicrotasks(iterations = 5) {
-    for (let i = 0; i < iterations; i += 1) {
-      await Promise.resolve();
-    }
   }
 
   const ensureCoreMLModelAssetsMock =

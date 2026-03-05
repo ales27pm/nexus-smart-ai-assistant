@@ -5,6 +5,8 @@ import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { CoreMLLoadModelOptions } from "@/utils/coreml";
 import { CoreMLManager, CoreMLManagerState } from "@/utils/coreMLManager";
 
+import { createDeferred } from "./utils/asyncTestUtils";
+
 jest.mock("react-native", () => ({
   Platform: {
     OS: "ios",
@@ -14,16 +16,6 @@ jest.mock("react-native", () => ({
 jest.mock("@/utils/globalErrorHandler", () => ({
   reportError: jest.fn(),
 }));
-
-function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
 
 type ManagerMock = Pick<
   CoreMLManager,
