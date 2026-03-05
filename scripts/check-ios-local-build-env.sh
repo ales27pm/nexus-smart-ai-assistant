@@ -23,6 +23,31 @@ required_fastlane_version="2.222.0"
 
 extract_semver() {
   local raw="$1"
+
+  # Prefer the installed version line first when available.
+  # Failure case seen in CI output:
+  #   npm WARN deprecated ...
+  #   eas-cli@18.19.1 is now available.
+  #   eas-cli/18.18.0 darwin-x64 node-v20.16.0
+  # If we grab the first semver globally, we can accidentally parse a warning
+  # instead of the actual installed CLI version.
+  local version
+  version="$(printf '%s\n' "$raw" | sed -nE 's|.*\beas-cli/([0-9]+\.[0-9]+\.[0-9]+)\b.*|\1|p' | head -n1)"
+  if [[ -n "$version" ]]; then
+    printf '%s\n' "$version"
+    return
+  fi
+
+  # Accept plain semver output too, e.g.:
+  #   18.0.3
+  version="$(printf '%s\n' "$raw" | sed -nE 's|^v?([0-9]+\.[0-9]+\.[0-9]+)$|\1|p' | head -n1)"
+  if [[ -n "$version" ]]; then
+    printf '%s\n' "$version"
+    return
+  fi
+
+  # Fallback for mixed lines like:
+  #   eas-cli@18.1.0 is now available.
   printf '%s\n' "$raw" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1
 }
 
