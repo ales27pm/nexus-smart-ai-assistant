@@ -70,6 +70,75 @@ print_failure_hints() {
   echo "    node --version" >&2
 }
 
+print_build_failure_diagnostics() {
+  local latest_bundle=""
+
+  echo "[i] Collecting local export diagnostics..." >&2
+  echo "[i] Free disk space:" >&2
+  df -h >&2 || true
+
+  local gym_tmp_dir="${TMPDIR:-/var/folders}"
+  local gym_tmp_mount="${gym_tmp_dir%/}"
+  while [[ "$gym_tmp_mount" != "/" && ! -d "$gym_tmp_mount" ]]; do
+    gym_tmp_mount="$(dirname "$gym_tmp_mount")"
+  done
+  if [[ -z "$gym_tmp_mount" || ! -d "$gym_tmp_mount" ]]; then
+    gym_tmp_mount="/var/folders"
+  fi
+
+  echo "[i] Gym temp directory hint (TMPDIR): ${gym_tmp_dir}" >&2
+  echo "[i] Filesystem usage for gym temp mount (${gym_tmp_mount}):" >&2
+  df -h "$gym_tmp_mount" >&2 || true
+
+  latest_bundle="$({
+    find /var/folders "$HOME/Library/Logs" -type d -name '*.xcdistributionlogs' 2>/dev/null || true
+  } | while IFS= read -r bundle; do
+    [[ -d "$bundle" ]] || continue
+    local mtime
+    mtime="$(stat -f '%m' "$bundle" 2>/dev/null || stat -c '%Y' "$bundle" 2>/dev/null || echo 0)"
+    printf '%s\t%s\n' "$mtime" "$bundle"
+  done | sort -nr | head -n 1 | cut -f2-)"
+
+  if [[ -z "$latest_bundle" ]]; then
+    echo "[i] No *.xcdistributionlogs bundle found in /var/folders or ~/Library/Logs." >&2
+    return
+  fi
+
+  echo "[i] Newest .xcdistributionlogs bundle: ${latest_bundle}" >&2
+
+  local standard_log="${latest_bundle}/IDEDistribution.standard.log"
+  if [[ -f "$standard_log" ]]; then
+    echo "[i] --- ${standard_log} (tail -n 200) ---" >&2
+    tail -n 200 "$standard_log" >&2 || true
+  else
+    echo "[i] Missing expected file: ${standard_log}" >&2
+  fi
+
+  local summary_plist="${latest_bundle}/DistributionSummary.plist"
+  if [[ -f "$summary_plist" ]]; then
+    echo "[i] --- ${summary_plist} ---" >&2
+    if command -v plutil >/dev/null 2>&1; then
+      plutil -p "$summary_plist" >&2 || cat "$summary_plist" >&2 || true
+    else
+      cat "$summary_plist" >&2 || true
+    fi
+  else
+    echo "[i] Missing expected file: ${summary_plist}" >&2
+  fi
+
+  local found_any_logs="0"
+  while IFS= read -r log_file; do
+    [[ -f "$log_file" ]] || continue
+    found_any_logs="1"
+    echo "[i] --- ${log_file} (tail -n 100) ---" >&2
+    tail -n 100 "$log_file" >&2 || true
+  done < <(find "$latest_bundle" -type f -name '*.log' 2>/dev/null | sort)
+
+  if [[ "$found_any_logs" == "0" ]]; then
+    echo "[i] No .log files were found inside ${latest_bundle}." >&2
+  fi
+}
+
 if [[ "$CLEAN_CACHE" == "1" ]]; then
   rm -rf .npm-cache
 fi
@@ -102,12 +171,14 @@ if [[ "$SKIP_AUTO_FINGERPRINT" == "1" ]]; then
   echo "[i] Pass --auto-fingerprint to re-enable EAS automatic fingerprint computation."
   if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache EAS_SKIP_AUTO_FINGERPRINT=1 npx eas build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed (auto fingerprint disabled)." >&2
+    print_build_failure_diagnostics
     print_failure_hints
     exit 1
   fi
 else
   if ! env NODE_ENV=production NPM_CONFIG_CACHE=.npm-cache npx eas build --profile "$PROFILE" --platform ios --local; then
     echo "❌ Build failed: EAS local iOS invocation failed." >&2
+    print_build_failure_diagnostics
     print_failure_hints
     exit 1
   fi
