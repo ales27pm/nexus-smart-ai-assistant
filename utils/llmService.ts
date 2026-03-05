@@ -54,6 +54,11 @@ export class CoreMLLLMService implements ILLMService {
       try {
         emitLoadState("downloading model");
         const prepared = await ensureCoreMLModelAssets();
+        if (!prepared?.modelPath) {
+          throw new CoreMLError(
+            "CoreML model setup failed: downloaded assets are unavailable. Please check your network connection and free storage, then try again.",
+          );
+        }
         emitLoadState("verifying model");
 
         resolvedOptions = withPreferredCoreMLModelSource(
@@ -74,17 +79,13 @@ export class CoreMLLLMService implements ILLMService {
           error: error instanceof Error ? error.message : String(error),
         });
 
-        if (!__DEV__) {
-          emitLoadState(
-            "failed—retry",
-            error instanceof Error ? error.message : String(error),
-          );
-          throw error;
-        }
-
-        resolvedOptions = withPreferredCoreMLModelSource(resolvedOptions, null);
-        console.warn(
-          "[CoreMLLLMService] continuing with bundled model fallback in __DEV__",
+        const detail = error instanceof Error ? error.message : String(error);
+        emitLoadState(
+          "failed—retry",
+          `Model download/setup failed. Check connectivity and available storage, then retry. (${detail})`,
+        );
+        throw new CoreMLError(
+          `CoreML model setup failed: unable to download or prepare model assets. Check connectivity and available storage, then retry. (${detail})`,
         );
       }
     }
