@@ -48,14 +48,7 @@ final class CoreMLLLMRunner {
     compileStateLock.unlock()
 
     lock.lock()
-    defer {
-      lock.unlock()
-      compileStateLock.lock()
-      if let activeLock = compileLocksByCacheKey[key], activeLock === lock {
-        compileLocksByCacheKey.removeValue(forKey: key)
-      }
-      compileStateLock.unlock()
-    }
+    defer { lock.unlock() }
 
     return try operation()
   }
