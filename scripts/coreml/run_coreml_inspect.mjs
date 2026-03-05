@@ -16,15 +16,19 @@ const repoRoot = path.resolve(
 
 async function resolveModelPath(argv, manifest) {
   const explicitPath = argv[0];
-  const defaultPath = path.join(
-    repoRoot,
-    ".hf_models/Dolphin3.0-CoreML",
-    manifest.activeModel,
-  );
+  const defaultPath = manifest.activeModel
+    ? path.join(repoRoot, ".hf_models/Dolphin3.0-CoreML", manifest.activeModel)
+    : undefined;
 
   const modelPath = explicitPath
     ? path.resolve(process.cwd(), explicitPath)
     : defaultPath;
+
+  if (!modelPath) {
+    throw new Error(
+      "activeModel is missing in coreml-config.json; pass an explicit local .mlpackage path, e.g. npm run coreml:inspect -- /absolute/path/to/model.mlpackage",
+    );
+  }
 
   try {
     await access(modelPath);

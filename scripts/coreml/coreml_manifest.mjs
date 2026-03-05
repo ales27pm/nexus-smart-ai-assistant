@@ -16,6 +16,14 @@ function asNonEmptyString(value, key) {
   return value;
 }
 
+function asOptionalNormalizedString(value) {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function asNonNegativeNumber(value, key) {
   if (typeof value !== "number" || Number.isNaN(value) || value < 0) {
     throw new Error(`${key} must be a non-negative number`);
@@ -82,9 +90,9 @@ export function parseCoreMLManifest(raw) {
   }
 
   const manifest = {
-    activeModel: asNonEmptyString(raw.activeModel, "activeModel"),
-    tokenizerRepo: asNonEmptyString(raw.tokenizerRepo, "tokenizerRepo"),
-    coremlRepo: asNonEmptyString(raw.coremlRepo, "coremlRepo"),
+    activeModel: asOptionalNormalizedString(raw.activeModel),
+    tokenizerRepo: asOptionalNormalizedString(raw.tokenizerRepo),
+    coremlRepo: asOptionalNormalizedString(raw.coremlRepo),
     contextLimit: asNonNegativeNumber(raw.contextLimit, "contextLimit"),
     bosTokenId: asNonNegativeNumber(raw.bosTokenId, "bosTokenId"),
     eosTokenId: asNonNegativeNumber(raw.eosTokenId, "eosTokenId"),
