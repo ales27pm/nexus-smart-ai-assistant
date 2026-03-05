@@ -9,7 +9,7 @@ import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   toActionableCoreMLError,
-  withPreferredCoreMLModelSource,
+  withPreparedCoreMLModelPath,
 } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
@@ -77,7 +77,7 @@ export class CoreMLManager {
               "CoreML model setup failed: downloaded assets are unavailable. Please check your network connection and free storage, then try again.",
             );
           }
-          resolvedOpts = withPreferredCoreMLModelSource(
+          resolvedOpts = withPreparedCoreMLModelPath(
             resolvedOpts,
             prepared?.modelPath,
           );

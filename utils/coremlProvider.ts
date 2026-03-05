@@ -7,6 +7,7 @@ import {
   DEFAULT_COREML_LOAD_OPTIONS,
   isComputeUnitError,
   normalizeCoreMLError,
+  requireCoreMLModelPath,
 } from "@/utils/coreml";
 
 export type CoreMLLoadControl = {
@@ -105,9 +106,10 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
               "CoreML model already loaded with different options. Pass { forceReload: true } to reload with new options.",
             );
           }
+          const resolvedOptions = requireCoreMLModelPath(options);
           await this.bridge.unloadModel();
-          await this.bridge.loadModel(options);
-          this.activeLoadOptions = { ...options };
+          await this.bridge.loadModel(resolvedOptions);
+          this.activeLoadOptions = { ...resolvedOptions };
           return;
         }
 
@@ -115,8 +117,9 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
         return;
       }
 
-      await this.bridge.loadModel(options);
-      this.activeLoadOptions = { ...options };
+      const resolvedOptions = requireCoreMLModelPath(options);
+      await this.bridge.loadModel(resolvedOptions);
+      this.activeLoadOptions = { ...resolvedOptions };
     } catch (error) {
       throw normalizeCoreMLError(error);
     }
