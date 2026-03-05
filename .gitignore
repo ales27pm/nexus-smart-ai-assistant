@@ -10,8 +10,12 @@ web-build/
 expo-env.d.ts
 
 # Native
-ios/
-android/
+/ios
+/android
+!modules/**/ios/
+!modules/**/ios/**
+!modules/**/android/
+!modules/**/android/**
 !modules/expo-coreml-llm/ios/
 !modules/expo-coreml-llm/ios/**
 *.orig.*
