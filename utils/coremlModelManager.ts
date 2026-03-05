@@ -10,6 +10,7 @@ import { sha256 } from "js-sha256";
 
 const LOG_PREFIX = "[CoreMLModelManager]";
 const DEFAULT_RETRY_COUNT = 3;
+const DOWNLOAD_ATTEMPT_TIMEOUT_MS = 90_000;
 const INSTALL_METADATA_FILE = "install-metadata.json";
 const MANAGER_STATE_FILE = "manager-state.json";
 
@@ -40,6 +41,7 @@ export type ModelAssetDownloadTelemetry = {
   durationMs: number;
   attempts: number;
   bytesWritten: number;
+  source: string;
 };
 
 export type ModelAssetReadyResult = {
@@ -72,6 +74,52 @@ type ManagerState = {
 };
 
 let ensureModelPromise: Promise<ModelAssetReadyResult | null> | null = null;
+
+function logProgressListenerError(error: unknown): void {
+  console.warn(`${LOG_PREFIX} progress listener callback failed`, {
+    error: error instanceof Error ? error.message : String(error),
+  });
+}
+
+class ProgressEmitter<T> {
+  private listeners = new Set<(event: T) => void>();
+  private lastEvent: T | null = null;
+
+  emit(event: T): void {
+    this.lastEvent = event;
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        logProgressListenerError(error);
+      }
+    }
+  }
+
+  subscribe(listener: (event: T) => void): () => void {
+    this.listeners.add(listener);
+
+    if (this.lastEvent) {
+      try {
+        listener(this.lastEvent);
+      } catch (error) {
+        logProgressListenerError(error);
+      }
+    }
+
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  clear(): void {
+    this.listeners.clear();
+    this.lastEvent = null;
+  }
+}
+
+const ensureModelProgressEmitter =
+  new ProgressEmitter<ModelAssetProgressEvent>();
 
 function normalizeDirectory(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
@@ -184,26 +232,106 @@ function toDownloadDescriptors(
   }));
 }
 
-async function downloadWithFallbackSources(
-  descriptor: DownloadFileDescriptor,
+type DownloadResult = {
+  bytesWritten: number;
+  attempts: number;
+  source: string;
+};
+
+type InactivityTimeoutRunOptions<T> = {
+  timeoutMs: number;
+  timeoutMessage: string;
+  operation: (markActivity: () => void) => Promise<T>;
+  onTimeout: () => Promise<unknown>;
+};
+
+async function runWithInactivityTimeout<T>({
+  timeoutMs,
+  timeoutMessage,
+  operation,
+  onTimeout,
+}: InactivityTimeoutRunOptions<T>): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+
+    const clearTimer = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
+      }
+    };
+
+    const settle = (fn: () => void) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      clearTimer();
+      fn();
+    };
+
+    const scheduleTimeout = () => {
+      clearTimer();
+      timeoutId = setTimeout(() => {
+        settle(() => {
+          void onTimeout()
+            .catch(() => undefined)
+            .finally(() => {
+              reject(new Error(timeoutMessage));
+            });
+        });
+      }, timeoutMs);
+    };
+
+    const markActivity = () => {
+      if (!settled) {
+        scheduleTimeout();
+      }
+    };
+
+    scheduleTimeout();
+
+    void operation(markActivity)
+      .then((result) => {
+        settle(() => {
+          resolve(result);
+        });
+      })
+      .catch((error) => {
+        settle(() => {
+          reject(error);
+        });
+      });
+  });
+}
+
+async function downloadResumableWithStallTimeout(
+  source: string,
   destination: string,
-  retries: number,
+  descriptorPath: string,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
-): Promise<number> {
+): Promise<{
+  response: Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>;
+  bytesWritten: number;
+}> {
   let bytesWritten = 0;
-  let lastError: unknown = null;
+  let resumable: FileSystem.DownloadResumable | null = null;
 
-  for (const source of descriptor.sources) {
-    let attempt = 0;
-    while (attempt < retries) {
-      attempt += 1;
-
-      const resumable = FileSystem.createDownloadResumable(
+  const response = await runWithInactivityTimeout<
+    Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>
+  >({
+    timeoutMs: DOWNLOAD_ATTEMPT_TIMEOUT_MS,
+    timeoutMessage: `Download stalled for ${descriptorPath} after ${DOWNLOAD_ATTEMPT_TIMEOUT_MS}ms`,
+    operation: async (markActivity) => {
+      resumable = FileSystem.createDownloadResumable(
         source,
         destination,
         {},
         (progress) => {
           bytesWritten = progress.totalBytesWritten;
+          markActivity();
           onProgress?.(
             progress.totalBytesWritten,
             progress.totalBytesExpectedToWrite,
@@ -211,15 +339,72 @@ async function downloadWithFallbackSources(
         },
       );
 
+      return resumable.downloadAsync();
+    },
+    onTimeout: async () => {
+      await resumable?.pauseAsync();
+    },
+  });
+
+  if (!resumable) {
+    throw new Error(`Download could not be initialized for ${descriptorPath}`);
+  }
+
+  return { response, bytesWritten };
+}
+
+async function resolveBytesWritten(
+  currentBytes: number,
+  destination: string,
+): Promise<number> {
+  if (currentBytes > 0) {
+    return currentBytes;
+  }
+
+  const fileInfo = await FileSystem.getInfoAsync(destination);
+  return typeof fileInfo.size === "number" ? fileInfo.size : 0;
+}
+
+async function downloadWithFallbackSources(
+  descriptor: DownloadFileDescriptor,
+  destination: string,
+  retries: number,
+  onProgress?: (writtenBytes: number, expectedBytes: number) => void,
+): Promise<DownloadResult> {
+  let attemptCount = 0;
+  let lastError: unknown = null;
+
+  for (const source of descriptor.sources) {
+    let attempt = 0;
+    while (attempt < retries) {
+      attempt += 1;
+      attemptCount += 1;
+
       try {
-        const response = await resumable.downloadAsync();
+        const { response, bytesWritten } =
+          await downloadResumableWithStallTimeout(
+            source,
+            destination,
+            descriptor.path,
+            onProgress,
+          );
+
         if (!response || response.status !== 200) {
           throw new Error(
             `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
           );
         }
 
-        return bytesWritten;
+        const finalBytesWritten = await resolveBytesWritten(
+          bytesWritten,
+          destination,
+        );
+
+        return {
+          bytesWritten: finalBytesWritten,
+          attempts: attemptCount,
+          source,
+        };
       } catch (error) {
         lastError = error;
         console.warn(`${LOG_PREFIX} download attempt failed`, {
@@ -227,6 +412,7 @@ async function downloadWithFallbackSources(
           source,
           attempt,
           retries,
+          totalAttempts: attemptCount,
           error: error instanceof Error ? error.message : String(error),
         });
 
@@ -240,7 +426,7 @@ async function downloadWithFallbackSources(
   throw (
     lastError ??
     new Error(
-      `Failed to download ${descriptor.path} from all configured sources`,
+      `Failed to download ${descriptor.path} from all configured sources: ${descriptor.sources.join(", ")}`,
     )
   );
 }
@@ -294,7 +480,12 @@ async function ensureFileDownloaded(
   version: RuntimeModelVersion,
   descriptor: DownloadFileDescriptor,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
-): Promise<{ downloaded: boolean; bytesWritten: number }> {
+): Promise<{
+  downloaded: boolean;
+  bytesWritten: number;
+  attempts: number;
+  source: string;
+}> {
   const targetPath = getModelFilePath(version.id, descriptor.path);
   const targetDir = `${targetPath.split("/").slice(0, -1).join("/")}/`;
   await ensureDirectory(targetDir);
@@ -304,11 +495,11 @@ async function ensureFileDownloaded(
     descriptor.expectedHash,
   );
   if (validExisting) {
-    return { downloaded: false, bytesWritten: 0 };
+    return { downloaded: false, bytesWritten: 0, attempts: 0, source: "cache" };
   }
 
   await deleteIfExists(targetPath);
-  const bytesWritten = await downloadWithFallbackSources(
+  const downloadResult = await downloadWithFallbackSources(
     descriptor,
     targetPath,
     version.retries ?? DEFAULT_RETRY_COUNT,
@@ -326,7 +517,12 @@ async function ensureFileDownloaded(
     );
   }
 
-  return { downloaded: true, bytesWritten };
+  return {
+    downloaded: true,
+    bytesWritten: downloadResult.bytesWritten,
+    attempts: downloadResult.attempts,
+    source: downloadResult.source,
+  };
 }
 
 async function writeManagerState(state: ManagerState): Promise<void> {
@@ -410,6 +606,8 @@ async function prepareVersion(
 ): Promise<ModelAssetReadyResult> {
   const startedAt = Date.now();
   let bytesWritten = 0;
+  let totalAttempts = 0;
+  const downloadSources = new Set<string>();
   let downloadedAny = false;
 
   await ensureDirectory(getModelsRootDirectory());
@@ -451,6 +649,8 @@ async function prepareVersion(
       );
       downloadedAny = downloadedAny || result.downloaded;
       bytesWritten += result.bytesWritten;
+      totalAttempts += result.attempts;
+      downloadSources.add(result.source);
 
       onProgress?.({
         stage: "verifying",
@@ -485,6 +685,13 @@ async function prepareVersion(
     progress: 1,
   });
 
+  const aggregatedSource =
+    downloadSources.size === 0
+      ? "cache"
+      : downloadSources.size === 1
+        ? Array.from(downloadSources)[0]
+        : "mixed";
+
   return {
     modelDirectory: getModelDirectory(version.id),
     modelPath,
@@ -493,8 +700,9 @@ async function prepareVersion(
     telemetry: {
       modelName: version.modelName,
       durationMs: Date.now() - startedAt,
-      attempts: version.retries ?? DEFAULT_RETRY_COUNT,
+      attempts: totalAttempts,
       bytesWritten,
+      source: aggregatedSource,
     },
   };
 }
@@ -566,13 +774,24 @@ async function ensureModelAssetsInternal(
 export async function ensureCoreMLModelAssets(
   onProgress?: ModelAssetProgressCallback,
 ): Promise<ModelAssetReadyResult | null> {
+  const unsubscribe = onProgress
+    ? ensureModelProgressEmitter.subscribe(onProgress)
+    : undefined;
+
   if (!ensureModelPromise) {
-    ensureModelPromise = ensureModelAssetsInternal(onProgress).finally(() => {
+    ensureModelPromise = ensureModelAssetsInternal((event) =>
+      ensureModelProgressEmitter.emit(event),
+    ).finally(() => {
       ensureModelPromise = null;
+      ensureModelProgressEmitter.clear();
     });
   }
 
-  return ensureModelPromise;
+  try {
+    return await ensureModelPromise;
+  } finally {
+    unsubscribe?.();
+  }
 }
 
 export async function getDownloadedCoreMLModelPath(): Promise<string | null> {
