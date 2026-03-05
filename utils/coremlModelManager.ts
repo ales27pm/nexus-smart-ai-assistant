@@ -10,6 +10,7 @@ import { sha256 } from "js-sha256";
 
 const LOG_PREFIX = "[CoreMLModelManager]";
 const DEFAULT_RETRY_COUNT = 3;
+const DOWNLOAD_ATTEMPT_TIMEOUT_MS = 90_000;
 const INSTALL_METADATA_FILE = "install-metadata.json";
 const MANAGER_STATE_FILE = "manager-state.json";
 
@@ -40,6 +41,7 @@ export type ModelAssetDownloadTelemetry = {
   durationMs: number;
   attempts: number;
   bytesWritten: number;
+  source: string;
 };
 
 export type ModelAssetReadyResult = {
@@ -72,6 +74,21 @@ type ManagerState = {
 };
 
 let ensureModelPromise: Promise<ModelAssetReadyResult | null> | null = null;
+const ensureModelProgressListeners = new Set<ModelAssetProgressCallback>();
+let latestEnsureModelProgressEvent: ModelAssetProgressEvent | null = null;
+
+function emitEnsureModelProgress(event: ModelAssetProgressEvent): void {
+  latestEnsureModelProgressEvent = event;
+  for (const listener of ensureModelProgressListeners) {
+    try {
+      listener(event);
+    } catch (error) {
+      console.warn(`${LOG_PREFIX} progress listener callback failed`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
 
 function normalizeDirectory(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
@@ -184,19 +201,27 @@ function toDownloadDescriptors(
   }));
 }
 
+type DownloadResult = {
+  bytesWritten: number;
+  attempts: number;
+  source: string;
+};
+
 async function downloadWithFallbackSources(
   descriptor: DownloadFileDescriptor,
   destination: string,
   retries: number,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
-): Promise<number> {
+): Promise<DownloadResult> {
   let bytesWritten = 0;
+  let attemptCount = 0;
   let lastError: unknown = null;
 
   for (const source of descriptor.sources) {
     let attempt = 0;
     while (attempt < retries) {
       attempt += 1;
+      attemptCount += 1;
 
       const resumable = FileSystem.createDownloadResumable(
         source,
@@ -212,14 +237,46 @@ async function downloadWithFallbackSources(
       );
 
       try {
-        const response = await resumable.downloadAsync();
+        let timeoutId: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            void resumable
+              .pauseAsync()
+              .catch(() => undefined)
+              .finally(() => {
+                reject(
+                  new Error(
+                    `Download stalled for ${descriptor.path} after ${DOWNLOAD_ATTEMPT_TIMEOUT_MS}ms`,
+                  ),
+                );
+              });
+          }, DOWNLOAD_ATTEMPT_TIMEOUT_MS);
+        });
+
+        let response: Awaited<ReturnType<typeof resumable.downloadAsync>>;
+        try {
+          response = await Promise.race([
+            resumable.downloadAsync(),
+            timeoutPromise,
+          ]);
+        } finally {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        }
+
         if (!response || response.status !== 200) {
           throw new Error(
             `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
           );
         }
 
-        return bytesWritten;
+        if (bytesWritten <= 0) {
+          const fileInfo = await FileSystem.getInfoAsync(destination);
+          bytesWritten = typeof fileInfo.size === "number" ? fileInfo.size : 0;
+        }
+
+        return { bytesWritten, attempts: attemptCount, source };
       } catch (error) {
         lastError = error;
         console.warn(`${LOG_PREFIX} download attempt failed`, {
@@ -227,6 +284,7 @@ async function downloadWithFallbackSources(
           source,
           attempt,
           retries,
+          totalAttempts: attemptCount,
           error: error instanceof Error ? error.message : String(error),
         });
 
@@ -240,7 +298,7 @@ async function downloadWithFallbackSources(
   throw (
     lastError ??
     new Error(
-      `Failed to download ${descriptor.path} from all configured sources`,
+      `Failed to download ${descriptor.path} from all configured sources: ${descriptor.sources.join(", ")}`,
     )
   );
 }
@@ -294,7 +352,12 @@ async function ensureFileDownloaded(
   version: RuntimeModelVersion,
   descriptor: DownloadFileDescriptor,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
-): Promise<{ downloaded: boolean; bytesWritten: number }> {
+): Promise<{
+  downloaded: boolean;
+  bytesWritten: number;
+  attempts: number;
+  source: string;
+}> {
   const targetPath = getModelFilePath(version.id, descriptor.path);
   const targetDir = `${targetPath.split("/").slice(0, -1).join("/")}/`;
   await ensureDirectory(targetDir);
@@ -304,11 +367,11 @@ async function ensureFileDownloaded(
     descriptor.expectedHash,
   );
   if (validExisting) {
-    return { downloaded: false, bytesWritten: 0 };
+    return { downloaded: false, bytesWritten: 0, attempts: 0, source: "cache" };
   }
 
   await deleteIfExists(targetPath);
-  const bytesWritten = await downloadWithFallbackSources(
+  const downloadResult = await downloadWithFallbackSources(
     descriptor,
     targetPath,
     version.retries ?? DEFAULT_RETRY_COUNT,
@@ -326,7 +389,12 @@ async function ensureFileDownloaded(
     );
   }
 
-  return { downloaded: true, bytesWritten };
+  return {
+    downloaded: true,
+    bytesWritten: downloadResult.bytesWritten,
+    attempts: downloadResult.attempts,
+    source: downloadResult.source,
+  };
 }
 
 async function writeManagerState(state: ManagerState): Promise<void> {
@@ -410,6 +478,8 @@ async function prepareVersion(
 ): Promise<ModelAssetReadyResult> {
   const startedAt = Date.now();
   let bytesWritten = 0;
+  let totalAttempts = 0;
+  let lastDownloadSource = "cache";
   let downloadedAny = false;
 
   await ensureDirectory(getModelsRootDirectory());
@@ -451,6 +521,8 @@ async function prepareVersion(
       );
       downloadedAny = downloadedAny || result.downloaded;
       bytesWritten += result.bytesWritten;
+      totalAttempts += result.attempts;
+      lastDownloadSource = result.source;
 
       onProgress?.({
         stage: "verifying",
@@ -493,8 +565,9 @@ async function prepareVersion(
     telemetry: {
       modelName: version.modelName,
       durationMs: Date.now() - startedAt,
-      attempts: version.retries ?? DEFAULT_RETRY_COUNT,
+      attempts: totalAttempts,
       bytesWritten,
+      source: lastDownloadSource,
     },
   };
 }
@@ -566,13 +639,36 @@ async function ensureModelAssetsInternal(
 export async function ensureCoreMLModelAssets(
   onProgress?: ModelAssetProgressCallback,
 ): Promise<ModelAssetReadyResult | null> {
+  if (onProgress) {
+    ensureModelProgressListeners.add(onProgress);
+    if (latestEnsureModelProgressEvent) {
+      try {
+        onProgress(latestEnsureModelProgressEvent);
+      } catch (error) {
+        console.warn(`${LOG_PREFIX} progress listener callback failed`, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
   if (!ensureModelPromise) {
-    ensureModelPromise = ensureModelAssetsInternal(onProgress).finally(() => {
+    ensureModelPromise = ensureModelAssetsInternal(
+      emitEnsureModelProgress,
+    ).finally(() => {
       ensureModelPromise = null;
+      ensureModelProgressListeners.clear();
+      latestEnsureModelProgressEvent = null;
     });
   }
 
-  return ensureModelPromise;
+  try {
+    return await ensureModelPromise;
+  } finally {
+    if (onProgress) {
+      ensureModelProgressListeners.delete(onProgress);
+    }
+  }
 }
 
 export async function getDownloadedCoreMLModelPath(): Promise<string | null> {
