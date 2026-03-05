@@ -73,6 +73,12 @@ function resolveSimulatorName() {
     "--json",
   ]);
 
+  if (listResult.error) {
+    throw new Error(
+      `Failed to execute xcrun simctl: ${listResult.error.message}`,
+    );
+  }
+
   if (listResult.status !== 0) {
     throw new Error(
       `Failed to query iOS simulators via xcrun simctl.\n${listResult.stderr || listResult.stdout}`,
@@ -115,7 +121,9 @@ function resolveSimulatorName() {
     return fallbackIPhone.name;
   }
 
-  return availableDevices[0].name;
+  throw new Error(
+    "No available iPhone simulators were found. Install an iPhone simulator from Xcode > Settings > Platforms.",
+  );
 }
 
 const simulatorName = resolveSimulatorName();
@@ -125,7 +133,7 @@ console.log(`Using simulator: ${simulatorName}`);
 
 const expoResult = spawnSync(
   "npx",
-  ["expo", "run:ios", "--simulator", simulatorName, ...passthroughArgs],
+  ["expo", "run:ios", "--device", simulatorName, ...passthroughArgs],
   { stdio: "inherit", shell: process.platform === "win32" },
 );
 
