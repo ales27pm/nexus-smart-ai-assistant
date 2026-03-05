@@ -17,7 +17,7 @@ A standardized directory structure is the strategic bedrock for maintaining syst
 
 ### Separation of Concerns
 
-There is a deliberate architectural decoupling between the `expo-coreml-llm` native module and the `./scripts/coreml` automation suite. The native module (specifically `ResourceResolver.swift`) assumes that all assets are localized, valid, and correctly path-referenced before execution. This places the entire burden of "readiness" on the automation scripts. By separating the lifecycle (fetching, converting, validating) from the runtime (execution, sampling), we prevent the native codebase from being polluted by build-time logic, ensuring a lean and stable binary.
+There is a deliberate architectural decoupling between the `expo-coreml-llm` native module and the `./scripts/coreml` automation suite. The native module (specifically `ResourceResolver.swift`) assumes tokenizer assets are bundled and model assets are downloaded on-device from `coreml-runtime-manifest.json`. This places the entire burden of model lifecycle readiness (URL/hash correctness, compatibility gating, and tokenizer export) on the automation scripts. By separating the lifecycle (fetching metadata, exporting tokenizers, validating manifests) from the runtime (download, execution, sampling), we prevent the native codebase from being polluted by build-time logic, ensuring a lean and stable binary.
 
 This structure provides the deterministic landscape required for our versioned manifest system.
 
@@ -47,7 +47,7 @@ As evidenced in `coremlUtils.test.ts`, manifest properties map directly to the `
 | `stopTokenIds`      | Instructs the generator when to cease output to prevent runaway generation. | `dolphinCoremlGenerate.test.ts` |
 | `eosTokenId`        | Defines the specific token signifying the end of string for the tokenizer.  | `coremlUtils.test.ts`           |
 
-Once orchestrated, the physical assets must be synchronized to match the manifest definitions.
+Once orchestrated, runtime download metadata and bundled tokenizer files must stay synchronized with manifest definitions.
 
 ---
 
@@ -60,8 +60,8 @@ Once orchestrated, the physical assets must be synchronized to match the manifes
 
 To sync the environment, execute the following entry-point commands:
 
-- Fetch CoreML weights: `bash ./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh` (wraps `hf_snapshot_download.py` for secure HuggingFace snapshots).
-- Export tokenizer assets: `python3 ./scripts/coreml/export_gpt2_bpe_assets.py`
+- Fetch/cache CoreML weights for local inspection only: `bash ./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh` (downloads to `.hf_models` and exports tokenizer bundle assets).
+- Export tokenizer assets directly: `python3 ./scripts/coreml/export_gpt2_bpe_assets.py`
 
 ### Tokenizer Configuration Logic
 
@@ -69,6 +69,15 @@ The system differentiates between `byte_level_bpe` and `gpt2_bpe` via `ResourceR
 
 - `byte_level_bpe`: Looks for standard naming conventions like `vocab.json` and `merges.txt` within `modules/expo-coreml-llm/ios/resources/tokenizers/byte_level_bpe/`.
 - `gpt2_bpe`: Utilizes specialized naming (`gpt2-vocab.json`, for example) as seen in `dolphinCoremlGenerate.test.ts` to maintain compatibility with specific model architectures.
+
+### Canonical Lifecycle (Download-on-Device)
+
+CoreML `.mlpackage` files are **not** copied into `modules/expo-coreml-llm/ios/resources/models` during normal operations. The canonical lifecycle is:
+
+1. Maintain `coreml-runtime-manifest.json` (`activeVersionId`, file `sources`, and `sha256`).
+2. Ship tokenizer artifacts in the app bundle (`modules/expo-coreml-llm/ios/resources/tokenizers/...`).
+3. Let the app download and verify model files on-device at runtime using manifest metadata.
+4. Use `.hf_models/...` only as a developer-local cache for validation and inspection scripts.
 
 Following asset synchronization, move to environment validation to ensure build readiness.
 
@@ -81,7 +90,7 @@ Following asset synchronization, move to environment validation to ensure build 
 ### Developer Validation Checklist
 
 1. Toolchain sanity: Run `./scripts/check-ios-local-build-env.sh` to verify Xcode, Node, and Ruby environment versions.
-2. Asset integrity: Run `node ./scripts/coreml/validate_coreml_pipeline.mjs` to ensure every asset defined in the manifest exists on disk and passes checksums.
+2. Asset integrity: Run `node ./scripts/coreml/validate_coreml_pipeline.mjs` to ensure `coreml-runtime-manifest.json` has valid active-version URLs and SHA-256 metadata, and that bundled tokenizer assets exist.
 3. Credential parity: Run `node ./scripts/validate-ios-local-credentials.mjs` (located in root `./scripts`) to ensure local signing identities match EAS requirements.
 
 ### Stabilization via `prebuild_with_pod_doctor.sh`
