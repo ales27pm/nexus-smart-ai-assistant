@@ -3,7 +3,6 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import {
@@ -338,10 +337,14 @@ export default function DeviceNativeHubScreen() {
   const [speechTranscript, setSpeechTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [coreMLStatus, setCoreMLStatus] = useState("CoreML LLM: not loaded");
-  const [coreMLLoadOptions, setCoreMLLoadOptions] =
-    useState<CoreMLLoadModelOptions>(() => ({
+  const initialCoreMLLoadOptions = useMemo<CoreMLLoadModelOptions>(
+    () => ({
       ...DEFAULT_COREML_LOAD_OPTIONS,
-    }));
+    }),
+    [],
+  );
+  const [coreMLLoadOptions, setCoreMLLoadOptions] =
+    useState<CoreMLLoadModelOptions>(initialCoreMLLoadOptions);
   const [coreMLGenerateOptions, setCoreMLGenerateOptions] =
     useState<CoreMLGenerateOptions>(() => ({
       ...DEFAULT_COREML_GENERATE_OPTIONS,
@@ -354,7 +357,6 @@ export default function DeviceNativeHubScreen() {
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [selectedModelPresetId, setSelectedModelPresetId] =
     useState<CoreMLModelPresetId>(DEFAULT_COREML_MODEL_PRESET_ID);
-  const initialCoreMLLoadOptionsRef = useRef(coreMLLoadOptions);
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios";
@@ -387,7 +389,6 @@ export default function DeviceNativeHubScreen() {
         .then((module) => setMapViewNative(() => module.default))
         .catch((error) => console.warn("react-native-maps unavailable", error));
     }
-
   }, [runSafely]);
 
   useEffect(() => {
@@ -399,13 +400,13 @@ export default function DeviceNativeHubScreen() {
       "CoreML auto-initialize",
       async () => {
         setCoreMLLoadState("downloading model");
-        await coreMLManager.initialize(initialCoreMLLoadOptionsRef.current);
+        await coreMLManager.initialize(initialCoreMLLoadOptions);
         setCoreMLLoadState("ready");
         setCoreMLStatus("CoreML LLM: ready");
       },
       { isCoreMLAction: true },
     );
-  }, [runSafely]);
+  }, [initialCoreMLLoadOptions, runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
