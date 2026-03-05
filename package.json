@@ -7,7 +7,7 @@
     "start-web": "expo start --web",
     "start-web-dev": "DEBUG=expo* expo start --web",
     "lint": "expo lint",
-    "ios": "expo run:ios",
+    "ios": "node ./scripts/ios/run-ios-with-available-simulator.mjs",
     "start-tunnel": "expo start --dev-client --tunnel",
     "start-go": "expo start",
     "build:dev": "npx eas build --profile development --platform all",
@@ -27,7 +27,8 @@
     "coreml:validate": "node ./scripts/coreml/validate_coreml_pipeline.mjs",
     "coreml:fetch": "./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh",
     "coreml:inspect": "node ./scripts/coreml/run_coreml_inspect.mjs",
-    "postinstall": "node ./scripts/ios/patch-phonemis-ios-target.mjs"
+    "postinstall": "node ./scripts/ios/patch-phonemis-ios-target.mjs",
+    "ios:raw": "expo run:ios"
   },
   "dependencies": {
     "@naveen521kk/expo-hf-tokenizers": "^0.1.0",

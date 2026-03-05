@@ -214,6 +214,7 @@ npm run submit:prod:ios:no-eas -- \
 - Run `npm run check:ios:credentials` and, if needed, `node ./scripts/repair-ios-local-credentials.mjs`.
 - Use `./scripts/ios/fix_local_ios_signing.sh` followed by `./scripts/ios/diagnose_p12.sh` for signing recovery.
 - If CoreML generation fails due to tokenizer or bundle issues, re-run `npm run coreml:fetch` and `npm run coreml:validate`.
+- If `expo run:ios` fails with `Unable to find a destination matching the provided destination specifier`, use `npm run ios` to auto-select an available simulator. Use `npm run ios:raw` only when you intentionally want Expo's default destination behavior.
 
 ## Additional Documentation
 
