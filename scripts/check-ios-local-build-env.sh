@@ -20,6 +20,7 @@ missing_tools=()
 
 required_eas_cli_version="18.18.0"
 required_fastlane_version="2.222.0"
+eas_runner=()
 
 extract_semver() {
   local raw="$1"
@@ -83,6 +84,40 @@ print_version() {
   return 1
 }
 
+resolve_eas_runner() {
+  local eas_raw_output=""
+  local eas_version=""
+
+  if command -v eas >/dev/null 2>&1; then
+    eas_raw_output="$(eas --version 2>&1 || true)"
+    eas_version="$(extract_semver "$eas_raw_output")"
+
+    if [[ -n "$eas_version" ]] && version_ge "$eas_version" "$required_eas_cli_version"; then
+      eas_runner=(eas)
+      echo "✅ eas-cli: using global eas-cli ${eas_version}"
+      return 0
+    fi
+
+    if [[ -n "$eas_version" ]]; then
+      echo "⚠️  Global eas-cli ${eas_version} is below required ${required_eas_cli_version}; using pinned npx fallback."
+    else
+      echo "⚠️  Could not parse global eas-cli version; using pinned npx fallback."
+    fi
+  else
+    echo "⚠️  Global eas-cli not found; using pinned npx fallback."
+  fi
+
+  eas_runner=(npx -y eas-cli@">=${required_eas_cli_version}")
+
+  if "${eas_runner[@]}" --version >/dev/null 2>&1; then
+    echo "✅ eas-cli: using fallback runner npx -y eas-cli@\">=${required_eas_cli_version}\""
+    return 0
+  fi
+
+  echo "❌ eas-cli fallback is unavailable. Ensure npm/npx can execute packages from npm registry." >&2
+  return 1
+}
+
 if command -v xcodebuild >/dev/null 2>&1 && print_version "xcodebuild" xcodebuild -version; then
   :
 else
@@ -111,19 +146,7 @@ else
   missing_tools+=("fastlane")
 fi
 
-if command -v eas >/dev/null 2>&1 && print_version "eas" eas --version; then
-  eas_raw_version_output="$(eas --version 2>&1 || true)"
-  eas_cli_version="$(extract_semver "$eas_raw_version_output")"
-
-  if [[ -z "$eas_cli_version" ]]; then
-    echo "❌ Could not parse eas-cli version from output:" >&2
-    printf '%s\n' "$eas_raw_version_output" >&2
-    missing_tools+=("eas")
-  elif ! version_ge "$eas_cli_version" "$required_eas_cli_version"; then
-    echo "❌ eas-cli ${eas_cli_version} is too old. Require >= ${required_eas_cli_version} so local iOS export uses app-store-connect." >&2
-    missing_tools+=("eas")
-  fi
-else
+if ! resolve_eas_runner; then
   missing_tools+=("eas")
 fi
 
