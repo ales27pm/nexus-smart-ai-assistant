@@ -263,15 +263,13 @@ enum ResourceResolver {
 
     guard let b = resourceBundle() else {
       let discovered = discoveredResourceBundleURLs()
-      let candidateListings: [String: [String]] = [:]
 
       log("resource bundle missing while resolving model \(file)")
       log("discovered bundle URLs during failure: \(discovered)")
 
       throw NSError(domain: "ExpoCoreMLLLM", code: 21, userInfo: [
         NSLocalizedDescriptionKey: "Resource bundle not found",
-        "discoveredBundleURLs": discovered,
-        "candidateModelDirectoryListings": candidateListings
+        "discoveredBundleURLs": discovered
       ])
     }
 

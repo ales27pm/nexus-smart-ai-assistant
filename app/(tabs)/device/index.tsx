@@ -35,6 +35,7 @@ import {
   CoreMLLoadUxState,
   CoreMLModelPreset,
   CoreMLModelPresetId,
+  DEFAULT_COREML_MODEL_PRESET_ID,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
   toActionableCoreMLError,
@@ -220,6 +221,9 @@ function CoreMLSection({
   onLoadModel,
   onGenerate,
 }: CoreMLSectionProps) {
+  const selectedPreset =
+    modelPresets.find((preset) => preset.id === selectedModelPresetId) ?? null;
+
   return (
     <View
       style={[styles.section, !isAvailable && styles.sectionDisabled]}
@@ -259,18 +263,8 @@ function CoreMLSection({
           );
         })}
       </View>
-      <Text style={styles.result}>
-        {
-          modelPresets.find((preset) => preset.id === selectedModelPresetId)
-            ?.modelFile
-        }
-      </Text>
-      <Text style={styles.result}>
-        {
-          modelPresets.find((preset) => preset.id === selectedModelPresetId)
-            ?.detail
-        }
-      </Text>
+      <Text style={styles.result}>{selectedPreset?.modelFile}</Text>
+      <Text style={styles.result}>{selectedPreset?.detail}</Text>
       <TouchableOpacity style={styles.button} onPress={onLoadModel}>
         <Text style={styles.buttonText}>Download + load CoreML model</Text>
       </TouchableOpacity>
@@ -358,7 +352,7 @@ export default function DeviceNativeHubScreen() {
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [selectedModelPresetId, setSelectedModelPresetId] =
-    useState<CoreMLModelPresetId>("int4Lut");
+    useState<CoreMLModelPresetId>(DEFAULT_COREML_MODEL_PRESET_ID);
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios";
