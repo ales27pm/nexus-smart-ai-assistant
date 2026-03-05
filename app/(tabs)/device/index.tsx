@@ -43,6 +43,7 @@ import {
 import { iosToolsService } from "@/utils/iosToolsService";
 import { reportError } from "@/utils/globalErrorHandler";
 import { coreMLManager } from "@/utils/coreMLManager";
+import type { CoreMLInitializationEvent } from "@/utils/coreMLManager";
 
 type SafeActionOptions = {
   isCoreMLAction?: boolean;
@@ -71,6 +72,8 @@ type CoreMLSectionProps = {
   generateOptions: CoreMLGenerateOptions;
   modelPresets: readonly CoreMLModelPreset[];
   selectedModelPresetId: CoreMLModelPresetId;
+  loadProgress: number;
+  verboseEvents: readonly string[];
   onSelectModelPreset: (presetId: CoreMLModelPresetId) => void;
   onPromptChange: (next: string) => void;
   onLoadOptionsChange: React.Dispatch<
@@ -214,6 +217,8 @@ function CoreMLSection({
   generateOptions,
   modelPresets,
   selectedModelPresetId,
+  loadProgress,
+  verboseEvents,
   onSelectModelPreset,
   onPromptChange,
   onLoadOptionsChange,
@@ -241,6 +246,17 @@ function CoreMLSection({
       )}
       <Text style={styles.result}>{status}</Text>
       <Text style={styles.result}>CoreML load state: {loadState}</Text>
+      <Text style={styles.result}>
+        Progress: {Math.round(loadProgress * 100)}%
+      </Text>
+      <View style={styles.progressTrack}>
+        <View
+          style={[
+            styles.progressFill,
+            { width: `${Math.round(loadProgress * 100)}%` },
+          ]}
+        />
+      </View>
       <Text style={styles.result}>Model preset</Text>
       <View style={styles.presetRow}>
         {modelPresets.map((preset) => {
@@ -315,6 +331,18 @@ function CoreMLSection({
         <Text style={styles.buttonText}>Generate locally</Text>
       </TouchableOpacity>
       <Text style={styles.result}>Output: {output || "—"}</Text>
+      <View style={styles.verbosePanel}>
+        <Text style={styles.result}>Verbose load log</Text>
+        {verboseEvents.length === 0 ? (
+          <Text style={styles.result}>—</Text>
+        ) : (
+          verboseEvents.map((event) => (
+            <Text key={event} style={styles.verboseLogLine}>
+              • {event}
+            </Text>
+          ))
+        )}
+      </View>
       <Text style={styles.result}>
         Notes: Pick a preset that matches the packaged/downloaded model variant,
         then load. If loading fails, refresh model assets and rebuild iOS native
@@ -355,11 +383,37 @@ export default function DeviceNativeHubScreen() {
     "Write a short, useful checklist for setting up a workshop.",
   );
   const [coreMLOutput, setCoreMLOutput] = useState("");
+  const [coreMLLoadProgress, setCoreMLLoadProgress] = useState(0);
+  const [coreMLVerboseEvents, setCoreMLVerboseEvents] = useState<string[]>([]);
   const [selectedModelPresetId, setSelectedModelPresetId] =
     useState<CoreMLModelPresetId>(DEFAULT_COREML_MODEL_PRESET_ID);
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios";
+
+  const handleCoreMLProgress = useCallback(
+    (event: CoreMLInitializationEvent) => {
+      setCoreMLLoadProgress(Math.max(0, Math.min(1, event.progress)));
+      const line = `${event.stage.toUpperCase()}: ${event.message}`;
+      setCoreMLVerboseEvents((current) => {
+        const next = [...current, line];
+        return next.slice(-8);
+      });
+      setCoreMLLoadState(
+        event.stage === "ready"
+          ? "ready"
+          : event.stage === "verifying"
+            ? "verifying model"
+            : "downloading model",
+      );
+    },
+    [],
+  );
+
+  const resetCoreMLProgress = useCallback(() => {
+    setCoreMLLoadProgress(0);
+    setCoreMLVerboseEvents([]);
+  }, []);
 
   const handleModelPresetSelect = useCallback(
     (presetId: CoreMLModelPresetId) => {
@@ -415,28 +469,48 @@ export default function DeviceNativeHubScreen() {
       "CoreML auto-initialize",
       async () => {
         setCoreMLLoadState("downloading model");
-        await coreMLManager.initialize(initialCoreMLLoadOptions);
+        resetCoreMLProgress();
+        await coreMLManager.initialize(
+          initialCoreMLLoadOptions,
+          handleCoreMLProgress,
+        );
+        setCoreMLLoadProgress(1);
         setCoreMLLoadState("ready");
         setCoreMLStatus("CoreML LLM: ready");
       },
       { isCoreMLAction: true },
     );
-  }, [initialCoreMLLoadOptions, runSafely]);
+  }, [
+    handleCoreMLProgress,
+    initialCoreMLLoadOptions,
+    resetCoreMLProgress,
+    runSafely,
+  ]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
       "CoreML load",
       async () => {
         setCoreMLLoadState("downloading model");
+        resetCoreMLProgress();
         setCoreMLLoadOptions(loadOptionsForSelectedPreset);
-        await coreMLManager.initialize(loadOptionsForSelectedPreset);
+        await coreMLManager.initialize(
+          loadOptionsForSelectedPreset,
+          handleCoreMLProgress,
+        );
+        setCoreMLLoadProgress(1);
         setCoreMLLoadState("ready");
         setCoreMLStatus("CoreML LLM: ready");
         setStatus("CoreML model loaded");
       },
       { isCoreMLAction: true },
     );
-  }, [loadOptionsForSelectedPreset, runSafely]);
+  }, [
+    handleCoreMLProgress,
+    loadOptionsForSelectedPreset,
+    resetCoreMLProgress,
+    runSafely,
+  ]);
 
   const runCoreMLGenerate = useCallback(async () => {
     await runSafely(
@@ -444,7 +518,12 @@ export default function DeviceNativeHubScreen() {
       async () => {
         if (!(await coreMLManager.isReady())) {
           setCoreMLLoadState("downloading model");
-          await coreMLManager.initialize(coreMLLoadOptions);
+          resetCoreMLProgress();
+          await coreMLManager.initialize(
+            coreMLLoadOptions,
+            handleCoreMLProgress,
+          );
+          setCoreMLLoadProgress(1);
           setCoreMLLoadState("ready");
           setCoreMLStatus("CoreML LLM: ready");
         }
@@ -459,7 +538,14 @@ export default function DeviceNativeHubScreen() {
       },
       { isCoreMLAction: true },
     );
-  }, [coreMLGenerateOptions, coreMLLoadOptions, coreMLPrompt, runSafely]);
+  }, [
+    coreMLGenerateOptions,
+    coreMLLoadOptions,
+    coreMLPrompt,
+    handleCoreMLProgress,
+    resetCoreMLProgress,
+    runSafely,
+  ]);
 
   const runSttCapture = useCallback(async () => {
     if (isListening) {
@@ -641,6 +727,8 @@ export default function DeviceNativeHubScreen() {
         generateOptions={coreMLGenerateOptions}
         modelPresets={COREML_MODEL_PRESETS}
         selectedModelPresetId={selectedModelPresetId}
+        loadProgress={coreMLLoadProgress}
+        verboseEvents={coreMLVerboseEvents}
         onSelectModelPreset={handleModelPresetSelect}
         onPromptChange={setCoreMLPrompt}
         onLoadOptionsChange={setCoreMLLoadOptions}
@@ -747,6 +835,31 @@ const styles = StyleSheet.create({
   },
   presetChipTextActive: {
     color: Colors.dark.text,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: Colors.dark.inputBackground,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: Colors.dark.borderSubtle,
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.dark.accent,
+  },
+  verbosePanel: {
+    gap: 4,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.borderSubtle,
+    backgroundColor: Colors.dark.inputBackground,
+  },
+  verboseLogLine: {
+    color: Colors.dark.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
   },
   mapWrap: {
     height: 170,

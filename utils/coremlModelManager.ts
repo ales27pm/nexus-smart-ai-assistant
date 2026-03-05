@@ -19,6 +19,22 @@ type DownloadFileDescriptor = {
   sources: string[];
 };
 
+export type ModelAssetProgressStage =
+  | "preparing"
+  | "downloading"
+  | "verifying"
+  | "activating"
+  | "ready";
+
+export type ModelAssetProgressEvent = {
+  stage: ModelAssetProgressStage;
+  message: string;
+  progress: number;
+  filePath?: string;
+};
+
+type ModelAssetProgressCallback = (event: ModelAssetProgressEvent) => void;
+
 export type ModelAssetDownloadTelemetry = {
   modelName: string;
   durationMs: number;
@@ -172,6 +188,7 @@ async function downloadWithFallbackSources(
   descriptor: DownloadFileDescriptor,
   destination: string,
   retries: number,
+  onProgress?: (writtenBytes: number, expectedBytes: number) => void,
 ): Promise<number> {
   let bytesWritten = 0;
   let lastError: unknown = null;
@@ -187,6 +204,10 @@ async function downloadWithFallbackSources(
         {},
         (progress) => {
           bytesWritten = progress.totalBytesWritten;
+          onProgress?.(
+            progress.totalBytesWritten,
+            progress.totalBytesExpectedToWrite,
+          );
         },
       );
 
@@ -272,6 +293,7 @@ async function verifyInstalledVersion(
 async function ensureFileDownloaded(
   version: RuntimeModelVersion,
   descriptor: DownloadFileDescriptor,
+  onProgress?: (writtenBytes: number, expectedBytes: number) => void,
 ): Promise<{ downloaded: boolean; bytesWritten: number }> {
   const targetPath = getModelFilePath(version.id, descriptor.path);
   const targetDir = `${targetPath.split("/").slice(0, -1).join("/")}/`;
@@ -290,6 +312,7 @@ async function ensureFileDownloaded(
     descriptor,
     targetPath,
     version.retries ?? DEFAULT_RETRY_COUNT,
+    onProgress,
   );
 
   const validDownloaded = await validateFileHash(
@@ -383,6 +406,7 @@ async function cleanupOldVersions(
 
 async function prepareVersion(
   version: RuntimeModelVersion,
+  onProgress?: ModelAssetProgressCallback,
 ): Promise<ModelAssetReadyResult> {
   const startedAt = Date.now();
   let bytesWritten = 0;
@@ -392,11 +416,48 @@ async function prepareVersion(
   await ensureDirectory(getModelDirectory(version.id));
 
   const alreadyInstalled = await verifyInstalledVersion(version);
+  const totalFiles = Math.max(version.files.length, 1);
+  onProgress?.({
+    stage: "preparing",
+    message: `Preparing ${version.modelName}`,
+    progress: alreadyInstalled ? 0.9 : 0.02,
+  });
+
   if (!alreadyInstalled) {
-    for (const descriptor of toDownloadDescriptors(version.files)) {
-      const result = await ensureFileDownloaded(version, descriptor);
+    const descriptors = toDownloadDescriptors(version.files);
+    for (const [index, descriptor] of descriptors.entries()) {
+      const completedRatio = index / totalFiles;
+      onProgress?.({
+        stage: "downloading",
+        message: `Downloading ${descriptor.path} (${index + 1}/${totalFiles})`,
+        progress: Math.min(0.85, completedRatio * 0.8 + 0.05),
+        filePath: descriptor.path,
+      });
+
+      const result = await ensureFileDownloaded(
+        version,
+        descriptor,
+        (writtenBytes, expectedBytes) => {
+          const fileProgress =
+            expectedBytes > 0 ? writtenBytes / expectedBytes : 0;
+          const overall = (index + fileProgress) / totalFiles;
+          onProgress?.({
+            stage: "downloading",
+            message: `Downloading ${descriptor.path} (${Math.round(fileProgress * 100)}%)`,
+            progress: Math.min(0.85, overall * 0.8 + 0.05),
+            filePath: descriptor.path,
+          });
+        },
+      );
       downloadedAny = downloadedAny || result.downloaded;
       bytesWritten += result.bytesWritten;
+
+      onProgress?.({
+        stage: "verifying",
+        message: `Verified ${descriptor.path}`,
+        progress: Math.min(0.9, ((index + 1) / totalFiles) * 0.85 + 0.05),
+        filePath: descriptor.path,
+      });
     }
 
     await writeJsonFile(
@@ -405,12 +466,24 @@ async function prepareVersion(
     );
   }
 
+  onProgress?.({
+    stage: "activating",
+    message: `Activating ${version.modelName}`,
+    progress: 0.95,
+  });
+
   const modelPath = await activateVersion(version);
 
   await cleanupOldVersions(
     [version.id],
     Math.max(runtimeModelManifest.maxRetainedVersions, 2),
   );
+
+  onProgress?.({
+    stage: "ready",
+    message: `${version.modelName} ready`,
+    progress: 1,
+  });
 
   return {
     modelDirectory: getModelDirectory(version.id),
@@ -440,7 +513,9 @@ function resolveActiveVersion(): RuntimeModelVersion {
   return version;
 }
 
-async function ensureModelAssetsInternal(): Promise<ModelAssetReadyResult | null> {
+async function ensureModelAssetsInternal(
+  onProgress?: ModelAssetProgressCallback,
+): Promise<ModelAssetReadyResult | null> {
   // Keep compatibility with consumers expecting nullable, but runtime manifest always provides a version.
   if (!runtimeModelManifest.versions.length) {
     return null;
@@ -460,6 +535,11 @@ async function ensureModelAssetsInternal(): Promise<ModelAssetReadyResult | null
         activeVersion.id,
         activeVersion.modelRelativePath,
       );
+      onProgress?.({
+        stage: "ready",
+        message: `${activeVersion.modelName} ready`,
+        progress: 1,
+      });
       return {
         modelDirectory: getModelDirectory(activeVersion.id),
         modelPath,
@@ -471,7 +551,7 @@ async function ensureModelAssetsInternal(): Promise<ModelAssetReadyResult | null
 
   const previousActiveVersionId = managerState?.activeVersionId;
   try {
-    const result = await prepareVersion(activeVersion);
+    const result = await prepareVersion(activeVersion, onProgress);
     return result;
   } catch (error) {
     console.error(`${LOG_PREFIX} failed to prepare active model version`, {
@@ -483,9 +563,11 @@ async function ensureModelAssetsInternal(): Promise<ModelAssetReadyResult | null
   }
 }
 
-export async function ensureCoreMLModelAssets(): Promise<ModelAssetReadyResult | null> {
+export async function ensureCoreMLModelAssets(
+  onProgress?: ModelAssetProgressCallback,
+): Promise<ModelAssetReadyResult | null> {
   if (!ensureModelPromise) {
-    ensureModelPromise = ensureModelAssetsInternal().finally(() => {
+    ensureModelPromise = ensureModelAssetsInternal(onProgress).finally(() => {
       ensureModelPromise = null;
     });
   }
