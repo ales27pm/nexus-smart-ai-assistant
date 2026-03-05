@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -353,6 +354,7 @@ export default function DeviceNativeHubScreen() {
   const [coreMLOutput, setCoreMLOutput] = useState("");
   const [selectedModelPresetId, setSelectedModelPresetId] =
     useState<CoreMLModelPresetId>(DEFAULT_COREML_MODEL_PRESET_ID);
+  const initialCoreMLLoadOptionsRef = useRef(coreMLLoadOptions);
 
   const runSafely = useSafeAction(setStatus, setCoreMLLoadState);
   const isCoreMLAvailable = Platform.OS === "ios";
@@ -386,19 +388,24 @@ export default function DeviceNativeHubScreen() {
         .catch((error) => console.warn("react-native-maps unavailable", error));
     }
 
-    if (Platform.OS === "ios") {
-      void runSafely(
-        "CoreML auto-initialize",
-        async () => {
-          setCoreMLLoadState("downloading model");
-          await coreMLManager.initialize(coreMLLoadOptions);
-          setCoreMLLoadState("ready");
-          setCoreMLStatus("CoreML LLM: ready");
-        },
-        { isCoreMLAction: true },
-      );
+  }, [runSafely]);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      return;
     }
-  }, [coreMLLoadOptions, runSafely]);
+
+    void runSafely(
+      "CoreML auto-initialize",
+      async () => {
+        setCoreMLLoadState("downloading model");
+        await coreMLManager.initialize(initialCoreMLLoadOptionsRef.current);
+        setCoreMLLoadState("ready");
+        setCoreMLStatus("CoreML LLM: ready");
+      },
+      { isCoreMLAction: true },
+    );
+  }, [runSafely]);
 
   const loadCoreMLModel = useCallback(async () => {
     await runSafely(
