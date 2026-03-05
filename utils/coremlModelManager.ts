@@ -7,6 +7,7 @@ import {
 } from "@/utils/modelManifest";
 import { Buffer } from "buffer";
 import { sha256 } from "js-sha256";
+import { AppState } from "react-native";
 
 const LOG_PREFIX = "[CoreMLModelManager]";
 const DEFAULT_RETRY_COUNT = 3;
@@ -18,6 +19,12 @@ type DownloadFileDescriptor = {
   path: string;
   expectedHash: string;
   sources: string[];
+};
+
+type DownloadHttpError = Error & {
+  status: number | null;
+  source: string;
+  descriptorPath: string;
 };
 
 export type ModelAssetProgressStage =
@@ -32,6 +39,8 @@ export type ModelAssetProgressEvent = {
   message: string;
   progress: number;
   filePath?: string;
+  bytesProcessed?: number;
+  totalBytes?: number;
 };
 
 type ModelAssetProgressCallback = (event: ModelAssetProgressEvent) => void;
@@ -121,6 +130,24 @@ class ProgressEmitter<T> {
 const ensureModelProgressEmitter =
   new ProgressEmitter<ModelAssetProgressEvent>();
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+
+  const units = ["B", "KB", "MB", "GB", "TB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+
+  const fractionDigits = unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`;
+}
+
 function normalizeDirectory(path: string): string {
   return path.endsWith("/") ? path : `${path}/`;
 }
@@ -180,7 +207,10 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
-async function hashFileSha256(path: string): Promise<string> {
+async function hashFileSha256(
+  path: string,
+  onProgress?: (hashedBytes: number, totalBytes: number) => void,
+): Promise<string> {
   const chunkSize = 1024 * 1024;
   const info = await FileSystem.getInfoAsync(path);
   if (!info.exists || typeof info.size !== "number") {
@@ -188,6 +218,7 @@ async function hashFileSha256(path: string): Promise<string> {
   }
 
   const hasher = sha256.create();
+  let hashedBytes = 0;
 
   for (let position = 0; position < info.size; position += chunkSize) {
     const length = Math.min(chunkSize, info.size - position);
@@ -197,6 +228,8 @@ async function hashFileSha256(path: string): Promise<string> {
       length,
     });
     hasher.update(Buffer.from(chunk, "base64"));
+    hashedBytes += length;
+    onProgress?.(hashedBytes, info.size);
   }
 
   return hasher.hex();
@@ -205,13 +238,14 @@ async function hashFileSha256(path: string): Promise<string> {
 async function validateFileHash(
   path: string,
   expectedHash: string,
+  onProgress?: (hashedBytes: number, totalBytes: number) => void,
 ): Promise<boolean> {
   const info = await FileSystem.getInfoAsync(path);
   if (!info.exists || info.size === 0) {
     return false;
   }
 
-  const digest = await hashFileSha256(path);
+  const digest = await hashFileSha256(path, onProgress);
   return digest.toLowerCase() === expectedHash.toLowerCase();
 }
 
@@ -243,6 +277,11 @@ type InactivityTimeoutRunOptions<T> = {
   timeoutMessage: string;
   operation: (markActivity: () => void) => Promise<T>;
   onTimeout: () => Promise<unknown>;
+  onForegroundRequired?: () => void;
+  getCurrentAppState?: () => string;
+  subscribeToAppState?: (listener: (state: string) => void) => {
+    remove: () => void;
+  };
 };
 
 async function runWithInactivityTimeout<T>({
@@ -250,10 +289,32 @@ async function runWithInactivityTimeout<T>({
   timeoutMessage,
   operation,
   onTimeout,
+  onForegroundRequired,
+  getCurrentAppState = () => AppState.currentState,
+  subscribeToAppState = (listener) =>
+    AppState.addEventListener("change", listener),
 }: InactivityTimeoutRunOptions<T>): Promise<T> {
   return await new Promise<T>((resolve, reject) => {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
+    let foregroundRequiredNotified = false;
+    const appStateSubscription = subscribeToAppState((nextState) => {
+      if (settled) {
+        return;
+      }
+
+      if (nextState === "active") {
+        foregroundRequiredNotified = false;
+        scheduleTimeout();
+        return;
+      }
+
+      clearTimer();
+      if (!foregroundRequiredNotified) {
+        foregroundRequiredNotified = true;
+        onForegroundRequired?.();
+      }
+    });
 
     const clearTimer = () => {
       if (timeoutId) {
@@ -269,10 +330,20 @@ async function runWithInactivityTimeout<T>({
 
       settled = true;
       clearTimer();
+      appStateSubscription.remove();
       fn();
     };
 
     const scheduleTimeout = () => {
+      if (getCurrentAppState() !== "active") {
+        clearTimer();
+        if (!foregroundRequiredNotified) {
+          foregroundRequiredNotified = true;
+          onForegroundRequired?.();
+        }
+        return;
+      }
+
       clearTimer();
       timeoutId = setTimeout(() => {
         settle(() => {
@@ -307,6 +378,10 @@ async function runWithInactivityTimeout<T>({
   });
 }
 
+export const __coreMLModelManagerTestUtils = {
+  runWithInactivityTimeout,
+};
+
 async function downloadResumableWithStallTimeout(
   source: string,
   destination: string,
@@ -318,6 +393,7 @@ async function downloadResumableWithStallTimeout(
 }> {
   let bytesWritten = 0;
   let resumable: FileSystem.DownloadResumable | null = null;
+  let didEmitForegroundRequired = false;
 
   const response = await runWithInactivityTimeout<
     Awaited<ReturnType<FileSystem.DownloadResumable["downloadAsync"]>>
@@ -343,6 +419,21 @@ async function downloadResumableWithStallTimeout(
     },
     onTimeout: async () => {
       await resumable?.pauseAsync();
+    },
+    onForegroundRequired: () => {
+      if (didEmitForegroundRequired) {
+        return;
+      }
+
+      didEmitForegroundRequired = true;
+      const message = `App is in background. Bring the app to foreground to resume real-time progress updates for ${descriptorPath}.`;
+      console.info(`${LOG_PREFIX} ${message}`);
+      ensureModelProgressEmitter.emit({
+        stage: "downloading",
+        message,
+        progress: 0,
+        filePath: descriptorPath,
+      });
     },
   });
 
@@ -389,10 +480,14 @@ async function downloadWithFallbackSources(
             onProgress,
           );
 
-        if (!response || response.status !== 200) {
-          throw new Error(
-            `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
-          );
+        const status = response?.status ?? null;
+        if (status === null || status < 200 || status >= 300) {
+          const message = `Download failed for ${descriptor.path} from ${source} with status ${status ?? "unknown"}`;
+          const statusError = new Error(message) as DownloadHttpError;
+          statusError.status = status;
+          statusError.source = source;
+          statusError.descriptorPath = descriptor.path;
+          throw statusError;
         }
 
         const finalBytesWritten = await resolveBytesWritten(
@@ -407,9 +502,18 @@ async function downloadWithFallbackSources(
         };
       } catch (error) {
         lastError = error;
+        const errorStatus =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? (error as { status: number }).status
+            : null;
+
         console.warn(`${LOG_PREFIX} download attempt failed`, {
-          file: descriptor.path,
+          descriptorPath: descriptor.path,
           source,
+          status: errorStatus,
           attempt,
           retries,
           totalAttempts: attemptCount,
@@ -480,6 +584,7 @@ async function ensureFileDownloaded(
   version: RuntimeModelVersion,
   descriptor: DownloadFileDescriptor,
   onProgress?: (writtenBytes: number, expectedBytes: number) => void,
+  onVerificationProgress?: (hashedBytes: number, totalBytes: number) => void,
 ): Promise<{
   downloaded: boolean;
   bytesWritten: number;
@@ -493,6 +598,7 @@ async function ensureFileDownloaded(
   const validExisting = await validateFileHash(
     targetPath,
     descriptor.expectedHash,
+    onVerificationProgress,
   );
   if (validExisting) {
     return { downloaded: false, bytesWritten: 0, attempts: 0, source: "cache" };
@@ -509,6 +615,7 @@ async function ensureFileDownloaded(
   const validDownloaded = await validateFileHash(
     targetPath,
     descriptor.expectedHash,
+    onVerificationProgress,
   );
   if (!validDownloaded) {
     await deleteIfExists(targetPath);
@@ -622,6 +729,8 @@ async function prepareVersion(
   });
 
   if (!alreadyInstalled) {
+    const VERIFICATION_PROGRESS_START = 0.86;
+    const VERIFICATION_PROGRESS_END = 0.94;
     const descriptors = toDownloadDescriptors(version.files);
     for (const [index, descriptor] of descriptors.entries()) {
       const completedRatio = index / totalFiles;
@@ -636,14 +745,42 @@ async function prepareVersion(
         version,
         descriptor,
         (writtenBytes, expectedBytes) => {
-          const fileProgress =
-            expectedBytes > 0 ? writtenBytes / expectedBytes : 0;
+          const hasExpectedSize = expectedBytes > 0;
+          const fileProgress = hasExpectedSize
+            ? writtenBytes / expectedBytes
+            : 0;
           const overall = (index + fileProgress) / totalFiles;
           onProgress?.({
             stage: "downloading",
-            message: `Downloading ${descriptor.path} (${Math.round(fileProgress * 100)}%)`,
-            progress: Math.min(0.85, overall * 0.8 + 0.05),
+            message: hasExpectedSize
+              ? `Downloading ${descriptor.path} (${Math.round(fileProgress * 100)}%)`
+              : `Downloading ${descriptor.path} (${formatBytes(writtenBytes)} downloaded)`,
+            progress: Math.min(
+              0.85,
+              (hasExpectedSize ? overall : completedRatio) * 0.8 + 0.05,
+            ),
             filePath: descriptor.path,
+          });
+        },
+        (hashedBytes, totalBytes) => {
+          const safeTotalBytes = Math.max(totalBytes, 1);
+          const fileHashProgress = hashedBytes / safeTotalBytes;
+          const overallHashProgress = (index + fileHashProgress) / totalFiles;
+          const boundedProgress =
+            VERIFICATION_PROGRESS_START +
+            overallHashProgress *
+              (VERIFICATION_PROGRESS_END - VERIFICATION_PROGRESS_START);
+
+          onProgress?.({
+            stage: "verifying",
+            message: `Verifying ${descriptor.path} (${formatBytes(hashedBytes)} / ${formatBytes(totalBytes)})`,
+            progress: Math.max(
+              VERIFICATION_PROGRESS_START,
+              Math.min(VERIFICATION_PROGRESS_END, boundedProgress),
+            ),
+            filePath: descriptor.path,
+            bytesProcessed: hashedBytes,
+            totalBytes,
           });
         },
       );
@@ -655,7 +792,10 @@ async function prepareVersion(
       onProgress?.({
         stage: "verifying",
         message: `Verified ${descriptor.path}`,
-        progress: Math.min(0.9, ((index + 1) / totalFiles) * 0.85 + 0.05),
+        progress:
+          VERIFICATION_PROGRESS_START +
+          ((index + 1) / totalFiles) *
+            (VERIFICATION_PROGRESS_END - VERIFICATION_PROGRESS_START),
         filePath: descriptor.path,
       });
     }

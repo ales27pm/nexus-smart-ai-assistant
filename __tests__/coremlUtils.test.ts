@@ -32,9 +32,8 @@ describe("coreml utils", () => {
   });
 
   it("exposes stable manifest-driven default settings", () => {
-    expect(DEFAULT_COREML_LOAD_OPTIONS.modelFile).toBe(
-      modelManifest.activeModel,
-    );
+    expect(DEFAULT_COREML_LOAD_OPTIONS.modelPath).toBeUndefined();
+    expect(DEFAULT_COREML_LOAD_OPTIONS.modelFile).toBeUndefined();
     expect(DEFAULT_COREML_LOAD_OPTIONS.eosTokenId).toBe(
       modelManifest.eosTokenId,
     );

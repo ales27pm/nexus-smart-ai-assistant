@@ -9,6 +9,7 @@ pnpm-lock.yaml
 # Expo
 .expo/
 dist/
+.dist/
 web-build/
 expo-env.d.ts
 
@@ -17,6 +18,8 @@ ios/
 android/
 !modules/expo-coreml-llm/ios/
 !modules/expo-coreml-llm/ios/**
+!modules/expo-coreml-diagnostics/ios/
+!modules/expo-coreml-diagnostics/ios/**
 *.orig.*
 *.jks
 *.p8
@@ -69,6 +72,7 @@ scripts/ios/*.mobileprovision
 .hf_hub_cache/
 .hf_hub_downloads/
 .hf_models/
+coremltools-venv/
 # Keep the bundled CoreML model in EAS uploads even though it stays git-ignored.
 !modules/expo-coreml-llm/ios/resources/models/
 !modules/expo-coreml-llm/ios/resources/models/**

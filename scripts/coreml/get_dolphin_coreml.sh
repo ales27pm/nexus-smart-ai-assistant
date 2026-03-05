@@ -21,18 +21,17 @@ ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 REPO_ID="ales27pm/Dolphin3.0-CoreML"
 STAGING="$ROOT/.hf_models/${REPO_ID}"
-DEST="$ROOT/modules/expo-coreml-llm/ios/resources/models/${PKG}"
+DEST="$STAGING/${PKG}"
 
 echo "[i] Repo:        $REPO_ID"
 echo "[i] Variant:     $VARIANT"
 echo "[i] Package dir: $PKG"
 echo "[i] Staging:     $STAGING"
-echo "[i] Destination: $DEST"
+echo "[i] Local cache: $DEST"
 echo
 
 mkdir -p "$STAGING"
 rm -rf "$DEST"
-mkdir -p "$(dirname "$DEST")"
 
 # Allow patterns: grab mlpackage contents (a few nested levels to be safe)
 ALLOW=(
@@ -54,8 +53,6 @@ if [[ ! -d "$SRC" ]]; then
   exit 1
 fi
 
-# Copy into repo destination
-cp -R "$SRC" "$DEST"
 
 # Basic sanity checks
 FILECOUNT="$(find "$DEST" -type f | wc -l | tr -d ' ')"
@@ -73,7 +70,7 @@ if [[ "$SIZEMB" -lt 200 ]]; then
 fi
 
 echo
-echo "[✓] Model installed:"
+echo "[✓] Model cached:"
 echo "    $DEST"
 echo
 echo "[next] Inspect IO:"

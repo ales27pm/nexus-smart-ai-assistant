@@ -34,7 +34,8 @@ describe("runtime model manifest", () => {
     expect(downloadConfig.files[0].url).toBe(active.files[0].sources[0]);
   });
 
-  it("keeps legacy model manifest available", () => {
-    expect(modelManifest.activeModel.length).toBeGreaterThan(0);
+  it("keeps runtime-only configuration values", () => {
+    expect(modelManifest.contextLimit).toBeGreaterThan(0);
+    expect(modelManifest.computeUnits).toBeDefined();
   });
 });

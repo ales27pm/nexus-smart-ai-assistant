@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
+import { access } from "node:fs/promises";
 import path from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 import {
   getIOExpectationsFromManifest,
@@ -12,14 +14,38 @@ const repoRoot = path.resolve(
   "../..",
 );
 
+async function resolveModelPath(argv, manifest) {
+  const explicitPath = argv[0];
+  const defaultPath = manifest.activeModel
+    ? path.join(repoRoot, ".hf_models/Dolphin3.0-CoreML", manifest.activeModel)
+    : undefined;
+
+  const modelPath = explicitPath
+    ? path.resolve(process.cwd(), explicitPath)
+    : defaultPath;
+
+  if (!modelPath) {
+    throw new Error(
+      "activeModel is missing in coreml-config.json; pass an explicit local .mlpackage path, e.g. npm run coreml:inspect -- /absolute/path/to/model.mlpackage",
+    );
+  }
+
+  try {
+    await access(modelPath);
+    return modelPath;
+  } catch {
+    const source = explicitPath
+      ? `provided argument: ${explicitPath}`
+      : "default local cache derived from coreml-config.json";
+    throw new Error(
+      `Model path does not exist (${source}): ${modelPath}. Pass an explicit local .mlpackage path, e.g. npm run coreml:inspect -- /absolute/path/to/model.mlpackage`,
+    );
+  }
+}
+
 const { manifest } = await readCoreMLManifest(repoRoot);
 const io = getIOExpectationsFromManifest(manifest);
-
-const modelPath = path.join(
-  repoRoot,
-  "modules/expo-coreml-llm/ios/resources/models",
-  manifest.activeModel,
-);
+const modelPath = await resolveModelPath(process.argv.slice(2), manifest);
 
 const inspectScript = path.join(
   repoRoot,

@@ -18,13 +18,12 @@ enum Types {
   enum LLMError: Int {
     case modelMissing = 101
     case outOfMemory = 102
+    case coreMLCompilation = 105
     case tokenBasedModelMissingTokenizer = 122
   }
 
   struct LoadModelOptions {
-    let modelFile: String?
     let modelPath: String?
-    let modelName: String?
 
     let inputIdsName: String
     let attentionMaskName: String
@@ -37,9 +36,7 @@ enum Types {
     let computeUnits: CoreMLComputeUnits
 
     init(from dict: [String: Any]) throws {
-      self.modelFile = dict["modelFile"] as? String
       self.modelPath = dict["modelPath"] as? String
-      self.modelName = dict["modelName"] as? String
 
       self.inputIdsName = (dict["inputIdsName"] as? String) ?? "input_ids"
       self.attentionMaskName = (dict["attentionMaskName"] as? String) ?? "attention_mask"
@@ -126,6 +123,7 @@ enum Types {
   struct ModelInfo {
     let loaded: Bool
     let modelURL: String
+    let sourceModelURL: String?
     let computeUnits: CoreMLComputeUnits
     let expectsSingleToken: Bool
     let hasState: Bool
@@ -148,6 +146,7 @@ enum Types {
         "cachePositionName": cachePositionName,
         "logitsName": logitsName,
       ]
+      if let v = sourceModelURL { d["sourceModelURL"] = v }
       if let v = eosTokenId { d["eosTokenId"] = v }
       if let v = maxContext { d["maxContext"] = v }
       return d

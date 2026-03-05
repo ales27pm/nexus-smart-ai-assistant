@@ -124,6 +124,7 @@ export type GenerateFromTokensOptions = Omit<GenerateOptions, "tokenizer"> & {
 export type ModelInfo = {
   loaded: boolean;
   modelURL: string;
+  sourceModelURL?: string;
   computeUnits: CoreMLComputeUnits;
   expectsSingleToken: boolean;
   hasState: boolean;

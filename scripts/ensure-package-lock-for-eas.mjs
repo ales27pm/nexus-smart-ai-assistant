@@ -62,14 +62,37 @@ if (foundExtraLockfiles.length > 0) {
 }
 
 log("Validating CoreML pipeline assets before EAS prebuild/pod steps.");
+const coremlConfigPath = path.resolve(process.cwd(), "coreml-config.json");
+let coremlConfig;
+
 try {
-  execSync("node ./scripts/coreml/validate_coreml_pipeline.mjs --strict", {
-    stdio: "inherit",
-  });
-} catch {
-  fail(
-    "CoreML pipeline validation failed. Ensure the active model directory from coreml-config.json exists before running EAS build.",
-  );
+  const coremlConfigRaw = fs.readFileSync(coremlConfigPath, "utf8");
+  const normalized =
+    coremlConfigRaw.charCodeAt(0) === 0xfeff
+      ? coremlConfigRaw.slice(1)
+      : coremlConfigRaw;
+  coremlConfig = JSON.parse(normalized);
+} catch (err) {
+  fail(`Failed to read or parse coreml-config.json: ${err.message}.`);
+}
+
+const activeModel =
+  typeof coremlConfig?.activeModel === "string"
+    ? coremlConfig.activeModel.trim()
+    : "";
+
+if (!activeModel) {
+  log("no active model specified; skipping CoreML pipeline validation");
+} else {
+  try {
+    execSync("node ./scripts/coreml/validate_coreml_pipeline.mjs --strict", {
+      stdio: "inherit",
+    });
+  } catch {
+    fail(
+      "CoreML pipeline validation failed. Ensure the active model directory from coreml-config.json exists before running EAS build.",
+    );
+  }
 }
 
 let lockfile;

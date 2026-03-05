@@ -8,6 +8,7 @@
     "start-web-dev": "DEBUG=expo* expo start --web",
     "lint": "expo lint",
     "ios": "node ./scripts/ios/run-ios-with-available-simulator.mjs",
+    "ios:prebuild:clean": "npx expo prebuild --clean --platform ios",
     "start-tunnel": "expo start --dev-client --tunnel",
     "start-go": "expo start",
     "build:dev": "npx eas build --profile development --platform all",

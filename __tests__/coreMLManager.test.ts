@@ -13,6 +13,16 @@ jest.mock("@/utils/coremlModelManager", () => ({
 }));
 
 describe("CoreMLManager", () => {
+  function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
   function createConcurrencyAwareProvider() {
     const loadDeferred = createDeferred<void>();
     const unloadDeferred = createDeferred<void>();
@@ -60,6 +70,12 @@ describe("CoreMLManager", () => {
     };
   }
 
+  async function flushMicrotasks(iterations = 5) {
+    for (let i = 0; i < iterations; i += 1) {
+      await Promise.resolve();
+    }
+  }
+
   const ensureCoreMLModelAssetsMock =
     ensureCoreMLModelAssets as jest.MockedFunction<
       typeof ensureCoreMLModelAssets
@@ -67,7 +83,11 @@ describe("CoreMLManager", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    ensureCoreMLModelAssetsMock.mockResolvedValue(null);
+    ensureCoreMLModelAssetsMock.mockResolvedValue({
+      modelDirectory: "/documents/coreml-models/model/",
+      modelPath: "/documents/coreml-models/model/model.mlpackage",
+      downloaded: false,
+    });
   });
 
   it("initializes and disposes through provider", async () => {
@@ -335,10 +355,7 @@ describe("CoreMLManager", () => {
     expect(manager.getState()).toBe("Idle");
   });
 
-  it("throws outside __DEV__ when model preparation fails", async () => {
-    const previousDev = global.__DEV__;
-    (global as any).__DEV__ = false;
-
+  it("throws when model preparation fails", async () => {
     ensureCoreMLModelAssetsMock.mockRejectedValue(new Error("storage failed"));
 
     const provider = {
@@ -351,10 +368,33 @@ describe("CoreMLManager", () => {
 
     const manager = new CoreMLManager(provider as any);
 
-    await expect(manager.initialize()).rejects.toThrow("storage failed");
+    await expect(manager.initialize()).rejects.toThrow(
+      "unable to download or prepare model assets",
+    );
     expect(provider.load).not.toHaveBeenCalled();
+  });
 
-    (global as any).__DEV__ = previousDev;
+  it("throws when model preparation returns no modelPath", async () => {
+    ensureCoreMLModelAssetsMock.mockResolvedValue({
+      modelDirectory: "/documents/coreml-models/model/",
+      modelPath: null,
+      downloaded: false,
+    });
+
+    const provider = {
+      load: jest.fn().mockResolvedValue(undefined),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn(),
+    };
+
+    const manager = new CoreMLManager(provider as any);
+
+    await expect(manager.initialize()).rejects.toThrow(
+      "downloaded assets are unavailable",
+    );
+    expect(provider.load).not.toHaveBeenCalled();
   });
 
   it("generates cleaned response", async () => {
