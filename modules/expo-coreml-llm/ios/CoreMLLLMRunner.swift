@@ -29,6 +29,7 @@ final class CoreMLLLMRunner {
 
   private var tokenizerCacheKey: String?
   private var tokenizerCache: Tokenizer?
+  private let compileLock = NSLock()
 
   private static func log(_ message: String) {
     NSLog("%@ %@", logPrefix, message)
@@ -45,7 +46,16 @@ final class CoreMLLLMRunner {
     }
 
     let fileManager = FileManager.default
+    guard fileManager.fileExists(atPath: sourceURL.path) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+        NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
+      ])
+    }
+
     let cacheURL = try compiledCacheURL(for: sourceURL)
+
+    compileLock.lock()
+    defer { compileLock.unlock() }
 
     if fileManager.fileExists(atPath: cacheURL.path) {
       Self.log("Using cached compiled model at: \(cacheURL.path)")
@@ -61,10 +71,19 @@ final class CoreMLLLMRunner {
         attributes: nil
       )
 
+      let stagingURL = cacheURL
+        .deletingPathExtension()
+        .appendingPathExtension("staging-\(UUID().uuidString).mlmodelc")
+
+      if fileManager.fileExists(atPath: stagingURL.path) {
+        try fileManager.removeItem(at: stagingURL)
+      }
+      try fileManager.copyItem(at: compiledTempURL, to: stagingURL)
+
       if fileManager.fileExists(atPath: cacheURL.path) {
-        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
+        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: stagingURL)
       } else {
-        try fileManager.copyItem(at: compiledTempURL, to: cacheURL)
+        try fileManager.moveItem(at: stagingURL, to: cacheURL)
       }
 
       Self.log("Compiled model stored at: \(cacheURL.path)")
@@ -88,9 +107,7 @@ final class CoreMLLLMRunner {
       create: true
     )
 
-    let sourceAttributes = try? fileManager.attributesOfItem(atPath: sourceURL.path)
-    let modifiedAt = (sourceAttributes?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
-    let sourceSignature = "\(sourceURL.path)|\(modifiedAt)"
+    let sourceSignature = try computeModelSourceSignature(sourceURL)
     let digest = SHA256.hash(data: Data(sourceSignature.utf8))
     let hash = digest.map { String(format: "%02x", $0) }.joined()
 
@@ -99,6 +116,46 @@ final class CoreMLLLMRunner {
       .appendingPathComponent("compiled-models", isDirectory: true)
       .appendingPathComponent(hash)
       .appendingPathExtension("mlmodelc")
+  }
+
+  private func computeModelSourceSignature(_ sourceURL: URL) throws -> String {
+    let fileManager = FileManager.default
+    var isDir: ObjCBool = false
+    guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDir) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+        NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
+      ])
+    }
+
+    if !isDir.boolValue {
+      let attrs = try fileManager.attributesOfItem(atPath: sourceURL.path)
+      let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+      let modifiedAt = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+      return "file|\(sourceURL.path)|\(size)|\(modifiedAt)"
+    }
+
+    guard let enumerator = fileManager.enumerator(
+      at: sourceURL,
+      includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: 105, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to enumerate CoreML source directory at path: \(sourceURL.path)",
+      ])
+    }
+
+    var entries: [String] = []
+    for case let fileURL as URL in enumerator {
+      let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey])
+      guard values.isRegularFile == true else { continue }
+      let relativePath = fileURL.path.replacingOccurrences(of: sourceURL.path + "/", with: "")
+      let size = values.fileSize ?? 0
+      let modifiedAt = values.contentModificationDate?.timeIntervalSince1970 ?? 0
+      entries.append("\(relativePath)|\(size)|\(modifiedAt)")
+    }
+
+    entries.sort()
+    return "dir|\(sourceURL.path)|\(entries.joined(separator: "||"))"
   }
 
   func unload() {
