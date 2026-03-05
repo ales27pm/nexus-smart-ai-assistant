@@ -4,17 +4,21 @@ set -euo pipefail
 #───────────────────────────────────────────────────────────────────────────────
 # Smart AI Assistant — Unified Build & Deploy Workflow
 #
-# One-click script that handles every stage:
+# One-click script for build/deploy pipeline, with optional local asset prep:
 #   1. Environment checks
-#   2. CoreML model download
-#   3. Tokenizer download
-#   4. iOS credential setup
-#   5. EAS local build (dev / preview / production)
-#   6. Submit to App Store / TestFlight
+#   2. JS dependency install
+#   3. iOS credential setup
+#   4. EAS local build (dev / preview / production)
+#   5. Submit to App Store / TestFlight
+#
+# Optional manual steps (developer-only when local assets are needed):
+#   - CoreML model download
+#   - Tokenizer download/export
 #
 # Usage:
 #   ./scripts/workflow.sh                  # interactive menu
 #   ./scripts/workflow.sh --step model     # run a single step
+#   ./scripts/workflow.sh --step tokenizer # run optional tokenizer setup
 #   ./scripts/workflow.sh --full           # run everything end-to-end
 #───────────────────────────────────────────────────────────────────────────────
 
@@ -126,9 +130,9 @@ step_deps() {
   success "Dependencies installed."
 }
 
-# ─── Step 3: Download CoreML Model ───────────────────────────────────────────
+# ─── Optional Step: Download CoreML Model ────────────────────────────────────
 step_model() {
-  header "3 · Download CoreML Model"
+  header "Optional · Download CoreML Model"
 
   local MODEL_FILE
   MODEL_FILE="$(resolve_model_file "$MODEL_VARIANT")"
@@ -206,9 +210,9 @@ step_model() {
   success "Model installed: $MODEL_DEST/$MODEL_FILE (${installed_mb}MB)"
 }
 
-# ─── Step 4: Download Tokenizer ──────────────────────────────────────────────
+# ─── Optional Step: Download Tokenizer ───────────────────────────────────────
 step_tokenizer() {
-  header "4 · Download Tokenizer Files"
+  header "Optional · Download Tokenizer Files"
 
   local CACHE_REQUIRED_FILES=("tokenizer.json" "tokenizer_config.json" "special_tokens_map.json" "config.json" "generation_config.json")
   local bundle_dir="$PROJECT_ROOT/modules/expo-coreml-llm/ios/resources/tokenizers/gpt2"
@@ -286,9 +290,9 @@ step_tokenizer() {
   success "Tokenizer bundle assets installed: $bundle_dir"
 }
 
-# ─── Step 5: iOS Credentials ─────────────────────────────────────────────────
+# ─── Step 3: iOS Credentials ─────────────────────────────────────────────────
 step_credentials() {
-  header "5 · iOS Credentials Setup"
+  header "3 · iOS Credentials Setup"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     warn "Skipping iOS credentials (not on macOS)."
@@ -372,9 +376,9 @@ step_credentials() {
   esac
 }
 
-# ─── Step 5b: Apple Developer Login & Auto Credentials ──────────────────────
+# ─── Step 3b: Apple Developer Login & Auto Credentials ──────────────────────
 step_apple_login() {
-  header "5b · Apple Developer Login & Auto Credentials"
+  header "3b · Apple Developer Login & Auto Credentials"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     fail "Apple Developer credential management requires macOS."
@@ -395,9 +399,9 @@ step_apple_login() {
   "$cred_script"
 }
 
-# ─── Step 6: Build ───────────────────────────────────────────────────────────
+# ─── Step 4: Build ───────────────────────────────────────────────────────────
 step_build() {
-  header "6 · EAS Local Build (profile: $BUILD_PROFILE)"
+  header "4 · EAS Local Build (profile: $BUILD_PROFILE)"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
     fail "iOS builds require macOS."
@@ -429,9 +433,9 @@ step_build() {
     npx eas build --profile "$BUILD_PROFILE" --platform ios --local
 }
 
-# ─── Step 7: Submit ──────────────────────────────────────────────────────────
+# ─── Step 5: Submit ──────────────────────────────────────────────────────────
 step_submit() {
-  header "7 · Submit to App Store Connect"
+  header "5 · Submit to App Store Connect"
 
   local ipa_file
   ipa_file="$(find "$PROJECT_ROOT" -maxdepth 1 -name '*.ipa' -print -quit 2>/dev/null || true)"
@@ -486,8 +490,6 @@ step_test() {
 run_full() {
   step_env
   step_deps
-  step_model
-  step_tokenizer
   step_credentials
   step_build
   step_submit
@@ -504,11 +506,13 @@ show_menu() {
   echo -e "  ${BOLD}Pipeline Steps${RESET}"
   echo -e "  ${CYAN}1${RESET}  Check environment"
   echo -e "  ${CYAN}2${RESET}  Install JS dependencies"
-  echo -e "  ${CYAN}3${RESET}  Download CoreML model          ${DIM}[variant: $MODEL_VARIANT]${RESET}"
-  echo -e "  ${CYAN}4${RESET}  Download tokenizer files"
-  echo -e "  ${CYAN}5${RESET}  Setup iOS credentials"
-  echo -e "  ${CYAN}6${RESET}  Build IPA locally               ${DIM}[profile: $BUILD_PROFILE]${RESET}"
-  echo -e "  ${CYAN}7${RESET}  Submit to App Store Connect"
+  echo -e "  ${CYAN}3${RESET}  Setup iOS credentials"
+  echo -e "  ${CYAN}4${RESET}  Build IPA locally               ${DIM}[profile: $BUILD_PROFILE]${RESET}"
+  echo -e "  ${CYAN}5${RESET}  Submit to App Store Connect"
+  echo
+  echo -e "  ${BOLD}Optional Manual Asset Steps${RESET}"
+  echo -e "  ${CYAN}m${RESET}  Download CoreML model          ${DIM}[variant: $MODEL_VARIANT]${RESET}"
+  echo -e "  ${CYAN}k${RESET}  Download tokenizer files"
   echo
   echo -e "  ${BOLD}Apple Developer${RESET}"
   echo -e "  ${CYAN}d${RESET}  Apple Developer login & credentials  ${DIM}(auto fetch/create/download)${RESET}"
@@ -516,7 +520,7 @@ show_menu() {
   echo -e "  ${BOLD}Utilities${RESET}"
   echo -e "  ${CYAN}i${RESET}  Inspect CoreML model I/O"
   echo -e "  ${CYAN}t${RESET}  Run tests"
-  echo -e "  ${CYAN}f${RESET}  Full pipeline (1→7)"
+  echo -e "  ${CYAN}f${RESET}  Full pipeline (1→5)"
   echo
   echo -e "  ${BOLD}Config${RESET}"
   echo -e "  ${CYAN}v${RESET}  Change model variant            ${DIM}[current: $MODEL_VARIANT]${RESET}"
@@ -571,11 +575,11 @@ interactive_loop() {
     case "$choice" in
       1)  step_env ;;
       2)  step_deps ;;
-      3)  step_model ;;
-      4)  step_tokenizer ;;
-      5)  step_credentials ;;
-      6)  step_build ;;
-      7)  step_submit ;;
+      3)  step_credentials ;;
+      4)  step_build ;;
+      5)  step_submit ;;
+      m)  step_model ;;
+      k)  step_tokenizer ;;
       d)  step_apple_login ;;
       i)  step_inspect ;;
       t)  step_test ;;
@@ -637,9 +641,10 @@ main() {
         echo
         echo "Options:"
         echo "  (no args)              Interactive menu"
-        echo "  --full                 Run full pipeline (env → submit)"
+        echo "  --full                 Run full pipeline (env → deps → credentials → build → submit)"
         echo "  --step <name>          Run a single step"
-        echo "    Steps: env deps model tokenizer credentials apple-login build submit inspect test"
+        echo "    Steps: env deps credentials build submit"
+        echo "    Optional manual asset steps: model tokenizer"
         echo "  --variant <int4|int8|fp16>  Set model variant (default: int4)"
         echo "  --profile <name>       Set build profile (default: production)"
         echo
