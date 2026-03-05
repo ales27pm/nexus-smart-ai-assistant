@@ -29,10 +29,35 @@ final class CoreMLLLMRunner {
 
   private var tokenizerCacheKey: String?
   private var tokenizerCache: Tokenizer?
-  private let compileLock = NSLock()
+  private let compileStateLock = NSLock()
+  private var compileLocksByCacheKey: [String: NSLock] = [:]
 
   private static func log(_ message: String) {
     NSLog("%@ %@", logPrefix, message)
+  }
+
+  private func withCompiledCacheLock<T>(cacheURL: URL, _ operation: () throws -> T) rethrows -> T {
+    let key = cacheURL.path
+
+    compileStateLock.lock()
+    let lock = compileLocksByCacheKey[key] ?? {
+      let newLock = NSLock()
+      compileLocksByCacheKey[key] = newLock
+      return newLock
+    }()
+    compileStateLock.unlock()
+
+    lock.lock()
+    defer {
+      lock.unlock()
+      compileStateLock.lock()
+      if let activeLock = compileLocksByCacheKey[key], activeLock === lock {
+        compileLocksByCacheKey.removeValue(forKey: key)
+      }
+      compileStateLock.unlock()
+    }
+
+    return try operation()
   }
 
   private func ensureCompiledModelURL(sourceURL: URL) throws -> URL {
@@ -54,56 +79,55 @@ final class CoreMLLLMRunner {
 
     let cacheURL = try compiledCacheURL(for: sourceURL)
 
-    compileLock.lock()
-    defer { compileLock.unlock() }
+    return try withCompiledCacheLock(cacheURL: cacheURL) {
+      if fileManager.fileExists(atPath: cacheURL.path) {
+        Self.log("Using cached compiled model at: \(cacheURL.path)")
+        return cacheURL
+      }
 
-    if fileManager.fileExists(atPath: cacheURL.path) {
-      Self.log("Using cached compiled model at: \(cacheURL.path)")
-      return cacheURL
-    }
+      var compiledTempURL: URL?
+      do {
+        Self.log("Compiling CoreML model from source: \(sourceURL.path)")
+        compiledTempURL = try MLModel.compileModel(at: sourceURL)
+        guard let compiledTempURL else {
+          throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "CoreML compileModel returned no compiled model URL for: \(sourceURL.path)",
+          ])
+        }
 
-    var compiledTempURL: URL?
-    do {
-      Self.log("Compiling CoreML model from source: \(sourceURL.path)")
-      compiledTempURL = try MLModel.compileModel(at: sourceURL)
-      guard let compiledTempURL else {
+        try fileManager.createDirectory(
+          at: cacheURL.deletingLastPathComponent(),
+          withIntermediateDirectories: true,
+          attributes: nil
+        )
+
+        if fileManager.fileExists(atPath: cacheURL.path) {
+          _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
+        } else {
+          try fileManager.moveItem(at: compiledTempURL, to: cacheURL)
+        }
+
+        Self.log("Compiled model stored at: \(cacheURL.path)")
+        return cacheURL
+      } catch {
+        if let compiledTempURL,
+           fileManager.fileExists(atPath: compiledTempURL.path) {
+          do {
+            try fileManager.removeItem(at: compiledTempURL)
+            Self.log("Removed stale compiled temp model after failure: \(compiledTempURL.path)")
+          } catch {
+            let cleanupError = error as NSError
+            Self.log("Failed to remove compiled temp model after failure: \(cleanupError.domain)(\(cleanupError.code))")
+          }
+        }
+
+        let nsError = error as NSError
+        Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code))")
         throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
-          NSLocalizedDescriptionKey: "CoreML compileModel returned no compiled model URL for: \(sourceURL.path)",
+          NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
+          NSUnderlyingErrorKey: error,
         ])
       }
-
-      try fileManager.createDirectory(
-        at: cacheURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true,
-        attributes: nil
-      )
-
-      if fileManager.fileExists(atPath: cacheURL.path) {
-        _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
-      } else {
-        try fileManager.moveItem(at: compiledTempURL, to: cacheURL)
-      }
-
-      Self.log("Compiled model stored at: \(cacheURL.path)")
-      return cacheURL
-    } catch {
-      if let compiledTempURL,
-         fileManager.fileExists(atPath: compiledTempURL.path) {
-        do {
-          try fileManager.removeItem(at: compiledTempURL)
-          Self.log("Removed stale compiled temp model after failure: \(compiledTempURL.path)")
-        } catch {
-          let cleanupError = error as NSError
-          Self.log("Failed to remove compiled temp model after failure: \(cleanupError.domain)(\(cleanupError.code))")
-        }
-      }
-
-      let nsError = error as NSError
-      Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code))")
-      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
-        NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
-        NSUnderlyingErrorKey: error,
-      ])
     }
   }
 
@@ -201,6 +225,10 @@ final class CoreMLLLMRunner {
     do {
       loadableModelURL = try ensureCompiledModelURL(sourceURL: modelURL)
     } catch {
+      if let nsError = error as NSError?, nsError.domain == "ExpoCoreMLLLM" {
+        throw nsError
+      }
+
       throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelMissing.rawValue, userInfo: [
         NSLocalizedDescriptionKey: "Unable to prepare CoreML model for loading.",
         NSUnderlyingErrorKey: error,
@@ -300,6 +328,7 @@ final class CoreMLLLMRunner {
     return Types.ModelInfo(
       loaded: true,
       modelURL: loadableModelURL.absoluteString,
+      sourceModelURL: modelURL.absoluteString,
       computeUnits: loadedComputeUnits ?? options.computeUnits,
       expectsSingleToken: detectedSingleToken,
       hasState: detectedHasState,
