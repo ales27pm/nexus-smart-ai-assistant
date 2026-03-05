@@ -61,13 +61,9 @@ workflows:
         script: |
           xcode-project use-profiles --warn-only
 
-      - name: Build IPA
+      - name: Build IPA via Fastlane
         script: |
-          WORKSPACE="$(find ios -maxdepth 1 -name '*.xcworkspace' -type d -print | head -n 1)"
-          SCHEME="$(xcodebuild -list -json -workspace "$WORKSPACE" 2>/dev/null | ruby -e 'require "json"; puts JSON.parse(STDIN.read).dig("workspace","schemes")&.first')"
-          xcode-project build-ipa \
-            --workspace "$WORKSPACE" \
-            --scheme "$SCHEME"
+          fastlane ios codemagic_ipa
 
     artifacts:
       - build/ios/ipa/*.ipa

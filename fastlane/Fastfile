@@ -1,0 +1,86 @@
+def ios_project_context
+  workspace = Dir['ios/*.xcworkspace'].first
+  project = Dir['ios/*.xcodeproj'].first
+
+  UI.user_error!('Unable to find an Xcode workspace or project under ios/. Run `npx expo prebuild --platform ios` first.') if workspace.nil? && project.nil?
+
+  config = {}
+  config[:workspace] = workspace if workspace
+  config[:project] = project if project && workspace.nil?
+
+  detected_project = FastlaneCore::Project.new(config)
+  scheme = ENV['IOS_SCHEME'] || detected_project.scheme
+
+  UI.user_error!('Unable to resolve an iOS scheme. Set IOS_SCHEME or share a scheme in Xcode.') if scheme.to_s.strip.empty?
+
+  config[:scheme] = scheme
+  config
+end
+
+def simulator_destination
+  ENV['IOS_SIMULATOR_DESTINATION'] || 'platform=iOS Simulator,name=iPhone 15'
+end
+
+def shared_scan_options
+  context = ios_project_context
+  {
+    scheme: context[:scheme],
+    workspace: context[:workspace],
+    project: context[:project],
+    destination: simulator_destination,
+    derived_data_path: 'build/ios/derived_data',
+    output_directory: 'build/ios/test_reports',
+    buildlog_path: 'build/ios/logs',
+    clean: true,
+    fail_build: true,
+    skip_package_dependencies_resolution: true
+  }.compact
+end
+
+platform :ios do
+  desc 'Build iOS app for simulator testing (build-for-testing)'
+  lane :ci_build_for_testing do
+    scan(**shared_scan_options, build_for_testing: true)
+  end
+
+  desc 'Run iOS simulator tests using artifacts produced by ci_build_for_testing'
+  lane :ci_test_without_building do
+    scan(**shared_scan_options, test_without_building: true)
+  end
+
+  desc 'Run iOS simulator build-for-testing and test-without-building'
+  lane :ci_simulator do
+    ci_build_for_testing
+    ci_test_without_building
+  end
+
+  desc 'Create iOS archive (gym) for release workflows'
+  lane :ci_archive do
+    context = ios_project_context
+    gym(
+      scheme: context[:scheme],
+      workspace: context[:workspace],
+      project: context[:project],
+      clean: true,
+      skip_package_ipa: true,
+      skip_archive: false,
+      output_directory: 'build/ios/archive',
+      buildlog_path: 'build/ios/logs'
+    )
+  end
+
+  desc 'Build and sign IPA for Codemagic/App Store Connect'
+  lane :codemagic_ipa do
+    context = ios_project_context
+    build_ios_app(
+      scheme: context[:scheme],
+      workspace: context[:workspace],
+      project: context[:project],
+      clean: true,
+      export_method: 'app-store',
+      output_directory: 'build/ios/ipa',
+      output_name: 'SmartAIAssistant.ipa',
+      buildlog_path: 'build/ios/logs'
+    )
+  end
+end
