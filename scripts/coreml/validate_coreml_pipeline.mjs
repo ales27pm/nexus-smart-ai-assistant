@@ -286,12 +286,14 @@ async function run() {
   );
   const tokenizerJsonPath = path.join(tokenizerCacheDir, "tokenizer.json");
 
-  const localModelDir = path.join(
-    repoRoot,
-    ".hf_models/Dolphin3.0-CoreML",
-    manifest.activeModel,
-  );
-  if (await exists(localModelDir)) {
+  const localModelDir = manifest.activeModel
+    ? path.join(repoRoot, ".hf_models/Dolphin3.0-CoreML", manifest.activeModel)
+    : undefined;
+  if (!localModelDir) {
+    notes.push(
+      "INFO activeModel is not set in coreml-config.json; skipping local CoreML cache deep inspection unless an explicit model path is provided to scripts that support it.",
+    );
+  } else if (await exists(localModelDir)) {
     const modelStats = await stat(localModelDir);
     if (!modelStats.isDirectory()) {
       issues.push(
