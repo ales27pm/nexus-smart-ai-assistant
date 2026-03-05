@@ -21,6 +21,11 @@ missing_tools=()
 required_eas_cli_version="18.18.0"
 required_fastlane_version="2.222.0"
 
+extract_semver() {
+  local raw="$1"
+  printf '%s\n' "$raw" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1
+}
+
 version_ge() {
   local current="$1"
   local required="$2"
@@ -82,8 +87,14 @@ else
 fi
 
 if command -v eas >/dev/null 2>&1 && print_version "eas" eas --version; then
-  eas_cli_version="$(eas --version 2>/dev/null | head -n1 | tr -d '[:space:]')"
-  if [[ -n "$eas_cli_version" ]] && ! version_ge "$eas_cli_version" "$required_eas_cli_version"; then
+  eas_raw_version_output="$(eas --version 2>&1 || true)"
+  eas_cli_version="$(extract_semver "$eas_raw_version_output")"
+
+  if [[ -z "$eas_cli_version" ]]; then
+    echo "❌ Could not parse eas-cli version from output:" >&2
+    printf '%s\n' "$eas_raw_version_output" >&2
+    missing_tools+=("eas")
+  elif ! version_ge "$eas_cli_version" "$required_eas_cli_version"; then
     echo "❌ eas-cli ${eas_cli_version} is too old. Require >= ${required_eas_cli_version} so local iOS export uses app-store-connect." >&2
     missing_tools+=("eas")
   fi
