@@ -26,7 +26,8 @@
     "sync:ios-runtime-config": "node ./scripts/sync-ios-runtime-config.mjs",
     "coreml:validate": "node ./scripts/coreml/validate_coreml_pipeline.mjs",
     "coreml:fetch": "./scripts/coreml/fetch_dolphin_coreml_and_tokenizer.sh",
-    "coreml:inspect": "node ./scripts/coreml/run_coreml_inspect.mjs"
+    "coreml:inspect": "node ./scripts/coreml/run_coreml_inspect.mjs",
+    "postinstall": "node ./scripts/ios/patch-phonemis-ios-target.mjs"
   },
   "dependencies": {
     "@naveen521kk/expo-hf-tokenizers": "^0.1.0",
