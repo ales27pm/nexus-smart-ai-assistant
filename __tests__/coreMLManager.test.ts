@@ -11,6 +11,69 @@ jest.mock("@/utils/coremlModelManager", () => ({
 }));
 
 describe("CoreMLManager", () => {
+  function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  function createConcurrencyAwareProvider() {
+    const loadDeferred = createDeferred<void>();
+    const unloadDeferred = createDeferred<void>();
+    const events: string[] = [];
+    let inFlightNativeOperations = 0;
+    let maxInFlightNativeOperations = 0;
+
+    const beginNativeOp = (label: string) => {
+      inFlightNativeOperations += 1;
+      maxInFlightNativeOperations = Math.max(
+        maxInFlightNativeOperations,
+        inFlightNativeOperations,
+      );
+      events.push(`${label}:start`);
+    };
+
+    const endNativeOp = (label: string) => {
+      inFlightNativeOperations -= 1;
+      events.push(`${label}:end`);
+    };
+
+    const provider = {
+      load: jest.fn().mockImplementation(async () => {
+        beginNativeOp("load");
+        await loadDeferred.promise;
+        endNativeOp("load");
+      }),
+      generate: jest.fn(),
+      unload: jest.fn().mockImplementation(async () => {
+        beginNativeOp("unload");
+        await unloadDeferred.promise;
+        endNativeOp("unload");
+      }),
+      cancel: jest.fn(),
+      isLoaded: jest.fn().mockResolvedValue(false),
+    };
+
+    return {
+      provider,
+      loadDeferred,
+      unloadDeferred,
+      events,
+      getInFlightNativeOperations: () => inFlightNativeOperations,
+      getMaxInFlightNativeOperations: () => maxInFlightNativeOperations,
+    };
+  }
+
+  async function flushMicrotasks(iterations = 5) {
+    for (let i = 0; i < iterations; i += 1) {
+      await Promise.resolve();
+    }
+  }
+
   const ensureCoreMLModelAssetsMock =
     ensureCoreMLModelAssets as jest.MockedFunction<
       typeof ensureCoreMLModelAssets
@@ -169,6 +232,97 @@ describe("CoreMLManager", () => {
     await initializePromise;
 
     expect(provider.load).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues dispose while initialize load is still in progress", async () => {
+    const {
+      provider,
+      loadDeferred,
+      unloadDeferred,
+      events,
+      getInFlightNativeOperations,
+      getMaxInFlightNativeOperations,
+    } = createConcurrencyAwareProvider();
+    const manager = new CoreMLManager(provider as any);
+    const states: string[] = [];
+
+    const unsubscribe = manager.onStateChange(({ state }) => {
+      states.push(state);
+    });
+
+    const initializePromise = manager.initialize();
+    const disposePromise = manager.dispose();
+
+    await flushMicrotasks();
+    expect(provider.load).toHaveBeenCalledTimes(1);
+    expect(provider.unload).not.toHaveBeenCalled();
+    expect(getInFlightNativeOperations()).toBe(1);
+
+    loadDeferred.resolve();
+    await initializePromise;
+    await Promise.resolve();
+
+    expect(provider.unload).toHaveBeenCalledTimes(1);
+    expect(getInFlightNativeOperations()).toBe(1);
+
+    unloadDeferred.resolve();
+    await disposePromise;
+    unsubscribe();
+
+    expect(events).toEqual([
+      "load:start",
+      "load:end",
+      "unload:start",
+      "unload:end",
+    ]);
+    expect(getMaxInFlightNativeOperations()).toBe(1);
+    expect(states).toEqual(["Loading", "Ready", "Disposing", "Idle"]);
+    expect(manager.getState()).toBe("Idle");
+  });
+
+  it("runs initialize after an in-progress dispose completes", async () => {
+    const {
+      provider,
+      loadDeferred,
+      unloadDeferred,
+      events,
+      getInFlightNativeOperations,
+      getMaxInFlightNativeOperations,
+    } = createConcurrencyAwareProvider();
+    const manager = new CoreMLManager(provider as any);
+    const states: string[] = [];
+    const unsubscribe = manager.onStateChange(({ state }) => {
+      states.push(state);
+    });
+
+    const disposePromise = manager.dispose();
+    const initializePromise = manager.initialize();
+
+    await Promise.resolve();
+    expect(provider.unload).toHaveBeenCalledTimes(1);
+    expect(provider.load).not.toHaveBeenCalled();
+    expect(getInFlightNativeOperations()).toBe(1);
+
+    unloadDeferred.resolve();
+    await disposePromise;
+    await flushMicrotasks();
+
+    expect(provider.load).toHaveBeenCalledTimes(1);
+    expect(getInFlightNativeOperations()).toBe(1);
+
+    loadDeferred.resolve();
+    await initializePromise;
+    unsubscribe();
+
+    expect(events).toEqual([
+      "unload:start",
+      "unload:end",
+      "load:start",
+      "load:end",
+    ]);
+    expect(getMaxInFlightNativeOperations()).toBe(1);
+    expect(states).toEqual(["Disposing", "Idle", "Loading", "Ready"]);
+    expect(manager.getState()).toBe("Ready");
   });
 
   it("publishes deterministic state transitions", async () => {
