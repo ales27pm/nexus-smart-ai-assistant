@@ -39,4 +39,36 @@ describe("CoreML native e2e flows", () => {
       .toHaveText("Cancellation during active generation: passed")
       .withTimeout(60000);
   });
+
+  it("runs diagnostic delay bridge scenario", async () => {
+    await element(by.id("e2e-run-diagnostic-delay")).tap();
+
+    await waitFor(element(by.id("e2e-scenario-diagnostic-delay")))
+      .toHaveText("Diagnostic delay promise: passed")
+      .withTimeout(60000);
+  });
+
+  it("runs memory-pressure backoff recovery scenario", async () => {
+    await element(by.id("e2e-run-diagnostic-memory-backoff")).tap();
+
+    await waitFor(element(by.id("e2e-scenario-diagnostic-memory-backoff")))
+      .toHaveText("Memory-pressure backoff recovery: passed")
+      .withTimeout(60000);
+
+    await expect(element(by.id("e2e-diagnostic-message"))).toHaveText(
+      "Diagnostic message: Temporary memory pressure handled. Retrying inference with backoff.",
+    );
+  });
+
+  it("runs bridge-timeout UX scenario", async () => {
+    await element(by.id("e2e-run-diagnostic-timeout-ux")).tap();
+
+    await waitFor(element(by.id("e2e-scenario-diagnostic-timeout-ux")))
+      .toHaveText("Bridge timeout UX messaging: passed")
+      .withTimeout(60000);
+
+    await expect(element(by.id("e2e-diagnostic-message"))).toHaveText(
+      "Diagnostic message: Bridge timeout detected. Please retry from the diagnostics UI.",
+    );
+  });
 });

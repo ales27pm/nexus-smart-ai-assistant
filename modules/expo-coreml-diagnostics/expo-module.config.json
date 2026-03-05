@@ -1,0 +1,7 @@
+{
+  "platforms": ["ios"],
+  "apple": {
+    "modules": ["ExpoCoreMLDiagnosticsModule"],
+    "podspecPath": "expo-coreml-diagnostics.podspec"
+  }
+}

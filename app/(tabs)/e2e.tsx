@@ -11,18 +11,32 @@ import {
 
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import type { CoreMLLoadModelOptions } from "@/utils/coreml";
+import {
+  delayDiagnosticPromise,
+  runBridgeTimeoutUXProbe,
+  runMemoryPressureRecoveryProbe,
+} from "@/utils/coremlDiagnostics";
 
 const SYSTEM_PROMPT =
   "You are a concise assistant. Reply with only one short sentence.";
 
 type ScenarioStatus = "idle" | "running" | "passed" | "failed";
 
-type ScenarioKey = "load-generate" | "compute-fallback" | "cancel";
+type ScenarioKey =
+  | "load-generate"
+  | "compute-fallback"
+  | "cancel"
+  | "diagnostic-delay"
+  | "diagnostic-memory-backoff"
+  | "diagnostic-timeout-ux";
 
 const scenarioTitle: Record<ScenarioKey, string> = {
   "load-generate": "Model load + generate",
   "compute-fallback": "Compute-unit fallback to cpuOnly",
   cancel: "Cancellation during active generation",
+  "diagnostic-delay": "Diagnostic delay promise",
+  "diagnostic-memory-backoff": "Memory-pressure backoff recovery",
+  "diagnostic-timeout-ux": "Bridge timeout UX messaging",
 };
 
 export default function E2ETabScreen() {
@@ -31,12 +45,16 @@ export default function E2ETabScreen() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const [resultText, setResultText] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [diagnosticMessage, setDiagnosticMessage] = useState("");
   const [scenarioStatus, setScenarioStatus] = useState<
     Record<ScenarioKey, ScenarioStatus>
   >({
     "load-generate": "idle",
     "compute-fallback": "idle",
     cancel: "idle",
+    "diagnostic-delay": "idle",
+    "diagnostic-memory-backoff": "idle",
+    "diagnostic-timeout-ux": "idle",
   });
 
   const loadOptions = useMemo<CoreMLLoadModelOptions>(
@@ -118,6 +136,56 @@ export default function E2ETabScreen() {
     }
   };
 
+  const runDiagnosticDelayScenario = async () => {
+    setScenario("diagnostic-delay", "running");
+    setErrorText("");
+
+    try {
+      const delayedMs = await delayDiagnosticPromise(120);
+      setDiagnosticMessage(`Delay result: ${delayedMs}ms`);
+      setScenario("diagnostic-delay", delayedMs >= 120 ? "passed" : "failed");
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error));
+      setScenario("diagnostic-delay", "failed");
+    }
+  };
+
+  const runMemoryBackoffScenario = async () => {
+    setScenario("diagnostic-memory-backoff", "running");
+    setErrorText("");
+
+    try {
+      const result = await runMemoryPressureRecoveryProbe();
+      setDiagnosticMessage(result.userMessage);
+      setScenario(
+        "diagnostic-memory-backoff",
+        result.recovered && result.attempts >= 2 ? "passed" : "failed",
+      );
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error));
+      setScenario("diagnostic-memory-backoff", "failed");
+    }
+  };
+
+  const runTimeoutUXScenario = async () => {
+    setScenario("diagnostic-timeout-ux", "running");
+    setErrorText("");
+
+    try {
+      const result = await runBridgeTimeoutUXProbe();
+      setDiagnosticMessage(result.userMessage);
+      setScenario(
+        "diagnostic-timeout-ux",
+        result.userMessage.toLowerCase().includes("retry")
+          ? "passed"
+          : "failed",
+      );
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : String(error));
+      setScenario("diagnostic-timeout-ux", "failed");
+    }
+  };
+
   const cancelActiveGeneration = () => {
     abortControllerRef.current?.abort();
   };
@@ -195,6 +263,30 @@ export default function E2ETabScreen() {
         <Text style={styles.buttonText}>Cancel active generation</Text>
       </Pressable>
 
+      <Pressable
+        testID="e2e-run-diagnostic-delay"
+        style={styles.button}
+        onPress={runDiagnosticDelayScenario}
+      >
+        <Text style={styles.buttonText}>Run diagnostic delay</Text>
+      </Pressable>
+
+      <Pressable
+        testID="e2e-run-diagnostic-memory-backoff"
+        style={styles.button}
+        onPress={runMemoryBackoffScenario}
+      >
+        <Text style={styles.buttonText}>Run memory backoff recovery</Text>
+      </Pressable>
+
+      <Pressable
+        testID="e2e-run-diagnostic-timeout-ux"
+        style={styles.button}
+        onPress={runTimeoutUXScenario}
+      >
+        <Text style={styles.buttonText}>Run timeout UX scenario</Text>
+      </Pressable>
+
       {isGenerating ? (
         <ActivityIndicator testID="e2e-generating-indicator" />
       ) : null}
@@ -207,6 +299,9 @@ export default function E2ETabScreen() {
 
       <Text testID="e2e-coreml-result">Result: {resultText || "<empty>"}</Text>
       <Text testID="e2e-coreml-error">Error: {errorText || "<none>"}</Text>
+      <Text testID="e2e-diagnostic-message">
+        Diagnostic message: {diagnosticMessage || "<none>"}
+      </Text>
     </ScrollView>
   );
 }

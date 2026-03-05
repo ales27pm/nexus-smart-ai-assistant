@@ -1,0 +1,22 @@
+{
+  "name": "expo-coreml-diagnostics",
+  "version": "0.0.1",
+  "main": "index.ts",
+  "types": "index.ts",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rm -rf build"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "dependencies": {
+    "expo-modules-core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

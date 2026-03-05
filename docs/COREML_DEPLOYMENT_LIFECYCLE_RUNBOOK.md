@@ -132,6 +132,28 @@ The `NativeCoreMLProvider` maps native failures to actionable hints via `toActio
 | `104` | Execution Plan Error | Execution-plan build failed.                              | The provider automatically retries generation with `computeUnits: "cpuOnly"` if this occurs. |
 | `120` | Tokenizer Error      | Tokenizer mismatch; check `byte_level_bpe` vs `gpt2_bpe`. | Critical pathing error in `ResourceResolver`.                                                |
 
+## 7. Bridge Resilience Validation (Debug/Test-Only Diagnostics Module)
+
+To validate JS/native bridge resilience deterministically, use the test-only module `modules/expo-coreml-diagnostics`. This module is compiled for debug/test workflows and intentionally blocked in production by native `#if DEBUG`/build-type guards.
+
+### Diagnostic Operations
+
+- `delayResolveAsync(durationMs)`: Introduces a controlled native delay before promise resolution.
+- `describeErrorAsync(code)`: Returns structured error metadata (`code`, `numericCode`, `retryable`, `category`, `message`).
+- `throwErrorAsync(code)`: Raises a native error for JS recovery/UX validation (`MEMORY_PRESSURE`, `MODEL_EVICTED`, `BRIDGE_TIMEOUT`).
+
+### JS Wrapper and Scenarios
+
+Use `utils/coremlDiagnostics.ts` from tests or E2E screens:
+
+1. `delayDiagnosticPromise(120)` validates delayed bridge fulfillment.
+2. `runMemoryPressureRecoveryProbe()` verifies retry/backoff behavior for retryable memory-pressure failures.
+3. `runBridgeTimeoutUXProbe()` verifies non-retryable timeout UX messaging.
+
+The E2E tab (`app/(tabs)/e2e.tsx`) and Detox spec (`e2e/specs/coreml.e2e.js`) include dedicated scenarios asserting these behaviors end-to-end.
+
+---
+
 ### Maintenance Cadence
 
 - **Monthly**: Audit `coreml-runtime-manifest.json` against new hardware specifications.
