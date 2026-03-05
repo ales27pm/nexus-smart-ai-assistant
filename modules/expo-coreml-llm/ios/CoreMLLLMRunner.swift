@@ -122,7 +122,7 @@ final class CoreMLLLMRunner {
         }
 
         let nsError = error as NSError
-        Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code))")
+        Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code)): \(nsError.localizedDescription)")
         throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
           NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
           NSUnderlyingErrorKey: error,
