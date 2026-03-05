@@ -1,3 +1,65 @@
+const REQUIRED_IOS_VERSION = "18.0";
+
+function parseIOSVersion(version: string): [number, number, number] {
+  const [major = "0", minor = "0", patch = "0"] = version
+    .split(".")
+    .map((value) => value.trim());
+
+  return [
+    Number.parseInt(major, 10) || 0,
+    Number.parseInt(minor, 10) || 0,
+    Number.parseInt(patch, 10) || 0,
+  ];
+}
+
+function isRuntimeIOSVersionBelowRequired(runtimeVersion: string): boolean {
+  const runtime = parseIOSVersion(runtimeVersion);
+  const required = parseIOSVersion(REQUIRED_IOS_VERSION);
+
+  for (let index = 0; index < 3; index += 1) {
+    if (runtime[index] < required[index]) return true;
+    if (runtime[index] > required[index]) return false;
+  }
+
+  return false;
+}
+
+function resolveIOSRuntimeVersion(): string | null {
+  const versionFromPlatformConstants =
+    _NativeModulesProxy?.PlatformConstants?.osVersion;
+  if (typeof versionFromPlatformConstants === "string") {
+    return versionFromPlatformConstants;
+  }
+
+  const versionFromExpoConstants =
+    _NativeModulesProxy?.ExponentConstants?.platform?.ios?.systemVersion;
+  if (typeof versionFromExpoConstants === "string") {
+    return versionFromExpoConstants;
+  }
+
+  return null;
+}
+
+function logIOSRuntimeCompatibilityCheck(): void {
+  const runtimeVersion = resolveIOSRuntimeVersion();
+  if (!runtimeVersion) return;
+
+  const normalizedRuntimeVersion = runtimeVersion.trim() || "unknown";
+
+  console.info(
+    `[expo-coreml-llm] iOS runtime detected: ${normalizedRuntimeVersion} (required >= ${REQUIRED_IOS_VERSION})`,
+  );
+
+  if (
+    /^\d+(?:\.\d+){0,2}$/.test(normalizedRuntimeVersion) &&
+    isRuntimeIOSVersionBelowRequired(normalizedRuntimeVersion)
+  ) {
+    console.warn(
+      `[expo-coreml-llm] Unsupported iOS runtime ${normalizedRuntimeVersion}. Required iOS version is ${REQUIRED_IOS_VERSION} or newer. Rebuild with an iOS deployment target of ${REQUIRED_IOS_VERSION} so IPA testers can verify the mismatch instantly.`,
+    );
+  }
+}
+
 let requireNativeModule: (name: string) => unknown;
 try {
   requireNativeModule = require("expo-modules-core").requireNativeModule;
@@ -14,6 +76,8 @@ try {
   requireOptionalNativeModule = () => null;
   _NativeModulesProxy = null;
 }
+
+logIOSRuntimeCompatibilityCheck();
 
 export type CoreMLComputeUnits =
   | "all"

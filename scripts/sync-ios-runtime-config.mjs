@@ -18,6 +18,23 @@ if (!iosJsEngine) {
 }
 
 const iosNewArchEnabled = iosConfig.newArchEnabled ?? expoConfig.newArchEnabled;
+
+const expoPlugins = Array.isArray(expoConfig.plugins) ? expoConfig.plugins : [];
+const buildPropertiesPlugin = expoPlugins.find(
+  (plugin) => Array.isArray(plugin) && plugin[0] === "expo-build-properties",
+);
+const buildPropertiesConfig =
+  Array.isArray(buildPropertiesPlugin) &&
+  typeof buildPropertiesPlugin[1] === "object"
+    ? buildPropertiesPlugin[1]
+    : {};
+const iosDeploymentTarget = buildPropertiesConfig?.ios?.deploymentTarget;
+if (!iosDeploymentTarget) {
+  throw new Error(
+    "Unable to resolve iOS deploymentTarget from app.json expo-build-properties plugin config.",
+  );
+}
+
 if (typeof iosNewArchEnabled !== "boolean") {
   throw new Error(
     "Unable to resolve iOS newArchEnabled from app.json (expo.ios.newArchEnabled or expo.newArchEnabled).",
@@ -28,6 +45,7 @@ const nextPodfileProps = {
   ...podfileProps,
   newArchEnabled: String(iosNewArchEnabled),
   "expo.jsEngine": iosJsEngine,
+  "ios.deploymentTarget": String(iosDeploymentTarget),
 };
 
 await writeFile(
@@ -35,5 +53,5 @@ await writeFile(
   `${JSON.stringify(nextPodfileProps, null, 2)}\n`,
 );
 console.log(
-  "Synced iOS runtime settings from app.json -> Podfile.properties.json",
+  "Synced iOS runtime settings (jsEngine, new architecture, deployment target) from app.json -> Podfile.properties.json",
 );
