@@ -18,6 +18,8 @@ ios/
 android/
 !modules/expo-coreml-llm/ios/
 !modules/expo-coreml-llm/ios/**
+!modules/expo-coreml-diagnostics/ios/
+!modules/expo-coreml-diagnostics/ios/**
 *.orig.*
 *.jks
 *.p8
