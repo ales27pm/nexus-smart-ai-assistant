@@ -18,7 +18,7 @@ fi
 missing_tools=()
 
 
-required_eas_cli_version="18.18.0"
+required_eas_cli_version="18.1.0"
 required_fastlane_version="2.222.0"
 eas_runner=()
 
@@ -45,7 +45,7 @@ extract_semver() {
   # Failure case seen in CI output:
   #   npm WARN deprecated ...
   #   eas-cli@18.19.1 is now available.
-  #   eas-cli/18.18.0 darwin-x64 node-v20.16.0
+  #   eas-cli/18.1.0 darwin-x64 node-v20.16.0
   # If we grab the first semver globally, we can accidentally parse a warning
   # instead of the actual installed CLI version.
   local version
