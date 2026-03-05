@@ -212,8 +212,8 @@ step_tokenizer() {
 
   local CACHE_REQUIRED_FILES=("tokenizer.json" "tokenizer_config.json" "special_tokens_map.json" "config.json" "generation_config.json")
   local bundle_dir="$PROJECT_ROOT/modules/expo-coreml-llm/ios/resources/tokenizers/gpt2"
-  local bundle_vocab="$bundle_dir/vocab.json"
-  local bundle_merges="$bundle_dir/merges.txt"
+  local bundle_vocab="$bundle_dir/gpt2-vocab.json"
+  local bundle_merges="$bundle_dir/gpt2-merges.txt"
   local cache_complete=true
 
   mkdir -p "$TOK_STAGING"
