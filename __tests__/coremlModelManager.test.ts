@@ -482,6 +482,247 @@ describe("coremlModelManager", () => {
     );
   });
 
+  it.each([200, 206])(
+    "accepts successful HTTP status %s for downloads",
+    async (status) => {
+      jest.resetModules();
+      setupReactNativeMock("active");
+
+      const files = new Map<string, string>();
+      const dirs = new Set<string>();
+      const payload = "model-data";
+      const expectedSource = "https://example.com/model";
+      const expectedHash = sha256(payload);
+
+      jest.doMock("expo-file-system/legacy", () => {
+        const normalize = (filePath: string) => filePath.replace(/\/+/g, "/");
+        return {
+          documentDirectory: "/docs/",
+          EncodingType: { Base64: "base64" },
+          getInfoAsync: jest.fn(async (filePath: string) => {
+            const normalized = normalize(filePath);
+            if (dirs.has(normalized)) {
+              return { exists: true, isDirectory: true };
+            }
+            if (files.has(normalized)) {
+              return {
+                exists: true,
+                isDirectory: false,
+                size: Buffer.from(files.get(normalized) ?? "", "utf8").length,
+              };
+            }
+            return { exists: false, isDirectory: false, size: 0 };
+          }),
+          makeDirectoryAsync: jest.fn(async (filePath: string) => {
+            dirs.add(normalize(filePath));
+          }),
+          writeAsStringAsync: jest.fn(
+            async (filePath: string, value: string) => {
+              files.set(normalize(filePath), value);
+            },
+          ),
+          readAsStringAsync: jest.fn(
+            async (
+              filePath: string,
+              options?: { position?: number; length?: number },
+            ) => {
+              const normalized = normalize(filePath);
+              const content = files.get(normalized) ?? "";
+
+              if (
+                options &&
+                (options.position !== undefined || options.length !== undefined)
+              ) {
+                const start = options.position ?? 0;
+                const end =
+                  start +
+                  (options.length ?? Buffer.from(content, "utf8").length);
+                return Buffer.from(content, "utf8")
+                  .subarray(start, end)
+                  .toString("base64");
+              }
+
+              return content;
+            },
+          ),
+          deleteAsync: jest.fn(async (filePath: string) => {
+            files.delete(normalize(filePath));
+          }),
+          readDirectoryAsync: jest.fn(async () => []),
+          createDownloadResumable: jest.fn(
+            (
+              _source: string,
+              destination: string,
+              _opts: unknown,
+              onProgress: DownloadProgressCallback,
+            ) => ({
+              downloadAsync: jest.fn(async () => {
+                onProgress({
+                  totalBytesWritten: payload.length,
+                  totalBytesExpectedToWrite: payload.length,
+                });
+                files.set(normalize(destination), payload);
+                return { status };
+              }),
+              pauseAsync: jest.fn(async () => undefined),
+            }),
+          ),
+        };
+      });
+
+      jest.doMock("@/utils/modelManifest", () => ({
+        runtimeModelManifest: {
+          manifestVersion: 1,
+          minimumAppSupportedSchemaVersion: 1,
+          maxRetainedVersions: 2,
+          activeVersionId: "v1",
+          versions: [
+            {
+              id: "v1",
+              modelName: "test",
+              modelRelativePath: "model.mlpackage",
+              retries: 1,
+              files: [
+                {
+                  path: "model.mlpackage",
+                  sha256: expectedHash,
+                  sources: [expectedSource],
+                },
+              ],
+            },
+          ],
+        },
+        toModelDownloadConfig: jest.fn(),
+      }));
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const manager =
+        require("@/utils/coremlModelManager") as typeof import("@/utils/coremlModelManager");
+
+      await expect(manager.ensureCoreMLModelAssets()).resolves.toEqual(
+        expect.objectContaining({
+          modelPath: "/docs/coreml-models/v1/model.mlpackage",
+          telemetry: expect.objectContaining({ source: expectedSource }),
+        }),
+      );
+    },
+  );
+
+  it.each([404, 500])(
+    "rejects HTTP status %s and includes status/source telemetry details",
+    async (status) => {
+      jest.resetModules();
+      setupReactNativeMock("active");
+
+      const files = new Map<string, string>();
+      const dirs = new Set<string>();
+      const payload = "model-data";
+      const expectedSource = "https://example.com/model";
+      const expectedHash = sha256(payload);
+
+      jest.doMock("expo-file-system/legacy", () => {
+        const normalize = (filePath: string) => filePath.replace(/\/+/g, "/");
+        return {
+          documentDirectory: "/docs/",
+          EncodingType: { Base64: "base64" },
+          getInfoAsync: jest.fn(async (filePath: string) => {
+            const normalized = normalize(filePath);
+            if (dirs.has(normalized)) {
+              return { exists: true, isDirectory: true };
+            }
+            if (files.has(normalized)) {
+              return {
+                exists: true,
+                isDirectory: false,
+                size: Buffer.from(files.get(normalized) ?? "", "utf8").length,
+              };
+            }
+            return { exists: false, isDirectory: false, size: 0 };
+          }),
+          makeDirectoryAsync: jest.fn(async (filePath: string) => {
+            dirs.add(normalize(filePath));
+          }),
+          writeAsStringAsync: jest.fn(
+            async (filePath: string, value: string) => {
+              files.set(normalize(filePath), value);
+            },
+          ),
+          readAsStringAsync: jest.fn(async () => payload),
+          deleteAsync: jest.fn(async (filePath: string) => {
+            files.delete(normalize(filePath));
+          }),
+          readDirectoryAsync: jest.fn(async () => []),
+          createDownloadResumable: jest.fn(
+            (
+              _source: string,
+              destination: string,
+              _opts: unknown,
+              onProgress: DownloadProgressCallback,
+            ) => ({
+              downloadAsync: jest.fn(async () => {
+                onProgress({
+                  totalBytesWritten: payload.length,
+                  totalBytesExpectedToWrite: payload.length,
+                });
+                files.set(normalize(destination), payload);
+                return { status };
+              }),
+              pauseAsync: jest.fn(async () => undefined),
+            }),
+          ),
+        };
+      });
+
+      const warnSpy = jest
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+
+      jest.doMock("@/utils/modelManifest", () => ({
+        runtimeModelManifest: {
+          manifestVersion: 1,
+          minimumAppSupportedSchemaVersion: 1,
+          maxRetainedVersions: 2,
+          activeVersionId: "v1",
+          versions: [
+            {
+              id: "v1",
+              modelName: "test",
+              modelRelativePath: "model.mlpackage",
+              retries: 1,
+              files: [
+                {
+                  path: "model.mlpackage",
+                  sha256: expectedHash,
+                  sources: [expectedSource],
+                },
+              ],
+            },
+          ],
+        },
+        toModelDownloadConfig: jest.fn(),
+      }));
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const manager =
+        require("@/utils/coremlModelManager") as typeof import("@/utils/coremlModelManager");
+
+      await expect(manager.ensureCoreMLModelAssets()).rejects.toThrow(
+        `with status ${status}`,
+      );
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("download attempt failed"),
+        expect.objectContaining({
+          descriptorPath: "model.mlpackage",
+          source: expectedSource,
+          status,
+        }),
+      );
+
+      warnSpy.mockRestore();
+    },
+  );
+
   it("defers inactivity timeout while app is backgrounded", async () => {
     jest.resetModules();
     jest.useFakeTimers();

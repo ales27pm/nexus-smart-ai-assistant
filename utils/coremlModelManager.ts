@@ -21,6 +21,12 @@ type DownloadFileDescriptor = {
   sources: string[];
 };
 
+type DownloadHttpError = Error & {
+  status: number | null;
+  source: string;
+  descriptorPath: string;
+};
+
 export type ModelAssetProgressStage =
   | "preparing"
   | "downloading"
@@ -474,10 +480,14 @@ async function downloadWithFallbackSources(
             onProgress,
           );
 
-        if (!response || response.status !== 200) {
-          throw new Error(
-            `Download failed for ${descriptor.path} with status ${response?.status ?? "unknown"}`,
-          );
+        const status = response?.status ?? null;
+        if (status === null || status < 200 || status >= 300) {
+          const message = `Download failed for ${descriptor.path} from ${source} with status ${status ?? "unknown"}`;
+          const statusError = new Error(message) as DownloadHttpError;
+          statusError.status = status;
+          statusError.source = source;
+          statusError.descriptorPath = descriptor.path;
+          throw statusError;
         }
 
         const finalBytesWritten = await resolveBytesWritten(
@@ -492,9 +502,18 @@ async function downloadWithFallbackSources(
         };
       } catch (error) {
         lastError = error;
+        const errorStatus =
+          typeof error === "object" &&
+          error !== null &&
+          "status" in error &&
+          typeof (error as { status?: unknown }).status === "number"
+            ? (error as { status: number }).status
+            : null;
+
         console.warn(`${LOG_PREFIX} download attempt failed`, {
-          file: descriptor.path,
+          descriptorPath: descriptor.path,
           source,
+          status: errorStatus,
           attempt,
           retries,
           totalAttempts: attemptCount,
