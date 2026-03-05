@@ -8,6 +8,7 @@ PROFILE="production"
 CLEAN_CACHE="0"
 REPAIR_CREDENTIALS="0"
 SKIP_AUTO_FINGERPRINT="1"
+SKIP_CLEAN_PREBUILD="0"
 REQUIRED_EAS_CLI_VERSION="18.1.0"
 EAS_RUNNER=()
 
@@ -66,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --auto-fingerprint)
       SKIP_AUTO_FINGERPRINT="0"
+      shift
+      ;;
+    --skip-clean-prebuild)
+      SKIP_CLEAN_PREBUILD="1"
       shift
       ;;
     *)
@@ -244,6 +249,18 @@ if ! ./scripts/check-ios-local-build-env.sh; then
 fi
 
 ensure_compatible_cocoapods
+
+if [[ "$SKIP_CLEAN_PREBUILD" == "1" ]]; then
+  echo "[i] Skipping clean iOS prebuild regeneration (--skip-clean-prebuild)."
+else
+  print_phase "Preflight: regenerate clean iOS native project"
+  echo "[i] Running npm run ios:prebuild:clean to ensure ExpoModulesProvider.swift and Podfile include current native modules."
+  npm run ios:prebuild:clean
+
+  print_phase "Preflight: install CocoaPods dependencies"
+  echo "[i] Running npx pod-install to ensure regenerated iOS native dependencies are installed."
+  npx pod-install
+fi
 
 print_phase "Preflight: CoreML pipeline validation"
 echo "[i] Validating CoreML pipeline assets before local EAS iOS build."
