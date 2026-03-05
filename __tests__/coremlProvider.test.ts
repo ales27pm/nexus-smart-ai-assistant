@@ -31,6 +31,7 @@ describe("NativeCoreMLProvider", () => {
     const initialLoadOptions: CoreMLLoadModelOptions = {
       ...DEFAULT_COREML_LOAD_OPTIONS,
       computeUnits: "cpuAndNeuralEngine",
+      modelPath: "/models/active.mlpackage",
     };
 
     await provider.load(initialLoadOptions);
@@ -63,6 +64,7 @@ describe("NativeCoreMLProvider", () => {
     await provider.load({
       ...DEFAULT_COREML_LOAD_OPTIONS,
       computeUnits: "cpuAndNeuralEngine",
+      modelPath: "/models/active.mlpackage",
     });
 
     await expect(provider.generate("hello")).rejects.toMatchObject({
@@ -84,6 +86,7 @@ describe("NativeCoreMLProvider", () => {
     await provider.load({
       ...DEFAULT_COREML_LOAD_OPTIONS,
       computeUnits: "cpuOnly",
+      modelPath: "/models/active.mlpackage",
     });
 
     await expect(provider.generate("hello")).rejects.toMatchObject({

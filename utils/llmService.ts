@@ -8,7 +8,7 @@ import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
   toActionableCoreMLError,
-  withPreferredCoreMLModelSource,
+  withPreparedCoreMLModelPath,
 } from "@/utils/coreml";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
@@ -61,7 +61,7 @@ export class CoreMLLLMService implements ILLMService {
         }
         emitLoadState("verifying model");
 
-        resolvedOptions = withPreferredCoreMLModelSource(
+        resolvedOptions = withPreparedCoreMLModelPath(
           resolvedOptions,
           prepared?.modelPath,
         );
