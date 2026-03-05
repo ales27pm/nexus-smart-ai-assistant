@@ -16,7 +16,19 @@ version_ge() {
 
 extract_semver() {
   local raw="$1"
-  printf '%s\n' "$raw" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1
+
+  # Prefer installed CLI version lines like:
+  #   eas-cli/18.1.0 darwin-x64 node-v24.13.1
+  local version
+  version="$(printf '%s\n' "$raw" | sed -nE 's|.*eas-cli/([0-9]+\.[0-9]+\.[0-9]+).*|\1|p' | head -n1)"
+  if [[ -n "$version" ]]; then
+    printf '%s\n' "$version"
+    return
+  fi
+
+  # Fallback for update notices like:
+  #   ★ eas-cli@18.1.0 is now available.
+  printf '%s\n' "$raw" | sed -nE 's#.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+)([^0-9].*|$)#\1#p' | head -n1
 }
 
 while [[ $# -gt 0 ]]; do

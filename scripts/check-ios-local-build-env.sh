@@ -33,7 +33,7 @@ extract_semver() {
   # If we grab the first semver globally, we can accidentally parse a warning
   # instead of the actual installed CLI version.
   local version
-  version="$(printf '%s\n' "$raw" | sed -nE 's|.*\beas-cli/([0-9]+\.[0-9]+\.[0-9]+)\b.*|\1|p' | head -n1)"
+  version="$(printf '%s\n' "$raw" | sed -nE 's|.*eas-cli/([0-9]+\.[0-9]+\.[0-9]+).*|\1|p' | head -n1)"
   if [[ -n "$version" ]]; then
     printf '%s\n' "$version"
     return
@@ -49,7 +49,7 @@ extract_semver() {
 
   # Fallback for mixed lines like:
   #   eas-cli@18.1.0 is now available.
-  printf '%s\n' "$raw" | sed -nE 's/.*\b([0-9]+\.[0-9]+\.[0-9]+)\b.*/\1/p' | head -n1
+  printf '%s\n' "$raw" | sed -nE 's#.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+)([^0-9].*|$)#\1#p' | head -n1
 }
 
 version_ge() {
