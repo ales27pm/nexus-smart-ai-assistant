@@ -1,7 +1,10 @@
 import Foundation
 import CoreML
+import CryptoKit
 
 final class CoreMLLLMRunner {
+  private static let logPrefix = "[ExpoCoreMLLLM][CoreMLLLMRunner]"
+
   private(set) var isLoaded: Bool = false
 
   private var model: MLModel?
@@ -26,6 +29,160 @@ final class CoreMLLLMRunner {
 
   private var tokenizerCacheKey: String?
   private var tokenizerCache: Tokenizer?
+  private let compileStateLock = NSLock()
+  private var compileLocksByCacheKey: [String: NSLock] = [:]
+
+  private static func log(_ message: String) {
+    NSLog("%@ %@", logPrefix, message)
+  }
+
+  private func withCompiledCacheLock<T>(cacheURL: URL, _ operation: () throws -> T) rethrows -> T {
+    let key = cacheURL.path
+
+    compileStateLock.lock()
+    let lock = compileLocksByCacheKey[key] ?? {
+      let newLock = NSLock()
+      compileLocksByCacheKey[key] = newLock
+      return newLock
+    }()
+    compileStateLock.unlock()
+
+    lock.lock()
+    defer { lock.unlock() }
+
+    return try operation()
+  }
+
+  private func ensureCompiledModelURL(sourceURL: URL) throws -> URL {
+    let sourceExt = sourceURL.pathExtension.lowercased()
+    if sourceExt == "mlmodelc" {
+      return sourceURL
+    }
+
+    guard sourceExt == "mlpackage" || sourceExt == "mlmodel" else {
+      return sourceURL
+    }
+
+    let fileManager = FileManager.default
+    guard fileManager.fileExists(atPath: sourceURL.path) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+        NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
+      ])
+    }
+
+    let cacheURL = try compiledCacheURL(for: sourceURL)
+
+    return try withCompiledCacheLock(cacheURL: cacheURL) {
+      if fileManager.fileExists(atPath: cacheURL.path) {
+        Self.log("Using cached compiled model at: \(cacheURL.path)")
+        return cacheURL
+      }
+
+      var compiledTempURL: URL?
+      do {
+        Self.log("Compiling CoreML model from source: \(sourceURL.path)")
+        compiledTempURL = try MLModel.compileModel(at: sourceURL)
+        guard let compiledTempURL else {
+          throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+            NSLocalizedDescriptionKey: "CoreML compileModel returned no compiled model URL for: \(sourceURL.path)",
+          ])
+        }
+
+        try fileManager.createDirectory(
+          at: cacheURL.deletingLastPathComponent(),
+          withIntermediateDirectories: true,
+          attributes: nil
+        )
+
+        if fileManager.fileExists(atPath: cacheURL.path) {
+          _ = try fileManager.replaceItemAt(cacheURL, withItemAt: compiledTempURL)
+        } else {
+          try fileManager.moveItem(at: compiledTempURL, to: cacheURL)
+        }
+
+        Self.log("Compiled model stored at: \(cacheURL.path)")
+        return cacheURL
+      } catch {
+        if let compiledTempURL,
+           fileManager.fileExists(atPath: compiledTempURL.path) {
+          do {
+            try fileManager.removeItem(at: compiledTempURL)
+            Self.log("Removed stale compiled temp model after failure: \(compiledTempURL.path)")
+          } catch {
+            let cleanupError = error as NSError
+            Self.log("Failed to remove compiled temp model after failure: \(cleanupError.domain)(\(cleanupError.code))")
+          }
+        }
+
+        let nsError = error as NSError
+        Self.log("Model compilation failed for \(sourceURL.path): \(nsError.domain)(\(nsError.code)): \(nsError.localizedDescription)")
+        throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+          NSLocalizedDescriptionKey: "CoreML model compilation failed at path: \(sourceURL.path)",
+          NSUnderlyingErrorKey: error,
+        ])
+      }
+    }
+  }
+
+  private func compiledCacheURL(for sourceURL: URL) throws -> URL {
+    let fileManager = FileManager.default
+    let appSupport = try fileManager.url(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+
+    let sourceSignature = try computeModelSourceSignature(sourceURL)
+    let digest = SHA256.hash(data: Data(sourceSignature.utf8))
+    let hash = digest.map { String(format: "%02x", $0) }.joined()
+
+    return appSupport
+      .appendingPathComponent("ExpoCoreMLLLM", isDirectory: true)
+      .appendingPathComponent("compiled-models", isDirectory: true)
+      .appendingPathComponent(hash)
+      .appendingPathExtension("mlmodelc")
+  }
+
+  private func computeModelSourceSignature(_ sourceURL: URL) throws -> String {
+    let fileManager = FileManager.default
+    var isDir: ObjCBool = false
+    guard fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDir) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+        NSLocalizedDescriptionKey: "CoreML source model does not exist at path: \(sourceURL.path)",
+      ])
+    }
+
+    if !isDir.boolValue {
+      let attrs = try fileManager.attributesOfItem(atPath: sourceURL.path)
+      let size = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+      let modifiedAt = (attrs[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+      return "file|\(sourceURL.path)|\(size)|\(modifiedAt)"
+    }
+
+    guard let enumerator = fileManager.enumerator(
+      at: sourceURL,
+      includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
+      options: [.skipsHiddenFiles]
+    ) else {
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.coreMLCompilation.rawValue, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to enumerate CoreML source directory at path: \(sourceURL.path)",
+      ])
+    }
+
+    var entries: [String] = []
+    for case let fileURL as URL in enumerator {
+      let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey])
+      guard values.isRegularFile == true else { continue }
+      let relativePath = fileURL.path.replacingOccurrences(of: sourceURL.path + "/", with: "")
+      let size = values.fileSize ?? 0
+      let modifiedAt = values.contentModificationDate?.timeIntervalSince1970 ?? 0
+      entries.append("\(relativePath)|\(size)|\(modifiedAt)")
+    }
+
+    entries.sort()
+    return "dir|\(sourceURL.path)|\(entries.joined(separator: "||"))"
+  }
 
   func unload() {
     lock.lock(); defer { lock.unlock() }
@@ -57,6 +214,20 @@ final class CoreMLLLMRunner {
       ])
     }
 
+    let loadableModelURL: URL
+    do {
+      loadableModelURL = try ensureCompiledModelURL(sourceURL: modelURL)
+    } catch {
+      if let nsError = error as NSError?, nsError.domain == "ExpoCoreMLLLM" {
+        throw nsError
+      }
+
+      throw NSError(domain: "ExpoCoreMLLLM", code: Types.LLMError.modelMissing.rawValue, userInfo: [
+        NSLocalizedDescriptionKey: "Unable to prepare CoreML model for loading.",
+        NSUnderlyingErrorKey: error,
+      ])
+    }
+
     let attempts = computeUnitFallbacks(preferred: options.computeUnits)
     var loaded: MLModel?
     var loadedComputeUnits: Types.CoreMLComputeUnits?
@@ -69,7 +240,7 @@ final class CoreMLLLMRunner {
         cfg.computeUnits = computeUnits(from: unit)
         cfg.allowLowPrecisionAccumulationOnGPU = true
 
-        loaded = try MLModel(contentsOf: modelURL, configuration: cfg)
+        loaded = try MLModel(contentsOf: loadableModelURL, configuration: cfg)
         loadedComputeUnits = unit
         break
       } catch {
@@ -149,7 +320,8 @@ final class CoreMLLLMRunner {
 
     return Types.ModelInfo(
       loaded: true,
-      modelURL: modelURL.absoluteString,
+      modelURL: loadableModelURL.absoluteString,
+      sourceModelURL: modelURL.absoluteString,
       computeUnits: loadedComputeUnits ?? options.computeUnits,
       expectsSingleToken: detectedSingleToken,
       hasState: detectedHasState,

@@ -18,6 +18,7 @@ enum Types {
   enum LLMError: Int {
     case modelMissing = 101
     case outOfMemory = 102
+    case coreMLCompilation = 105
     case tokenBasedModelMissingTokenizer = 122
   }
 
@@ -122,6 +123,7 @@ enum Types {
   struct ModelInfo {
     let loaded: Bool
     let modelURL: String
+    let sourceModelURL: String?
     let computeUnits: CoreMLComputeUnits
     let expectsSingleToken: Bool
     let hasState: Bool
@@ -144,6 +146,7 @@ enum Types {
         "cachePositionName": cachePositionName,
         "logitsName": logitsName,
       ]
+      if let v = sourceModelURL { d["sourceModelURL"] = v }
       if let v = eosTokenId { d["eosTokenId"] = v }
       if let v = maxContext { d["maxContext"] = v }
       return d
