@@ -92,18 +92,20 @@ This script is a prerequisite for the Expo prebuild phase. It audits the CocoaPo
 
 ## 5. CI/CD Pipeline and EAS Build Automation
 
-Our `ios.yml` workflow enforces deterministic builds through a strict sequence of validation and compilation stages.
+Our iOS CI/CD source-of-truth is `fastlane/Fastfile`. GitHub Actions (`.github/workflows/ios.yml`) and Codemagic (`codemagic.yaml`) both call the same Fastlane lanes to keep build, test, and signing behavior aligned.
 
 ### Critical Pipeline Stages
 
 1. JS dependency enforcement: Uses `npm ci` to ensure strict adherence to `package-lock.json`.
 2. Hard-fail validation: Executes `npm run coreml:validate -- --strict`. Failure here halts the pipeline before expensive macOS runners are fully consumed.
 3. CocoaPods clean install: Executes `rm -rf ios/Pods` followed by `pod install --repo-update` within the `ios` directory to ensure zero artifact persistence.
-4. Scheme resolution: The pipeline uses a Ruby one-liner to parse `xcodebuild -list -json` output, identifying all available schemes for the workspace or project.
+4. Scheme/workspace resolution: Fastlane lane helpers resolve workspace/project + scheme once and pass them into `scan`, `gym`, and `build_ios_app`, removing duplicated shell discovery logic from CI YAML.
 
-### Testable Scheme Resolution
+### Fastlane Lane Parity
 
-The CI queries `xcodebuild -showTestPlans`. If a scheme has an associated test plan, the pipeline sets `CAN_RUN_TESTS=true` and prioritizes build-for-testing. If no test plan is discovered, it falls back to a standard build to verify compilation.
+- **GitHub Actions** runs `fastlane ios ci_simulator` (which executes `ci_build_for_testing` then `ci_test_without_building` via `scan`).
+- **Codemagic** runs `fastlane ios codemagic_ipa` (which signs and exports the IPA via `build_ios_app`).
+- **Local EAS fallback** remains `scripts/run-ios-local-eas-build.sh`; it is explicitly _not_ the CI source-of-truth path.
 
 ---
 
@@ -130,8 +132,30 @@ The `NativeCoreMLProvider` maps native failures to actionable hints via `toActio
 | `104` | Execution Plan Error | Execution-plan build failed.                              | The provider automatically retries generation with `computeUnits: "cpuOnly"` if this occurs. |
 | `120` | Tokenizer Error      | Tokenizer mismatch; check `byte_level_bpe` vs `gpt2_bpe`. | Critical pathing error in `ResourceResolver`.                                                |
 
+## 7. Bridge Resilience Validation (Debug/Test-Only Diagnostics Module)
+
+To validate JS/native bridge resilience deterministically, use the test-only module `modules/expo-coreml-diagnostics`. This module is compiled for debug/test workflows and intentionally blocked in production by native `#if DEBUG`/build-type guards.
+
+### Diagnostic Operations
+
+- `delayResolveAsync(durationMs)`: Introduces a controlled native delay before promise resolution.
+- `describeErrorAsync(code)`: Returns structured error metadata (`code`, `numericCode`, `retryable`, `category`, `message`).
+- `throwErrorAsync(code)`: Raises a native error for JS recovery/UX validation (`MEMORY_PRESSURE`, `MODEL_EVICTED`, `BRIDGE_TIMEOUT`).
+
+### JS Wrapper and Scenarios
+
+Use `utils/coremlDiagnostics.ts` from tests or E2E screens:
+
+1. `delayDiagnosticPromise(120)` validates delayed bridge fulfillment.
+2. `runMemoryPressureRecoveryProbe()` verifies retry/backoff behavior for retryable memory-pressure failures.
+3. `runBridgeTimeoutUXProbe()` verifies non-retryable timeout UX messaging.
+
+The E2E tab (`app/(tabs)/e2e.tsx`) and Detox spec (`e2e/specs/coreml.e2e.js`) include dedicated scenarios asserting these behaviors end-to-end.
+
+---
+
 ### Maintenance Cadence
 
 - **Monthly**: Audit `coreml-runtime-manifest.json` against new hardware specifications.
 - **Per release**: Synchronize `minimumAppSupportedSchemaVersion` with any changes to native `Types.swift` or `Sampling.swift` logic.
-- **CI updates**: Update the Ruby-based scheme resolution logic if migrating to nested Xcode workspaces.
+- **CI updates**: Update `fastlane/Fastfile` project-context helpers if migrating to nested Xcode workspaces or custom scheme naming.

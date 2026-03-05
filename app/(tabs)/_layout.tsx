@@ -1,5 +1,11 @@
 import { Tabs } from "expo-router";
-import { Sparkles, Clock, Brain, Smartphone } from "lucide-react-native";
+import {
+  Sparkles,
+  Clock,
+  Brain,
+  Smartphone,
+  FlaskConical,
+} from "lucide-react-native";
 import Colors from "@/constants/colors";
 
 export default function TabLayout() {
@@ -49,6 +55,15 @@ export default function TabLayout() {
           title: "Device",
           tabBarIcon: ({ color, size }) => (
             <Smartphone size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="e2e"
+        options={{
+          title: "E2E",
+          tabBarIcon: ({ color, size }) => (
+            <FlaskConical size={size} color={color} />
           ),
         }}
       />

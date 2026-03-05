@@ -1,0 +1,54 @@
+name: iOS Detox E2E
+
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "hooks/useCoreMLChat.ts"
+      - "utils/coreMLManager.ts"
+      - "utils/coremlProvider.ts"
+      - "modules/expo-coreml-llm/**"
+      - "app/(tabs)/e2e.tsx"
+      - "app/(tabs)/_layout.tsx"
+      - "e2e/**"
+      - ".detoxrc.js"
+      - "package.json"
+      - "package-lock.json"
+  workflow_dispatch:
+
+jobs:
+  detox-ios:
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Detox CLI
+        run: npm install -g detox-cli
+
+      - name: Ensure iOS native project
+        run: npx expo prebuild --platform ios --non-interactive --no-install
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install --repo-update
+
+      - name: Build iOS app for Detox
+        run: npm run e2e:ios:build
+
+      - name: Run Detox tests
+        run: npm run e2e:ios:test:ci

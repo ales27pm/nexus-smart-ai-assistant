@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Local fallback path: CI/CD source-of-truth for iOS builds is fastlane/Fastfile
+# (GitHub Actions + Codemagic lanes). This script remains for local EAS-only workflows.
+
 PROFILE="production"
 CLEAN_CACHE="0"
 REPAIR_CREDENTIALS="0"
@@ -230,6 +233,8 @@ if [[ "$REPAIR_CREDENTIALS" == "1" ]]; then
   npm cache verify --cache .npm-cache
   node ./scripts/repair-ios-local-credentials.mjs --repair
 fi
+
+echo "[i] Note: Fastlane lanes are the source-of-truth for CI/CD iOS build/test/signing. This EAS script is a local fallback path only."
 
 print_phase "Preflight: iOS local build environment checks"
 if ! ./scripts/check-ios-local-build-env.sh; then
