@@ -1,4 +1,4 @@
-import { CoreMLError } from "@/utils/coreml";
+import { COREML_ERROR_ABORT, CoreMLError } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { CoreMLLLMService } from "@/utils/llmService";
 
@@ -176,7 +176,9 @@ describe("CoreMLLLMService", () => {
       ),
       unload: jest.fn(),
       cancel: jest.fn().mockImplementation(async () => {
-        rejectGenerate?.(new CoreMLError("Generation aborted", "ABORT_ERR"));
+        rejectGenerate?.(
+          new CoreMLError("Generation aborted", COREML_ERROR_ABORT),
+        );
       }),
       isLoaded: jest.fn(),
     };

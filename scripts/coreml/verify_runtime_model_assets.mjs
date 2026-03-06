@@ -31,6 +31,25 @@ function parseArgs(argv) {
   return parsed;
 }
 
+function toBooleanFlag(value) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["1", "true", "yes", "y", "on"].includes(normalized)) {
+      return true;
+    }
+
+    if (["0", "false", "no", "n", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 function normalizeManifestVersion(manifest, requestedVersionId) {
   if (requestedVersionId) {
     const version = manifest.versions.find(
@@ -58,6 +77,23 @@ function normalizeManifestVersion(manifest, requestedVersionId) {
   }
 
   return activeVersion;
+}
+
+function resolveAssetPathWithinRoot(assetsRoot, relativePath) {
+  const rootPath = path.resolve(assetsRoot);
+  const absolutePath = path.resolve(rootPath, relativePath);
+  const relativeToRoot = path.relative(rootPath, absolutePath);
+
+  if (
+    relativeToRoot === "" ||
+    (!relativeToRoot.startsWith("..") && !path.isAbsolute(relativeToRoot))
+  ) {
+    return absolutePath;
+  }
+
+  throw new Error(
+    `Manifest path escapes assets root: '${relativePath}' is outside '${rootPath}'.`,
+  );
 }
 
 async function computeSha256ForFile(filePath) {
@@ -89,13 +125,28 @@ async function computeSha256ForFile(filePath) {
   }
 }
 
-async function verifyAssets({ manifestPath, assetsRoot, versionId }) {
+async function verifyAssets({
+  manifestPath,
+  assetsRoot,
+  versionId,
+  deleteCorrupted,
+}) {
   const manifestJson = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   const version = normalizeManifestVersion(manifestJson, versionId);
   const failures = [];
 
   for (const file of version.files) {
-    const absolutePath = path.resolve(assetsRoot, file.path);
+    let absolutePath;
+    try {
+      absolutePath = resolveAssetPathWithinRoot(assetsRoot, file.path);
+    } catch (error) {
+      failures.push({
+        type: "invalid_manifest_path",
+        path: file.path,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
 
     let digest;
     try {
@@ -110,7 +161,10 @@ async function verifyAssets({ manifestPath, assetsRoot, versionId }) {
     }
 
     if (digest !== file.sha256) {
-      await fs.rm(absolutePath, { force: true });
+      if (deleteCorrupted) {
+        await fs.rm(absolutePath, { force: true });
+      }
+
       failures.push({
         type: "sha256_mismatch",
         path: absolutePath,
@@ -125,7 +179,11 @@ async function verifyAssets({ manifestPath, assetsRoot, versionId }) {
     for (const failure of failures) {
       if (failure.type === "sha256_mismatch") {
         console.error(
-          ` - hash mismatch: ${failure.path} expected=${failure.expected} actual=${failure.actual} (deleted corrupted asset)`,
+          ` - hash mismatch: ${failure.path} expected=${failure.expected} actual=${failure.actual}${deleteCorrupted ? " (deleted corrupted asset)" : ""}`,
+        );
+      } else if (failure.type === "invalid_manifest_path") {
+        console.error(
+          ` - invalid manifest path: ${failure.path} (${failure.message})`,
         );
       } else {
         console.error(` - missing asset: ${failure.path} (${failure.message})`);
@@ -149,6 +207,7 @@ async function main() {
     ? path.resolve(String(args["assets-root"]))
     : null;
   const versionId = args["version-id"] ? String(args["version-id"]) : undefined;
+  const deleteCorrupted = toBooleanFlag(args["delete-corrupted"]);
 
   if (!assetsRoot) {
     throw new Error(
@@ -156,7 +215,7 @@ async function main() {
     );
   }
 
-  await verifyAssets({ manifestPath, assetsRoot, versionId });
+  await verifyAssets({ manifestPath, assetsRoot, versionId, deleteCorrupted });
 }
 
 main().catch((error) => {

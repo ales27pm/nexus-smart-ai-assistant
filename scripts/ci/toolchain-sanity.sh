@@ -39,8 +39,12 @@ npm -v
 echo "[toolchain-sanity] Fastlane"
 fastlane --version
 
-echo "[toolchain-sanity] Validating local iOS credential parity"
-node ./scripts/validate-ios-local-credentials.mjs
+if [[ -f "./credentials.json" ]]; then
+  echo "[toolchain-sanity] Validating local iOS credential parity"
+  node ./scripts/validate-ios-local-credentials.mjs
+else
+  echo "[toolchain-sanity] Skipping local iOS credential parity validation (credentials.json not present on this runner)"
+fi
 
 echo "[toolchain-sanity] Validating CoreML pipeline manifest"
 npm run coreml:validate -- --strict

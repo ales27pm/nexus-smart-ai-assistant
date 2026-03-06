@@ -1,4 +1,8 @@
-import { CoreMLError } from "@/utils/coreml";
+import {
+  COREML_ERROR_ABORT,
+  COREML_ERROR_BUSY,
+  CoreMLError,
+} from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import { CoreMLManager } from "@/utils/coreMLManager";
 
@@ -409,7 +413,7 @@ describe("CoreMLManager", () => {
     const manager = new CoreMLManager(provider as any);
 
     await expect(manager.generate("system", "hello")).rejects.toMatchObject({
-      code: "BUSY",
+      code: COREML_ERROR_BUSY,
     });
     expect(provider.generate).not.toHaveBeenCalled();
   });
@@ -471,7 +475,9 @@ describe("CoreMLManager", () => {
       ),
       unload: jest.fn(),
       cancel: jest.fn().mockImplementation(async () => {
-        rejectGenerate?.(new CoreMLError("Generation aborted", "ABORT_ERR"));
+        rejectGenerate?.(
+          new CoreMLError("Generation aborted", COREML_ERROR_ABORT),
+        );
       }),
       isLoaded: jest.fn(),
     };

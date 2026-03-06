@@ -4,6 +4,8 @@ import {
   CoreMLError,
   CoreMLGenerateOptions,
   CoreMLLoadModelOptions,
+  COREML_ERROR_ABORT,
+  COREML_ERROR_BUSY,
   DEFAULT_COREML_GENERATE_OPTIONS,
   DEFAULT_COREML_LOAD_OPTIONS,
   buildCoreMLChatPrompt,
@@ -131,14 +133,14 @@ export class CoreMLManager {
     if (this.state !== "Ready") {
       throw new CoreMLError(
         `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
-        "BUSY",
+        COREML_ERROR_BUSY,
       );
     }
 
     if (this.busy) {
       throw new CoreMLError(
         "CoreML generation already in progress. Please wait for the current request to finish.",
-        "BUSY",
+        COREML_ERROR_BUSY,
       );
     }
 
@@ -158,7 +160,10 @@ export class CoreMLManager {
     try {
       if (signal?.aborted) {
         abortHandler();
-        throw new CoreMLError("Generation aborted before start", "ABORT_ERR");
+        throw new CoreMLError(
+          "Generation aborted before start",
+          COREML_ERROR_ABORT,
+        );
       }
 
       signal?.addEventListener("abort", abortHandler, { once: true });
