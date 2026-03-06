@@ -453,7 +453,10 @@ async function resolveBytesWritten(
   }
 
   const fileInfo = await FileSystem.getInfoAsync(destination);
-  return typeof fileInfo.size === "number" ? fileInfo.size : 0;
+  if (fileInfo.exists && typeof (fileInfo as any).size === "number") {
+    return (fileInfo as any).size as number;
+  }
+  return 0;
 }
 
 async function downloadWithFallbackSources(

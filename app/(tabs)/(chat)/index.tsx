@@ -417,7 +417,7 @@ ${branchAnalyses[idx]}`,
           const { safeUrl, errorMessage } = validateWebScrapeUrl(input.url);
 
           if (!safeUrl) {
-            return errorMessage;
+            return errorMessage ?? "Invalid URL.";
           }
 
           console.log("[NEXUS] Scraping:", safeUrl);
@@ -595,6 +595,7 @@ ${branchAnalyses[idx]}`,
               /[^0-9+\-*/().%,\s]|Math\.\w+/g,
               (m) => (m.startsWith("Math.") ? m : ""),
             );
+            // eslint-disable-next-line no-implied-eval
             const fn = new Function("Math", `return (${safeExpr})`);
             const result = fn(Math);
             if (typeof result !== "number" || !isFinite(result))
@@ -778,7 +779,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
     if (activeId && activeId !== convIdRef.current) {
       convIdRef.current = activeId;
       hasLoadedRef.current = false;
-      loadMessages(activeId).then((msgs) => {
+      void loadMessages(activeId).then((msgs) => {
         if (msgs && msgs.length > 0) {
           setMessages(msgs as Parameters<typeof setMessages>[0]);
         } else {
@@ -985,7 +986,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
 
   const handleSuggestion = useCallback(
     (text: string) => {
-      handleSend(text);
+      void handleSend(text);
     },
     [handleSend],
   );
@@ -1081,7 +1082,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
                   const lastText = lastUserMsg?.parts?.find(
                     (p: any) => p.type === "text",
                   )?.text;
-                  if (lastText) handleSend(lastText);
+                  if (lastText) void handleSend(lastText);
                 }}
                 activeOpacity={0.7}
               >
@@ -1118,7 +1119,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
         visible={voiceModeVisible}
         onClose={() => setVoiceModeVisible(false)}
         onSend={(text) => {
-          handleSend(text, undefined, { isVoiceMode: true });
+          void handleSend(text, undefined, { isVoiceMode: true });
         }}
         isResponding={isStreaming}
         lastAssistantText={
