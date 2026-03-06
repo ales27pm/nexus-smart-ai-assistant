@@ -2,6 +2,8 @@ import { modelManifest } from "@/utils/modelManifest";
 import {
   buildCoreMLChatPrompt,
   cleanCoreMLOutput,
+  COREML_ERROR_ABORT,
+  COREML_ERROR_BUSY,
   CoreMLError,
   DEFAULT_COREML_BOS_TOKEN_ID,
   DEFAULT_COREML_EOS_TOKEN_ID,
@@ -201,6 +203,19 @@ describe("coreml utils", () => {
       expect(actionable.message).toContain("execution-plan build failed");
     });
 
+    it("adds actionable hint for busy and abort manager error codes", () => {
+      const busy = toActionableCoreMLError(
+        new CoreMLError("busy failure", COREML_ERROR_BUSY),
+      );
+      const abort = toActionableCoreMLError(
+        new CoreMLError("abort failure", COREML_ERROR_ABORT),
+      );
+
+      expect(busy.code).toBe(COREML_ERROR_BUSY);
+      expect(busy.message).toContain("runtime is busy");
+      expect(abort.code).toBe(COREML_ERROR_ABORT);
+      expect(abort.message).toContain("Generation was aborted");
+    });
     it("adds actionable hint for tokenizer errors in the 120 range", () => {
       const actionable = toActionableCoreMLError(
         new CoreMLError("generation failed", 120),

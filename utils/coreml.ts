@@ -45,6 +45,9 @@ export type CoreMLGenerateOptions = {
   };
 };
 
+export const COREML_ERROR_BUSY = 1001;
+export const COREML_ERROR_ABORT = 1002;
+
 export class CoreMLError extends Error {
   constructor(
     message: string,
@@ -250,6 +253,10 @@ export function normalizeCoreMLError(error: unknown): CoreMLError {
 }
 
 export const COREML_ACTIONABLE_ERRORS: Record<number, string> = {
+  [COREML_ERROR_BUSY]:
+    "CoreML runtime is busy transitioning state or handling another request. Wait until the model reports Ready and retry.",
+  [COREML_ERROR_ABORT]:
+    "Generation was aborted. Retry the request if cancellation was not intentional.",
   10: "CoreML resource bundle missing. Run prebuild + pod install, then rebuild the iOS app.",
   12: "Tokenizer asset missing from bundle. Run the tokenizer install step before building iOS.",
   20: "No CoreML model selected. Provide modelPath from prepared assets and retry.",

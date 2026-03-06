@@ -33,7 +33,9 @@
     "e2e:ios:build": "detox build --configuration ios.sim.debug",
     "e2e:ios:test": "detox test --configuration ios.sim.debug --cleanup",
     "e2e:ios:test:ci": "detox test --configuration ios.sim.debug --headless --cleanup --record-logs all",
-    "e2e:ios": "npm run e2e:ios:build && npm run e2e:ios:test"
+    "e2e:ios": "npm run e2e:ios:build && npm run e2e:ios:test",
+    "ci:toolchain-sanity": "./scripts/ci/toolchain-sanity.sh",
+    "coreml:verify-assets": "node ./scripts/coreml/verify_runtime_model_assets.mjs"
   },
   "dependencies": {
     "@naveen521kk/expo-hf-tokenizers": "^0.1.0",
