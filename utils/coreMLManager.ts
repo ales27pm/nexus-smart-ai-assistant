@@ -17,6 +17,22 @@ import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
 
+const MAX_SAFE_COREML_NEW_TOKENS = 96;
+
+function sanitizeGenerateOptions(
+  options: CoreMLGenerateOptions,
+): CoreMLGenerateOptions {
+  const maxNewTokens =
+    typeof options.maxNewTokens === "number"
+      ? Math.max(1, Math.min(options.maxNewTokens, MAX_SAFE_COREML_NEW_TOKENS))
+      : MAX_SAFE_COREML_NEW_TOKENS;
+
+  return {
+    ...options,
+    maxNewTokens,
+  };
+}
+
 export type CoreMLInitializationEvent = ModelAssetProgressEvent;
 export type CoreMLManagerState = "Idle" | "Loading" | "Ready" | "Disposing";
 
@@ -145,10 +161,10 @@ export class CoreMLManager {
     }
 
     const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-    const opts: CoreMLGenerateOptions = {
+    const opts = sanitizeGenerateOptions({
       ...DEFAULT_COREML_GENERATE_OPTIONS,
       ...options,
-    };
+    });
     this.busy = true;
 
     const abortHandler = () => {
@@ -233,6 +249,8 @@ export class CoreMLManager {
 }
 
 export const coreMLManager = new CoreMLManager();
+
+export { MAX_SAFE_COREML_NEW_TOKENS, sanitizeGenerateOptions };
 
 export type {
   CoreMLError,

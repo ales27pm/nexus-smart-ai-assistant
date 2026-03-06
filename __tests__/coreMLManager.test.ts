@@ -2,9 +2,14 @@ import {
   COREML_ERROR_ABORT,
   COREML_ERROR_BUSY,
   CoreMLError,
+  DEFAULT_COREML_GENERATE_OPTIONS,
 } from "@/utils/coreml";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
-import { CoreMLManager } from "@/utils/coreMLManager";
+import {
+  CoreMLManager,
+  MAX_SAFE_COREML_NEW_TOKENS,
+  sanitizeGenerateOptions,
+} from "@/utils/coreMLManager";
 
 import { createDeferred, flushMicrotasks } from "./utils/asyncTestUtils";
 
@@ -17,6 +22,24 @@ jest.mock("@/utils/coremlModelManager", () => ({
 }));
 
 describe("CoreMLManager", () => {
+  it("caps maxNewTokens to prevent runaway CPU usage", () => {
+    const sanitized = sanitizeGenerateOptions({
+      ...DEFAULT_COREML_GENERATE_OPTIONS,
+      maxNewTokens: 400,
+    });
+
+    expect(sanitized.maxNewTokens).toBe(MAX_SAFE_COREML_NEW_TOKENS);
+  });
+
+  it("defaults maxNewTokens to a safe value when omitted", () => {
+    const sanitized = sanitizeGenerateOptions({
+      ...DEFAULT_COREML_GENERATE_OPTIONS,
+      maxNewTokens: undefined,
+    });
+
+    expect(sanitized.maxNewTokens).toBe(MAX_SAFE_COREML_NEW_TOKENS);
+  });
+
   function createDeferred<T>() {
     let resolve!: (value: T | PromiseLike<T>) => void;
     let reject!: (reason?: unknown) => void;
@@ -433,6 +456,12 @@ describe("CoreMLManager", () => {
     await manager.initialize();
 
     await expect(manager.generate("system", "hello")).resolves.toBe("hi there");
+    expect(provider.generate).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        maxNewTokens: MAX_SAFE_COREML_NEW_TOKENS,
+      }),
+    );
   });
 
   it("rejects concurrent generation requests", async () => {
