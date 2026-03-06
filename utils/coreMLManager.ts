@@ -128,9 +128,17 @@ export class CoreMLManager {
     options: CoreMLGenerateOptions = {},
     signal?: AbortSignal,
   ): Promise<string> {
+    if (this.state !== "Ready") {
+      throw new CoreMLError(
+        `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
+        "BUSY",
+      );
+    }
+
     if (this.busy) {
       throw new CoreMLError(
         "CoreML generation already in progress. Please wait for the current request to finish.",
+        "BUSY",
       );
     }
 

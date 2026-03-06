@@ -397,6 +397,23 @@ describe("CoreMLManager", () => {
     expect(provider.load).not.toHaveBeenCalled();
   });
 
+  it("rejects generation when manager state is not Ready", async () => {
+    const provider = {
+      load: jest.fn(),
+      generate: jest.fn(),
+      unload: jest.fn(),
+      cancel: jest.fn(),
+      isLoaded: jest.fn(),
+    };
+
+    const manager = new CoreMLManager(provider as any);
+
+    await expect(manager.generate("system", "hello")).rejects.toMatchObject({
+      code: "BUSY",
+    });
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
   it("generates cleaned response", async () => {
     const provider = {
       load: jest.fn(),
@@ -409,6 +426,8 @@ describe("CoreMLManager", () => {
     };
 
     const manager = new CoreMLManager(provider as any);
+    await manager.initialize();
+
     await expect(manager.generate("system", "hello")).resolves.toBe("hi there");
   });
 
@@ -428,6 +447,8 @@ describe("CoreMLManager", () => {
     };
 
     const manager = new CoreMLManager(provider as any);
+    await manager.initialize();
+
     const firstPromise = manager.generate("system", "first");
 
     await expect(manager.generate("system", "second")).rejects.toBeInstanceOf(
@@ -456,6 +477,8 @@ describe("CoreMLManager", () => {
     };
 
     const manager = new CoreMLManager(provider as any);
+    await manager.initialize();
+
     const controller = new AbortController();
 
     const resultPromise = manager.generate(

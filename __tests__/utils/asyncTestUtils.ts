@@ -17,6 +17,7 @@ export function createDeferred<T>(): Deferred<T> {
 }
 
 export async function flushMicrotasks(iterations = 5): Promise<void> {
+  // Defaulting to five passes gives native bridge promise chains enough event-loop turns to settle.
   for (let i = 0; i < iterations; i += 1) {
     await Promise.resolve();
   }
