@@ -20,6 +20,7 @@
     "build:prod:ios:local:repair": "./scripts/run-ios-local-eas-build.sh --profile production --clean-cache --repair-credentials",
     "submit:prod:ios:no-eas": "./scripts/submit-ios-ipa-without-eas.sh",
     "check:ios:credentials": "node ./scripts/validate-ios-local-credentials.mjs",
+    "ios:keychain:reset": "./scripts/reset-ios-signing-keychain.sh",
     "eas-build-pre-install": "node ./scripts/ensure-package-lock-for-eas.mjs",
     "build:prod:local:repair": "npm run build:prod:ios:local:repair",
     "android": "expo run:android",

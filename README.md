@@ -202,6 +202,18 @@ npm run build:prod:ios:local:clean
 npm run build:prod:ios:local:repair
 ```
 
+If macOS prompts for the `build-signing` keychain password and you want a clean reset:
+
+```bash
+KEYCHAIN_PASSWORD='your-known-password' npm run ios:keychain:reset -- --name build-signing
+```
+
+Then set your certificate password explicitly before credential repair/build:
+
+```bash
+P12_PASSWORD='your-p12-password' npm run build:prod:ios:local:repair
+```
+
 ### Submit IPA Without EAS Submit
 
 ```bash
@@ -215,6 +227,8 @@ npm run submit:prod:ios:no-eas -- \
 
 - Run `./scripts/check-ios-local-build-env.sh` to confirm local toolchain readiness.
 - Run `npm run check:ios:credentials` and, if needed, `node ./scripts/repair-ios-local-credentials.mjs`.
+- Reset a stuck local signing keychain with `KEYCHAIN_PASSWORD='...' npm run ios:keychain:reset -- --name build-signing`.
+- Explicitly pass certificate password for repair/build with `P12_PASSWORD='...' npm run build:prod:ios:local:repair`.
 - Use `./scripts/ios/fix_local_ios_signing.sh` followed by `./scripts/ios/diagnose_p12.sh` for signing recovery.
 - If CoreML generation fails due to tokenizer or bundle issues, re-run `npm run coreml:fetch` and `npm run coreml:validate`.
 - If `expo run:ios` fails with `Unable to find a destination matching the provided destination specifier`, use `npm run ios` to auto-select an available simulator. Use `npm run ios:raw` only when you intentionally want Expo's default destination behavior.
