@@ -247,7 +247,9 @@ public final class CoreMLModelLoader: NSObject {
     private let lock = NSLock()
 
     private var activeDownloadContext: ActiveDownloadContext?
+    private var activeLoadDescriptor: CoreMLModelDescriptor?
     private var isCancelled = false
+    private var isLoadInProgress = false
     private var stallTimer: DispatchSourceTimer?
 
     private let maximumRetriesPerSource = 2
@@ -272,13 +274,20 @@ public final class CoreMLModelLoader: NSObject {
     public func cancel() {
         lock.lock()
         isCancelled = true
-        activeDownloadContext?.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
+        let context = activeDownloadContext
+        let descriptor = activeLoadDescriptor
+        context?.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
             guard let self else { return }
             if let data {
-                try? data.write(to: self.resumeDataURL(for: self.activeDownloadContext?.descriptor))
+                try? data.write(to: self.resumeDataURL(for: descriptor))
                 self.log("WARN", "Saved resume data during cancel.")
             }
         })
+
+        if context == nil, let descriptor {
+            try? Data().write(to: resumeDataURL(for: descriptor), options: .atomic)
+            log("WARN", "Saved cancel marker during non-download phase.")
+        }
         lock.unlock()
         transition(.failed(message: CoreMLModelLoaderError.cancelled.localizedDescription))
     }
@@ -287,13 +296,17 @@ public final class CoreMLModelLoader: NSObject {
         _ descriptor: CoreMLModelDescriptor,
         configuration: MLModelConfiguration = MLModelConfiguration()
     ) async throws -> CoreMLModelLoadResult {
-        resetCancellation()
+        try beginLoadOperation(for: descriptor)
+        defer { endLoadOperation() }
+
         try prepareDirectories(for: descriptor)
+        try throwIfCancelled(for: descriptor)
 
         transition(.checkingCache)
         log("INFO", "Begin loading model: \(descriptor.displayName) (\(descriptor.preset.rawValue))")
 
         if let cachedResult = try await loadFromCompiledCacheIfValid(descriptor, configuration: configuration) {
+            try throwIfCancelled(for: descriptor)
             transition(.ready)
             log("INFO", "Loaded compiled model from cache.")
             return cachedResult
@@ -301,8 +314,9 @@ public final class CoreMLModelLoader: NSObject {
 
         if let bundledPackageURL = resolveBundledPackageURL(descriptor) {
             log("INFO", "Bundled package found at \(bundledPackageURL.path)")
-            let verified = try await verifyPackageIfNeeded(packageURL: bundledPackageURL, descriptor: descriptor)
+            let verified = try await verifyPackageIfNeeded(packageURL: bundledPackageURL, descriptor: descriptor, allowMissingChecksum: true)
             let result = try await compileAndLoad(packageURL: verified, descriptor: descriptor, configuration: configuration)
+            try throwIfCancelled(for: descriptor)
             transition(.ready)
             return result
         }
@@ -310,8 +324,9 @@ public final class CoreMLModelLoader: NSObject {
         let cachedURL = cachedPackageURL(for: descriptor)
         if fileManager.fileExists(atPath: cachedURL.path) {
             log("INFO", "Found cached package at \(cachedURL.path)")
-            let verified = try await verifyPackageIfNeeded(packageURL: cachedURL, descriptor: descriptor)
+            let verified = try await verifyPackageIfNeeded(packageURL: cachedURL, descriptor: descriptor, allowMissingChecksum: false)
             let result = try await compileAndLoad(packageURL: verified, descriptor: descriptor, configuration: configuration)
+            try throwIfCancelled(for: descriptor)
             transition(.ready)
             return result
         }
@@ -323,9 +338,10 @@ public final class CoreMLModelLoader: NSObject {
         transition(.preparingDownload)
 
         let packageURL = try await downloadWithFallbacks(descriptor: descriptor)
-        let verifiedURL = try await verifyPackageIfNeeded(packageURL: packageURL, descriptor: descriptor)
+        let verifiedURL = try await verifyPackageIfNeeded(packageURL: packageURL, descriptor: descriptor, allowMissingChecksum: false)
         let result = try await compileAndLoad(packageURL: verifiedURL, descriptor: descriptor, configuration: configuration)
 
+        try throwIfCancelled(for: descriptor)
         transition(.ready)
         return result
     }
@@ -357,6 +373,7 @@ public final class CoreMLModelLoader: NSObject {
                 return nil
             }
 
+            try throwIfCancelled(for: descriptor)
             transition(.loading)
             let model = try MLModel(contentsOf: compiledURL, configuration: configuration)
             return CoreMLModelLoadResult(model: model, compiledModelURL: compiledURL, originalPackageURL: nil)
@@ -377,13 +394,21 @@ public final class CoreMLModelLoader: NSObject {
         return url
     }
 
-    private func verifyPackageIfNeeded(packageURL: URL, descriptor: CoreMLModelDescriptor) async throws -> URL {
+    private func verifyPackageIfNeeded(
+        packageURL: URL,
+        descriptor: CoreMLModelDescriptor,
+        allowMissingChecksum: Bool
+    ) async throws -> URL {
+        try throwIfCancelled(for: descriptor)
         transition(.verifying)
         log("INFO", "Verifying package integrity.")
 
         guard let expected = descriptor.sha256, !expected.isEmpty else {
-            log("DEBUG", "No checksum provided. Skipping SHA-256 verification.")
-            return packageURL
+            if allowMissingChecksum {
+                log("DEBUG", "No checksum provided for bundled/local source. Skipping SHA-256 verification.")
+                return packageURL
+            }
+            throw emitError(.unknown("Descriptor '\(descriptor.id)' is missing SHA-256 for non-bundled model source."))
         }
 
         let actual = try sha256File(at: packageURL)
@@ -404,6 +429,7 @@ public final class CoreMLModelLoader: NSObject {
         descriptor: CoreMLModelDescriptor,
         configuration: MLModelConfiguration
     ) async throws -> CoreMLModelLoadResult {
+        try throwIfCancelled(for: descriptor)
         transition(.extracting)
         log("INFO", "Preparing model package for compilation.")
 
@@ -414,6 +440,7 @@ public final class CoreMLModelLoader: NSObject {
             try? fileManager.removeItem(at: compiledURL)
         }
 
+        try throwIfCancelled(for: descriptor)
         transition(.compiling(progress: 0.05))
         log("INFO", "Compiling CoreML model. This can take a while on device.")
 
@@ -425,6 +452,7 @@ public final class CoreMLModelLoader: NSObject {
             }
         }.value
 
+        try throwIfCancelled(for: descriptor)
         transition(.compiling(progress: 0.70))
 
         do {
@@ -437,6 +465,7 @@ public final class CoreMLModelLoader: NSObject {
             throw emitError(.filesystemFailure("Could not copy compiled model into cache: \(error.localizedDescription)"))
         }
 
+        try throwIfCancelled(for: descriptor)
         transition(.compiling(progress: 0.95))
 
         let manifest = ModelManifest(
@@ -455,6 +484,7 @@ public final class CoreMLModelLoader: NSObject {
             log("WARN", "Could not write model manifest: \(error.localizedDescription)")
         }
 
+        try throwIfCancelled(for: descriptor)
         transition(.loading)
         log("INFO", "Loading compiled CoreML model.")
 
@@ -474,7 +504,7 @@ public final class CoreMLModelLoader: NSObject {
 
         for (sourceIndex, source) in descriptor.remoteSources.enumerated() {
             for retry in 0...maximumRetriesPerSource {
-                try throwIfCancelled()
+                try throwIfCancelled(for: descriptor)
 
                 do {
                     let resumeData = try readResumeDataIfAny(for: descriptor)
@@ -491,8 +521,6 @@ public final class CoreMLModelLoader: NSObject {
                     log("WARN", message)
                     sourceErrors.append(message)
 
-                    try? deleteResumeData(for: descriptor)
-
                     if retry < maximumRetriesPerSource {
                         let delay = retryDelay(forAttempt: retry + 1)
                         transition(.retrying(
@@ -506,6 +534,7 @@ public final class CoreMLModelLoader: NSObject {
                     }
                 }
             }
+            try? deleteResumeData(for: descriptor)
         }
 
         throw emitError(.allSourcesFailed(messages: sourceErrors))
@@ -672,17 +701,35 @@ public final class CoreMLModelLoader: NSObject {
         return error
     }
 
-    private func resetCancellation() {
+    private func beginLoadOperation(for descriptor: CoreMLModelDescriptor) throws {
         lock.lock()
+        defer { lock.unlock() }
+
+        guard !isLoadInProgress else {
+            throw emitError(.unknown("Another model load is already in progress for this loader instance."))
+        }
+
+        isLoadInProgress = true
         isCancelled = false
-        lock.unlock()
+        activeLoadDescriptor = descriptor
     }
 
-    private func throwIfCancelled() throws {
+    private func endLoadOperation() {
+        lock.lock()
+        isLoadInProgress = false
+        activeLoadDescriptor = nil
+        activeDownloadContext = nil
+        lock.unlock()
+        disarmStallTimer()
+    }
+
+    private func throwIfCancelled(for descriptor: CoreMLModelDescriptor) throws {
         lock.lock()
         let cancelled = isCancelled
         lock.unlock()
         if cancelled {
+            try? Data().write(to: resumeDataURL(for: descriptor), options: .atomic)
+            log("WARN", "Saved cancel marker before aborting current phase.")
             throw emitError(.cancelled)
         }
     }
