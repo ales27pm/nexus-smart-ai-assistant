@@ -84,3 +84,7 @@ coremltools-venv/
 
 ios/
 android/
+!modules/
+!modules/expo-coreml-llm/
+!modules/expo-coreml-llm/ios/
+!modules/expo-coreml-llm/ios/**
