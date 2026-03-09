@@ -16,6 +16,7 @@ import {
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
+import { generateCoreMLTextStream } from "@/utils/coremlStreamingGenerator";
 
 export type CoreMLInitializationEvent = ModelAssetProgressEvent;
 export type CoreMLManagerState = "Idle" | "Loading" | "Ready" | "Disposing";
@@ -168,6 +169,65 @@ export class CoreMLManager {
 
       signal?.addEventListener("abort", abortHandler, { once: true });
       const rawOutput = await this.provider.generate(prompt, opts);
+      return cleanCoreMLOutput(rawOutput, prompt);
+    } catch (error) {
+      throw toActionableCoreMLError(error);
+    } finally {
+      signal?.removeEventListener("abort", abortHandler);
+      this.busy = false;
+    }
+  }
+
+  async generateStream(
+    systemPrompt: string,
+    userText: string,
+    onToken: (token: string) => void,
+    options: CoreMLGenerateOptions & { maxContext?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<string> {
+    if (this.state !== "Ready") {
+      throw new CoreMLError(
+        `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
+        COREML_ERROR_BUSY,
+      );
+    }
+
+    if (this.busy) {
+      throw new CoreMLError(
+        "CoreML generation already in progress. Please wait for the current request to finish.",
+        COREML_ERROR_BUSY,
+      );
+    }
+
+    const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
+    const opts: CoreMLGenerateOptions & { maxContext?: number } = {
+      ...DEFAULT_COREML_GENERATE_OPTIONS,
+      ...options,
+    };
+
+    this.busy = true;
+    const abortHandler = () => {
+      this.provider.cancel().catch((err) => {
+        console.warn("[CoreMLManager] cancel failed", err);
+      });
+    };
+
+    try {
+      if (signal?.aborted) {
+        abortHandler();
+        throw new CoreMLError(
+          "Generation aborted before start",
+          COREML_ERROR_ABORT,
+        );
+      }
+
+      signal?.addEventListener("abort", abortHandler, { once: true });
+      const rawOutput = await generateCoreMLTextStream(
+        this.provider,
+        prompt,
+        opts,
+        onToken,
+      );
       return cleanCoreMLOutput(rawOutput, prompt);
     } catch (error) {
       throw toActionableCoreMLError(error);

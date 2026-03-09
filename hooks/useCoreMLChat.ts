@@ -136,10 +136,47 @@ export function useCoreMLChat(
     [runExclusive],
   );
 
+  const generateStream = useCallback(
+    async (
+      systemPrompt: string,
+      userText: string,
+      onToken: (token: string) => void,
+      signal?: AbortSignal,
+    ) => {
+      const activeManager = activeManagerRef.current;
+
+      if (!activeManager) {
+        throw new CoreMLError(
+          "CoreML module not linked. Run: npm i, npx expo prebuild --clean, pod install, then rebuild iOS dev client.",
+        );
+      }
+
+      return runExclusive(
+        async () => {
+          const output = await activeManager.generateStream(
+            systemPrompt,
+            userText,
+            onToken,
+            undefined,
+            signal,
+          );
+          setActiveComputeUnits(activeManager.getActiveComputeUnits());
+          return output;
+        },
+        () =>
+          new CoreMLError(
+            "CoreML generation already in progress. Please wait for the current request to finish.",
+          ),
+      );
+    },
+    [runExclusive],
+  );
+
   return {
     isAvailable,
     isGenerating: isRunning,
     generate,
+    generateStream,
     service: activeManagerRef.current,
     loadStatus,
     activeComputeUnits,

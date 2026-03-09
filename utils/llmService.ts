@@ -13,6 +13,7 @@ import {
 } from "@/utils/coreml";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
+import { generateCoreMLTextStream } from "@/utils/coremlStreamingGenerator";
 import { Platform } from "react-native";
 
 export type CoreMLLoadStatusEvent = {
@@ -29,6 +30,13 @@ export interface ILLMService {
     systemPrompt: string,
     userText: string,
     options?: CoreMLGenerateOptions,
+    signal?: AbortSignal,
+  ): Promise<string>;
+  generateChatResponseStream(
+    systemPrompt: string,
+    userText: string,
+    onToken: (token: string) => void,
+    options?: CoreMLGenerateOptions & { maxContext?: number },
     signal?: AbortSignal,
   ): Promise<string>;
   dispose(): Promise<void>;
@@ -129,6 +137,48 @@ export class CoreMLLLMService implements ILLMService {
 
     try {
       const rawOutput = await this.provider.generate(prompt, options);
+      return cleanCoreMLOutput(rawOutput, prompt);
+    } catch (error) {
+      throw toActionableCoreMLError(error);
+    } finally {
+      signal?.removeEventListener("abort", abortHandler);
+    }
+  }
+
+  async generateChatResponseStream(
+    systemPrompt: string,
+    userText: string,
+    onToken: (token: string) => void,
+    options: CoreMLGenerateOptions & {
+      maxContext?: number;
+    } = DEFAULT_COREML_GENERATE_OPTIONS,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
+
+    const abortHandler = () => {
+      this.provider.cancel().catch((error) => {
+        console.warn("[CoreMLLLMService] cancel failed", error);
+      });
+    };
+
+    if (signal?.aborted) {
+      abortHandler();
+      throw new CoreMLError(
+        "Generation aborted before start",
+        COREML_ERROR_ABORT,
+      );
+    }
+
+    signal?.addEventListener("abort", abortHandler, { once: true });
+
+    try {
+      const rawOutput = await generateCoreMLTextStream(
+        this.provider,
+        prompt,
+        options,
+        onToken,
+      );
       return cleanCoreMLOutput(rawOutput, prompt);
     } catch (error) {
       throw toActionableCoreMLError(error);

@@ -726,7 +726,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     isAvailable: isCoreMLAvailable,
-    generate: generateCoreML,
+    generateStream: generateCoreMLStream,
     loadStatus: coreMLLoadStatus,
   } = useCoreMLChat();
 
@@ -932,13 +932,34 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             userText,
           );
           setMessages(thread as any);
-          const finalText = await generateCoreML(systemPrompt, userText);
+          let streamedText = "";
+          const finalText = await generateCoreMLStream(
+            systemPrompt,
+            userText,
+            (token) => {
+              streamedText += token;
+              const streamed = thread.map((message: any) =>
+                message.id === assistantId
+                  ? {
+                      ...message,
+                      parts: [{ type: "text", text: streamedText }],
+                    }
+                  : message,
+              );
+              setMessages(streamed as any);
+            },
+          );
 
           const updated = thread.map((message: any) =>
             message.id === assistantId
               ? {
                   ...message,
-                  parts: [{ type: "text", text: finalText }],
+                  parts: [
+                    {
+                      type: "text",
+                      text: finalText || streamedText || "(no output)",
+                    },
+                  ],
                 }
               : message,
           );
@@ -980,7 +1001,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
       useLocalLLM,
       isCoreMLAvailable,
       setMessages,
-      generateCoreML,
+      generateCoreMLStream,
     ],
   );
 
