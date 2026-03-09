@@ -1,5 +1,8 @@
 import Foundation
 
+// To populate sha256 values reliably when upstream headers omit digest metadata,
+// download artifacts once and compute hashes via:
+// scripts/coreml/resolve_model_sha256.sh <url> [url ...]
 enum CoreMLModelCatalog {
     static func defaultCatalog() -> [CoreMLModelPreset: CoreMLModelDescriptor] {
         [
