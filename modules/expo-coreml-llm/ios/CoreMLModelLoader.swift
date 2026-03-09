@@ -205,7 +205,7 @@ public enum CoreMLModelLoaderError: LocalizedError, Sendable {
         case let .allSourcesFailed(messages):
             return "All sources failed: " + messages.joined(separator: " | ")
         case let .bundleResourceMissing(name, ext):
-            return "Bundled resource missing: \(name).\(ext ?? "")"
+            return "Bundled resource missing: \(name)\(ext.map { ".\($0)" } ?? "")"
         case let .modelCompilationFailed(message):
             return "CoreML compilation failed: \(message)"
         case let .modelLoadFailed(message):
@@ -546,7 +546,8 @@ public final class CoreMLModelLoader: NSObject {
                 downloadTask: task,
                 receivedBytes: 0,
                 expectedBytes: nil,
-                lastProgressDate: Date()
+                lastProgressDate: Date(),
+                stallRequested: false
             )
             lock.unlock()
 
@@ -650,6 +651,19 @@ public final class CoreMLModelLoader: NSObject {
         return context
     }
 
+    private func requestStallCancellationContext() -> ActiveDownloadContext? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var context = activeDownloadContext else {
+            return nil
+        }
+
+        context.stallRequested = true
+        activeDownloadContext = context
+        return context
+    }
+
     // MARK: Helpers
 
     private func emitError(_ error: CoreMLModelLoaderError) -> CoreMLModelLoaderError {
@@ -738,26 +752,19 @@ public final class CoreMLModelLoader: NSObject {
                 return
             }
             let elapsed = Date().timeIntervalSince(context.lastProgressDate)
-            let taskIdentifier = context.downloadTask?.taskIdentifier
             self.lock.unlock()
 
-            guard elapsed >= self.stallTimeoutSeconds, let taskIdentifier else { return }
+            guard elapsed >= self.stallTimeoutSeconds,
+                  let stallContext = self.requestStallCancellationContext() else { return }
 
             self.log("ERROR", "Download stalled for \(Int(elapsed))s. Cancelling task.")
-            context.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
+            stallContext.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
                 guard let self else { return }
 
                 if let data {
-                    try? data.write(to: self.resumeDataURL(for: context.descriptor))
+                    try? data.write(to: self.resumeDataURL(for: stallContext.descriptor))
                     self.log("WARN", "Stored resume data after stall.")
                 }
-
-                guard let stalledContext = self.consumeActiveDownloadContext(taskIdentifier: taskIdentifier) else {
-                    return
-                }
-
-                self.log("ERROR", CoreMLModelLoaderError.stalledDownload.localizedDescription)
-                stalledContext.continuation.resume(throwing: CoreMLModelLoaderError.stalledDownload)
             })
         }
 
@@ -861,8 +868,15 @@ extension CoreMLModelLoader: URLSessionDownloadDelegate, URLSessionTaskDelegate 
         }
 
         if nsError.code == NSURLErrorCancelled {
-            log("WARN", CoreMLModelLoaderError.cancelled.localizedDescription)
-            context.continuation.resume(throwing: CoreMLModelLoaderError.cancelled)
+            if context.stallRequested {
+                let stalledError = CoreMLModelLoaderError.stalledDownload
+                log("ERROR", stalledError.localizedDescription)
+                context.continuation.resume(throwing: stalledError)
+            } else {
+                let cancelledError = CoreMLModelLoaderError.cancelled
+                log("WARN", cancelledError.localizedDescription)
+                context.continuation.resume(throwing: cancelledError)
+            }
             return
         }
 
@@ -891,4 +905,5 @@ private struct ActiveDownloadContext {
     var receivedBytes: Int64
     var expectedBytes: Int64?
     var lastProgressDate: Date
+    var stallRequested: Bool
 }
