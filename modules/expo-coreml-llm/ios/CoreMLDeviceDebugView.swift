@@ -57,16 +57,14 @@ struct CoreMLDeviceDebugView: View {
                         Text("Verbose load log")
                             .font(.headline)
 
-                        ScrollView {
-                            LazyVStack(alignment: .leading, spacing: 6) {
-                                ForEach(vm.logs) { entry in
-                                    Text("[\(entry.level)] \(entry.message)")
-                                        .font(.system(.caption, design: .monospaced))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                }
+                        LazyVStack(alignment: .leading, spacing: 6) {
+                            ForEach(vm.logs) { entry in
+                                Text("[\(entry.level)] \(entry.message)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
                         }
-                        .frame(minHeight: 220, maxHeight: 320)
+                        .frame(minHeight: 220, maxHeight: 320, alignment: .topLeading)
 
                         Button("Clear logs") {
                             vm.clearLogs()

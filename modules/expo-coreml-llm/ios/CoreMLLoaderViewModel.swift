@@ -33,6 +33,8 @@ public final class CoreMLLoaderViewModel: ObservableObject {
     }
 
     public func loadSelectedModel() async {
+        loadedModel = nil
+
         guard let descriptor = descriptors[selectedPreset] else {
             return
         }
@@ -49,6 +51,7 @@ public final class CoreMLLoaderViewModel: ObservableObject {
     }
 
     public func cancel() {
+        loadedModel = nil
         store.cancel()
     }
 

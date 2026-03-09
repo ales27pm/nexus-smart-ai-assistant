@@ -299,7 +299,7 @@ public final class CoreMLModelLoader: NSObject {
             return cachedResult
         }
 
-        if let bundledPackageURL = try resolveBundledPackageURL(descriptor) {
+        if let bundledPackageURL = resolveBundledPackageURL(descriptor) {
             log("INFO", "Bundled package found at \(bundledPackageURL.path)")
             let verified = try await verifyPackageIfNeeded(packageURL: bundledPackageURL, descriptor: descriptor)
             let result = try await compileAndLoad(packageURL: verified, descriptor: descriptor, configuration: configuration)
@@ -367,11 +367,12 @@ public final class CoreMLModelLoader: NSObject {
         }
     }
 
-    private func resolveBundledPackageURL(_ descriptor: CoreMLModelDescriptor) throws -> URL? {
+    private func resolveBundledPackageURL(_ descriptor: CoreMLModelDescriptor) -> URL? {
         guard let name = descriptor.bundledResourceName else { return nil }
         let ext = descriptor.bundledResourceExtension
         guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
-            throw emitError(.bundleResourceMissing(name: name, ext: ext))
+            log("WARN", "Bundled CoreML model resource missing: \(name).\(ext ?? "") – falling back to cached/remote sources")
+            return nil
         }
         return url
     }
@@ -636,6 +637,19 @@ public final class CoreMLModelLoader: NSObject {
         }
     }
 
+    private func consumeActiveDownloadContext(taskIdentifier: Int) -> ActiveDownloadContext? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let context = activeDownloadContext,
+              context.downloadTask?.taskIdentifier == taskIdentifier else {
+            return nil
+        }
+
+        activeDownloadContext = nil
+        return context
+    }
+
     // MARK: Helpers
 
     private func emitError(_ error: CoreMLModelLoaderError) -> CoreMLModelLoaderError {
@@ -719,27 +733,32 @@ public final class CoreMLModelLoader: NSObject {
             guard let self else { return }
 
             self.lock.lock()
-            defer { self.lock.unlock() }
-
-            guard let context = self.activeDownloadContext else { return }
-            let elapsed = Date().timeIntervalSince(context.lastProgressDate)
-
-            if elapsed >= self.stallTimeoutSeconds {
-                self.log("ERROR", "Download stalled for \(Int(elapsed))s. Cancelling task.")
-                context.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
-                    guard let self else { return }
-
-                    if let data {
-                        try? data.write(to: self.resumeDataURL(for: context.descriptor))
-                        self.log("WARN", "Stored resume data after stall.")
-                    }
-
-                    context.continuation.resume(throwing: self.emitError(.stalledDownload))
-                    self.lock.lock()
-                    self.activeDownloadContext = nil
-                    self.lock.unlock()
-                })
+            guard let context = self.activeDownloadContext else {
+                self.lock.unlock()
+                return
             }
+            let elapsed = Date().timeIntervalSince(context.lastProgressDate)
+            let taskIdentifier = context.downloadTask?.taskIdentifier
+            self.lock.unlock()
+
+            guard elapsed >= self.stallTimeoutSeconds, let taskIdentifier else { return }
+
+            self.log("ERROR", "Download stalled for \(Int(elapsed))s. Cancelling task.")
+            context.downloadTask?.cancel(byProducingResumeData: { [weak self] data in
+                guard let self else { return }
+
+                if let data {
+                    try? data.write(to: self.resumeDataURL(for: context.descriptor))
+                    self.log("WARN", "Stored resume data after stall.")
+                }
+
+                guard let stalledContext = self.consumeActiveDownloadContext(taskIdentifier: taskIdentifier) else {
+                    return
+                }
+
+                self.log("ERROR", CoreMLModelLoaderError.stalledDownload.localizedDescription)
+                stalledContext.continuation.resume(throwing: CoreMLModelLoaderError.stalledDownload)
+            })
         }
 
         stallTimer = timer
@@ -799,13 +818,9 @@ extension CoreMLModelLoader: URLSessionDownloadDelegate, URLSessionTaskDelegate 
     ) {
         disarmStallTimer()
 
-        lock.lock()
-        guard let context = activeDownloadContext, context.downloadTask?.taskIdentifier == downloadTask.taskIdentifier else {
-            lock.unlock()
+        guard let context = consumeActiveDownloadContext(taskIdentifier: downloadTask.taskIdentifier) else {
             return
         }
-        activeDownloadContext = nil
-        lock.unlock()
 
         do {
             let destinationURL = cachedPackageURL(for: context.descriptor)
@@ -819,7 +834,9 @@ extension CoreMLModelLoader: URLSessionDownloadDelegate, URLSessionTaskDelegate 
             log("INFO", "Download finished: \(destinationURL.lastPathComponent)")
             context.continuation.resume(returning: destinationURL)
         } catch {
-            context.continuation.resume(throwing: emitError(.filesystemFailure("Could not move downloaded file: \(error.localizedDescription)")))
+            let moveError = CoreMLModelLoaderError.filesystemFailure("Could not move downloaded file: \(error.localizedDescription)")
+            log("WARN", moveError.localizedDescription)
+            context.continuation.resume(throwing: moveError)
         }
     }
 
@@ -832,13 +849,9 @@ extension CoreMLModelLoader: URLSessionDownloadDelegate, URLSessionTaskDelegate 
 
         disarmStallTimer()
 
-        lock.lock()
-        guard let context = activeDownloadContext, context.downloadTask?.taskIdentifier == task.taskIdentifier else {
-            lock.unlock()
+        guard let context = consumeActiveDownloadContext(taskIdentifier: task.taskIdentifier) else {
             return
         }
-        activeDownloadContext = nil
-        lock.unlock()
 
         let nsError = error as NSError
 
@@ -848,11 +861,14 @@ extension CoreMLModelLoader: URLSessionDownloadDelegate, URLSessionTaskDelegate 
         }
 
         if nsError.code == NSURLErrorCancelled {
-            context.continuation.resume(throwing: emitError(.cancelled))
+            log("WARN", CoreMLModelLoaderError.cancelled.localizedDescription)
+            context.continuation.resume(throwing: CoreMLModelLoaderError.cancelled)
             return
         }
 
-        context.continuation.resume(throwing: emitError(.unknown("Download failed: \(error.localizedDescription)")))
+        let nonTerminalError = CoreMLModelLoaderError.unknown("Download failed: \(error.localizedDescription)")
+        log("WARN", nonTerminalError.localizedDescription)
+        context.continuation.resume(throwing: nonTerminalError)
     }
 }
 
