@@ -20,7 +20,11 @@ describe("generateCoreMLTextStream", () => {
     const out = await generateCoreMLTextStream(
       provider,
       "prompt",
-      { maxNewTokens: 10, stopTokenIds: [2], tokenizer: { kind: "gpt2_bpe" } },
+      {
+        maxNewTokens: 10,
+        stopTokenIds: [2],
+        tokenizer: { kind: "byte_level_bpe" },
+      },
       (token) => tokens.push(token),
     );
 
@@ -79,7 +83,7 @@ describe("generateCoreMLTextStream", () => {
     const out = await generateCoreMLTextStream(provider, "prompt", {
       maxNewTokens: 6,
       stopTokenIds: [2],
-      tokenizer: { kind: "gpt2_bpe" },
+      tokenizer: { kind: "byte_level_bpe" },
     });
 
     expect(out).toBe("Hello world");

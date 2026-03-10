@@ -66,9 +66,9 @@ describe("dolphinCoremlGenerate", () => {
     );
   });
 
-  it("accepts gpt2_bpe tokenizer configs without normalization", async () => {
+  it("accepts byte_level_bpe tokenizer configs", async () => {
     const legacyTokenizer = {
-      kind: "gpt2_bpe" as const,
+      kind: "byte_level_bpe" as const,
       vocabJsonAssetPath: "module:tokenizers/gpt2/gpt2-vocab.json",
       mergesTxtAssetPath: "module:tokenizers/gpt2/gpt2-merges.txt",
       bosTokenId: 777,
