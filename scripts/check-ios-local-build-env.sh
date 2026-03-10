@@ -100,6 +100,61 @@ print_version() {
   return 1
 }
 
+check_invalid_codesigning_trust_settings() {
+  if ! command -v security >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local user_trust_dump=""
+  user_trust_dump="$(security dump-trust-settings 2>/dev/null || true)"
+  if [[ -z "$user_trust_dump" ]]; then
+    return 0
+  fi
+
+  local current_cert=""
+  local track_cert="0"
+  local cert_with_invalid_override=()
+
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^Cert[[:space:]][0-9]+:[[:space:]](.+)$ ]]; then
+      current_cert="${BASH_REMATCH[1]}"
+      track_cert="0"
+
+      if [[ "$current_cert" == Apple\ Distribution:* || "$current_cert" == Apple\ Development:* ]]; then
+        track_cert="1"
+      fi
+      continue
+    fi
+
+    if [[ "$track_cert" == "1" && "$line" =~ Result[[:space:]]Type[[:space:]]*:[[:space:]]kSecTrustSettingsResultTrustAsRoot ]]; then
+      cert_with_invalid_override+=("$current_cert")
+      # One trust-as-root override is enough to mark the cert as invalid.
+      track_cert="0"
+    fi
+  done <<<"$user_trust_dump"
+
+  if [[ ${#cert_with_invalid_override[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "❌ Invalid user trust settings detected for Apple code-signing certificate(s):" >&2
+  for cert in "${cert_with_invalid_override[@]}"; do
+    echo "  - ${cert}" >&2
+  done
+
+  cat <<'MSG' >&2
+These custom trust overrides can break local iOS archives with:
+  Invalid trust settings. Restore system default trust settings for certificate ...
+
+Fix:
+  1) Open Keychain Access -> login keychain -> Certificates.
+  2) For each certificate above: Get Info -> Trust -> set "When using this certificate" to "Use System Defaults".
+  3) Re-run ./scripts/check-ios-local-build-env.sh, then retry the local EAS build.
+MSG
+
+  return 1
+}
+
 resolve_eas_runner() {
   local eas_raw_output=""
   local eas_version=""
@@ -211,6 +266,10 @@ if [ ${#missing_tools[@]} -gt 0 ]; then
     esac
   done
 
+  exit 1
+fi
+
+if ! check_invalid_codesigning_trust_settings; then
   exit 1
 fi
 
