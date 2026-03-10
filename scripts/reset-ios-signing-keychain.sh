@@ -95,10 +95,14 @@ security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
 security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
-CURRENT_KEYCHAINS_RAW="$(security list-keychains -d user)"
-if ! echo "$CURRENT_KEYCHAINS_RAW" | tr -d '"' | grep -Fq "$KEYCHAIN_PATH"; then
+CURRENT_KEYCHAINS=()
+while IFS= read -r line; do
+  CURRENT_KEYCHAINS+=("$line")
+done < <(security list-keychains -d user | sed -E 's/^[[:space:]]*"//; s/"$//')
+
+if ! printf '%s\n' "${CURRENT_KEYCHAINS[@]}" | grep -Fqx "$KEYCHAIN_PATH"; then
   echo "[i] Adding keychain to user search list"
-  security list-keychains -d user -s "$KEYCHAIN_PATH" $(echo "$CURRENT_KEYCHAINS_RAW" | tr -d '"')
+  security list-keychains -d user -s "$KEYCHAIN_PATH" "${CURRENT_KEYCHAINS[@]}"
 fi
 
 if [[ "$SET_DEFAULT" == "1" ]]; then
