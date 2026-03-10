@@ -99,7 +99,7 @@ export type LoadModelOptions = {
 };
 
 type TokenizerConfig = {
-  kind: "none" | "gpt2_bpe" | "byte_level_bpe";
+  kind: "none" | "byte_level_bpe";
   vocabJsonAssetPath?: string;
   mergesTxtAssetPath?: string;
   bosTokenId?: number;
@@ -262,12 +262,9 @@ function normalizeTokenizer(
       "tokenizer.kind='none' is invalid for tokenize/decode/generate paths that require a tokenizer.",
     );
   }
-  if (
-    normalized.kind !== "byte_level_bpe" &&
-    normalized.kind !== "gpt2_bpe"
-  ) {
+  if (normalized.kind !== "byte_level_bpe") {
     throw new Error(
-      "Unsupported tokenizer.kind. Use 'byte_level_bpe' (module:tokenizers/byte_level_bpe/{vocab.json,merges.txt}) or 'gpt2_bpe' (module:tokenizers/gpt2/{gpt2-vocab.json,gpt2-merges.txt}).",
+      "Unsupported tokenizer.kind. Use 'byte_level_bpe' with module:tokenizers/gpt2/{gpt2-vocab.json,gpt2-merges.txt}.",
     );
   }
   return normalized;

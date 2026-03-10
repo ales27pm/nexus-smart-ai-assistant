@@ -355,7 +355,7 @@ async function run() {
     `INFO tokenizer cache key derived from manifest.tokenizerRepo=${manifest.tokenizerRepo} -> ${tokenizerCacheKey}`,
   );
   notes.push(
-    "INFO tokenizer kind byte_level_bpe is expected for Llama 3.2 models; gpt2_bpe remains accepted as a legacy alias.",
+    "INFO tokenizer kind byte_level_bpe is expected for Llama 3.2 models.",
   );
 
   console.log("[coreml-validate] Manifest", manifestPath);

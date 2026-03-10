@@ -222,7 +222,7 @@ describe("coreml utils", () => {
       );
 
       expect(actionable.code).toBe(120);
-      expect(actionable.message).toContain("byte_level_bpe or gpt2_bpe");
+      expect(actionable.message).toContain("byte_level_bpe");
     });
   });
 });
