@@ -938,32 +938,34 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             userText,
             (token) => {
               streamedText += token;
-              const streamed = thread.map((message: any) =>
-                message.id === assistantId
-                  ? {
-                      ...message,
-                      parts: [{ type: "text", text: streamedText }],
-                    }
-                  : message,
+              setMessages((current: any) =>
+                current.map((message: any) =>
+                  message.id === assistantId
+                    ? {
+                        ...message,
+                        parts: [{ type: "text", text: streamedText }],
+                      }
+                    : message,
+                ),
               );
-              setMessages(streamed as any);
             },
           );
 
-          const updated = thread.map((message: any) =>
-            message.id === assistantId
-              ? {
-                  ...message,
-                  parts: [
-                    {
-                      type: "text",
-                      text: finalText || streamedText || "(no output)",
-                    },
-                  ],
-                }
-              : message,
+          setMessages((current: any) =>
+            current.map((message: any) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    parts: [
+                      {
+                        type: "text",
+                        text: finalText || streamedText || "(no output)",
+                      },
+                    ],
+                  }
+                : message,
+            ),
           );
-          setMessages(updated as any);
         } catch (error: unknown) {
           const userMessage = {
             id: generateId(),

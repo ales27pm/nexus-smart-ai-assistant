@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import {
   CoreMLError,
+  CoreMLGenerateOptions,
   CoreMLLoadModelOptions,
   CoreMLLoadUxState,
 } from "@/utils/coreml";
@@ -141,6 +142,7 @@ export function useCoreMLChat(
       systemPrompt: string,
       userText: string,
       onToken: (token: string) => void,
+      options?: CoreMLGenerateOptions & { maxContext?: number },
       signal?: AbortSignal,
     ) => {
       const activeManager = activeManagerRef.current;
@@ -157,7 +159,7 @@ export function useCoreMLChat(
             systemPrompt,
             userText,
             onToken,
-            undefined,
+            options,
             signal,
           );
           setActiveComputeUnits(activeManager.getActiveComputeUnits());

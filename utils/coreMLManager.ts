@@ -131,51 +131,16 @@ export class CoreMLManager {
     options: CoreMLGenerateOptions = {},
     signal?: AbortSignal,
   ): Promise<string> {
-    if (this.state !== "Ready") {
-      throw new CoreMLError(
-        `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
-        COREML_ERROR_BUSY,
-      );
-    }
+    const { prompt, output } = await this.runGeneration(
+      systemPrompt,
+      userText,
+      options,
+      signal,
+      (promptText, mergedOptions) =>
+        this.provider.generate(promptText, mergedOptions),
+    );
 
-    if (this.busy) {
-      throw new CoreMLError(
-        "CoreML generation already in progress. Please wait for the current request to finish.",
-        COREML_ERROR_BUSY,
-      );
-    }
-
-    const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-    const opts: CoreMLGenerateOptions = {
-      ...DEFAULT_COREML_GENERATE_OPTIONS,
-      ...options,
-    };
-    this.busy = true;
-
-    const abortHandler = () => {
-      this.provider.cancel().catch((err) => {
-        console.warn("[CoreMLManager] cancel failed", err);
-      });
-    };
-
-    try {
-      if (signal?.aborted) {
-        abortHandler();
-        throw new CoreMLError(
-          "Generation aborted before start",
-          COREML_ERROR_ABORT,
-        );
-      }
-
-      signal?.addEventListener("abort", abortHandler, { once: true });
-      const rawOutput = await this.provider.generate(prompt, opts);
-      return cleanCoreMLOutput(rawOutput, prompt);
-    } catch (error) {
-      throw toActionableCoreMLError(error);
-    } finally {
-      signal?.removeEventListener("abort", abortHandler);
-      this.busy = false;
-    }
+    return cleanCoreMLOutput(output, prompt);
   }
 
   async generateStream(
@@ -185,6 +150,33 @@ export class CoreMLManager {
     options: CoreMLGenerateOptions & { maxContext?: number } = {},
     signal?: AbortSignal,
   ): Promise<string> {
+    const { prompt, output } = await this.runGeneration(
+      systemPrompt,
+      userText,
+      options,
+      signal,
+      (promptText, mergedOptions) =>
+        generateCoreMLTextStream(
+          this.provider,
+          promptText,
+          mergedOptions,
+          onToken,
+        ),
+    );
+
+    return cleanCoreMLOutput(output, prompt);
+  }
+
+  private async runGeneration(
+    systemPrompt: string,
+    userText: string,
+    options: CoreMLGenerateOptions & { maxContext?: number },
+    signal: AbortSignal | undefined,
+    executor: (
+      prompt: string,
+      opts: CoreMLGenerateOptions & { maxContext?: number },
+    ) => Promise<string>,
+  ): Promise<{ prompt: string; output: string }> {
     if (this.state !== "Ready") {
       throw new CoreMLError(
         `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
@@ -200,7 +192,7 @@ export class CoreMLManager {
     }
 
     const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-    const opts: CoreMLGenerateOptions & { maxContext?: number } = {
+    const mergedOptions: CoreMLGenerateOptions & { maxContext?: number } = {
       ...DEFAULT_COREML_GENERATE_OPTIONS,
       ...options,
     };
@@ -222,13 +214,8 @@ export class CoreMLManager {
       }
 
       signal?.addEventListener("abort", abortHandler, { once: true });
-      const rawOutput = await generateCoreMLTextStream(
-        this.provider,
-        prompt,
-        opts,
-        onToken,
-      );
-      return cleanCoreMLOutput(rawOutput, prompt);
+      const output = await executor(prompt, mergedOptions);
+      return { prompt, output };
     } catch (error) {
       throw toActionableCoreMLError(error);
     } finally {

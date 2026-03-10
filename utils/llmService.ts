@@ -118,31 +118,10 @@ export class CoreMLLLMService implements ILLMService {
     signal?: AbortSignal,
   ): Promise<string> {
     const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-
-    const abortHandler = () => {
-      this.provider.cancel().catch((error) => {
-        console.warn("[CoreMLLLMService] cancel failed", error);
-      });
-    };
-
-    if (signal?.aborted) {
-      abortHandler();
-      throw new CoreMLError(
-        "Generation aborted before start",
-        COREML_ERROR_ABORT,
-      );
-    }
-
-    signal?.addEventListener("abort", abortHandler, { once: true });
-
-    try {
-      const rawOutput = await this.provider.generate(prompt, options);
-      return cleanCoreMLOutput(rawOutput, prompt);
-    } catch (error) {
-      throw toActionableCoreMLError(error);
-    } finally {
-      signal?.removeEventListener("abort", abortHandler);
-    }
+    const rawOutput = await this.runWithAbort(signal, () =>
+      this.provider.generate(prompt, options),
+    );
+    return cleanCoreMLOutput(rawOutput, prompt);
   }
 
   async generateChatResponseStream(
@@ -156,6 +135,16 @@ export class CoreMLLLMService implements ILLMService {
   ): Promise<string> {
     const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
 
+    const rawOutput = await this.runWithAbort(signal, () =>
+      generateCoreMLTextStream(this.provider, prompt, options, onToken),
+    );
+    return cleanCoreMLOutput(rawOutput, prompt);
+  }
+
+  private async runWithAbort<T>(
+    signal: AbortSignal | undefined,
+    operation: () => Promise<T>,
+  ): Promise<T> {
     const abortHandler = () => {
       this.provider.cancel().catch((error) => {
         console.warn("[CoreMLLLMService] cancel failed", error);
@@ -173,13 +162,7 @@ export class CoreMLLLMService implements ILLMService {
     signal?.addEventListener("abort", abortHandler, { once: true });
 
     try {
-      const rawOutput = await generateCoreMLTextStream(
-        this.provider,
-        prompt,
-        options,
-        onToken,
-      );
-      return cleanCoreMLOutput(rawOutput, prompt);
+      return await operation();
     } catch (error) {
       throw toActionableCoreMLError(error);
     } finally {
