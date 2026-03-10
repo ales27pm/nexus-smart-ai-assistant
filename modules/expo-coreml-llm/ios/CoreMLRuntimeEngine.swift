@@ -1,5 +1,6 @@
 import Foundation
 import CoreML
+import Darwin
 
 struct CoreMLLoadOptions: Sendable {
     let modelFile: String?
@@ -288,6 +289,7 @@ private struct GenerationSession {
     var metrics: RuntimeMetrics
     var startedAt: Date
     var firstTokenAt: Date?
+    var samplerRng: SeededGenerator
 }
 
 private struct SeededGenerator: RandomNumberGenerator {
@@ -431,11 +433,6 @@ final class CoreMLRuntimeEngine {
         arena.rebuild(from: prompt)
 
         let tokenizerID = options.generation.tokenizer?.kind ?? "native-token-ids"
-        let reusedPrefixTokens = await prefixCache.longestReusablePrefix(
-            modelID: info.compiledURL.lastPathComponent,
-            tokenizerID: tokenizerID,
-            promptTokenIds: prompt
-        )
 
         var session = GenerationSession(
             promptTokens: prompt,
@@ -448,11 +445,13 @@ final class CoreMLRuntimeEngine {
             pendingLogits: nil,
             metrics: RuntimeMetrics(),
             startedAt: Date(),
-            firstTokenAt: nil
+            firstTokenAt: nil,
+            samplerRng: SeededGenerator(seed: makeInitialSamplerSeed(promptTokenIds: prompt, explicitSeed: options.generation.seed))
         )
         session.metrics.kvPagesInUse = arena.pages.count
         session.metrics.activeContextLength = arena.tokenCount
-        session.metrics.reusedPrefixTokens = reusedPrefixTokens
+        session.metrics.reusedPrefixTokens = 0
+        session.metrics.peakMemoryBytes = currentResidentMemoryBytes()
 
         let prefillStart = Date()
         if info.hasState {
@@ -496,7 +495,8 @@ final class CoreMLRuntimeEngine {
         let sampled = sampleToken(
             logits: logits,
             history: session.arena.allTokens,
-            options: session.options
+            options: session.options,
+            rng: &session.samplerRng
         )
 
         if session.firstTokenAt == nil {
@@ -509,6 +509,7 @@ final class CoreMLRuntimeEngine {
         session.metrics.kvPagesInUse = session.arena.pages.count
         session.metrics.activeContextLength = session.arena.tokenCount
         session.metrics.generatedTokens += 1
+        session.metrics.peakMemoryBytes = max(session.metrics.peakMemoryBytes, currentResidentMemoryBytes())
 
         let priorLatency = session.metrics.avgTokenLatencyMS * Double(max(session.metrics.generatedTokens - 1, 0))
         let currentLatency = Date().timeIntervalSince(decodeStart) * 1000
@@ -602,7 +603,7 @@ final class CoreMLRuntimeEngine {
             .appendingPathComponent("CoreMLCompiled", isDirectory: true)
         try fileManager.createDirectory(at: cachesDir, withIntermediateDirectories: true, attributes: nil)
 
-        let fingerprint = Self.hashString(sourceURL.path + "|" + sourceURL.lastPathComponent)
+        let fingerprint = try sourceFingerprint(for: sourceURL)
         let destination = cachesDir.appendingPathComponent("\(fingerprint).mlmodelc", isDirectory: true)
         if fileManager.fileExists(atPath: destination.path) {
             return destination
@@ -797,7 +798,7 @@ final class CoreMLRuntimeEngine {
         return vector
     }
 
-    private func sampleToken(logits: [Float], history: [Int], options: CoreMLGenerateOptionsRecord) -> Int {
+    private func sampleToken(logits: [Float], history: [Int], options: CoreMLGenerateOptionsRecord, rng: inout SeededGenerator) -> Int {
         var adjusted = logits
         let temperature = max(0.0001, Float(options.temperature))
         let repetitionPenalty = max(0.0001, Float(options.repetitionPenalty))
@@ -839,8 +840,6 @@ final class CoreMLRuntimeEngine {
         let total = nucleus.reduce(Float(0)) { $0 + $1.prob }
         guard total > 0 else { return nucleus.first?.index ?? 0 }
 
-        let seedValue = (options.seed ?? history.count) &+ 1
-        var rng = SeededGenerator(seed: UInt64(seedValue))
         let threshold = Float.random(in: 0..<total, using: &rng)
         var running: Float = 0
         for candidate in nucleus {
@@ -850,6 +849,63 @@ final class CoreMLRuntimeEngine {
             }
         }
         return nucleus.last?.index ?? 0
+    }
+
+    private func makeInitialSamplerSeed(promptTokenIds: [Int], explicitSeed: Int?) -> UInt64 {
+        if let explicitSeed {
+            return UInt64(bitPattern: Int64(explicitSeed))
+        }
+
+        let promptHash = UInt64(Self.hashTokenIds(promptTokenIds).hashValue)
+        let wallClock = UInt64(Date().timeIntervalSince1970 * 1_000_000)
+        return promptHash ^ wallClock ^ 0x9E3779B97F4A7C15
+    }
+
+    private func currentResidentMemoryBytes() -> Int64 {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info>.size / MemoryLayout<integer_t>.size
+        )
+
+        let result: kern_return_t = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPointer in
+                task_info(
+                    mach_task_self_,
+                    task_flavor_t(MACH_TASK_BASIC_INFO),
+                    intPointer,
+                    &count
+                )
+            }
+        }
+
+        guard result == KERN_SUCCESS else { return 0 }
+        return Int64(info.resident_size)
+    }
+
+    private func sourceFingerprint(for sourceURL: URL) throws -> String {
+        let values = try sourceURL.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey])
+        if values.isDirectory == true {
+            var entries: [String] = []
+            let enumerator = fileManager.enumerator(
+                at: sourceURL,
+                includingPropertiesForKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+            while let item = enumerator?.nextObject() as? URL {
+                let itemValues = try item.resourceValues(forKeys: [.isDirectoryKey, .contentModificationDateKey, .fileSizeKey])
+                if itemValues.isDirectory == true { continue }
+                let relativePath = item.path.replacingOccurrences(of: sourceURL.path + "/", with: "")
+                let size = itemValues.fileSize ?? 0
+                let modified = itemValues.contentModificationDate?.timeIntervalSince1970 ?? 0
+                entries.append("\(relativePath)|\(size)|\(modified)")
+            }
+            entries.sort()
+            return Self.hashString(sourceURL.path + "|dir|" + entries.joined(separator: "||"))
+        }
+
+        let modified = values.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let size = values.fileSize ?? 0
+        return Self.hashString(sourceURL.path + "|file|\(size)|\(modified)")
     }
 
     private static func hashTokenIds(_ tokenIds: [Int]) -> String {

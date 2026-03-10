@@ -47,15 +47,15 @@ export function getTokenizerCacheKeyFromManifest(manifest) {
 export function getTokenizerBundlePathsFromManifest(manifest) {
   const bundleDir = asNonEmptyString(
     manifest.tokenizerBundleDir ??
-      "modules/expo-coreml-llm/ios/resources/tokenizers/byte_level_bpe",
+      "modules/expo-coreml-llm/ios/resources/tokenizers/gpt2",
     "tokenizerBundleDir",
   );
   const vocabFile = asNonEmptyString(
-    manifest.tokenizerVocabFile ?? "vocab.json",
+    manifest.tokenizerVocabFile ?? "gpt2-vocab.json",
     "tokenizerVocabFile",
   );
   const mergesFile = asNonEmptyString(
-    manifest.tokenizerMergesFile ?? "merges.txt",
+    manifest.tokenizerMergesFile ?? "gpt2-merges.txt",
     "tokenizerMergesFile",
   );
 

@@ -154,6 +154,7 @@ type NativeModuleShape = {
   }) => Promise<boolean>;
   generateNextTokenAsync?: () => Promise<number | null>;
   endGenerationSessionAsync?: () => Promise<void>;
+  getRuntimeMetricsAsync?: () => Promise<Record<string, unknown>>;
   cancelAsync(): Promise<void>;
 };
 
@@ -261,7 +262,7 @@ function normalizeTokenizer(
       "tokenizer.kind='none' is invalid for tokenize/decode/generate paths that require a tokenizer.",
     );
   }
-  if (normalized.kind !== "byte_level_bpe" && normalized.kind !== "gpt2_bpe") {
+      "Unsupported tokenizer.kind. Use 'byte_level_bpe' with module:tokenizers/gpt2/{gpt2-vocab.json,gpt2-merges.txt}.",
     throw new Error(
       "Unsupported tokenizer.kind. Use 'byte_level_bpe' (module:tokenizers/byte_level_bpe/{vocab.json,merges.txt}) or 'gpt2_bpe' (module:tokenizers/gpt2/{gpt2-vocab.json,gpt2-merges.txt}).",
     );
@@ -310,6 +311,13 @@ export const CoreMLLLM = {
       return Promise.resolve();
     }
     return mod.endGenerationSessionAsync();
+  },
+  getRuntimeMetrics: () => {
+    const mod = getNativeModule();
+    if (typeof mod.getRuntimeMetricsAsync !== "function") {
+      return Promise.resolve({});
+    }
+    return mod.getRuntimeMetricsAsync();
   },
   cancel: () => getNativeModule().cancelAsync(),
 };

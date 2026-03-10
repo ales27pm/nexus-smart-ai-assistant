@@ -244,8 +244,16 @@ final class CoreMLTokenizerFactory {
             throw CoreMLTokenizerError.invalidConfiguration("tokenizer.kind='none' is invalid for tokenize/decode/generate paths that require a tokenizer.")
         }
 
-        let vocabPath = try resolveRequiredAssetPath(config.vocabJsonAssetPath, label: "vocabJsonAssetPath")
-        let mergesPath = try resolveRequiredAssetPath(config.mergesTxtAssetPath, label: "mergesTxtAssetPath")
+        let vocabPath = try resolveRequiredAssetPath(
+            config.vocabJsonAssetPath,
+            label: "vocabJsonAssetPath",
+            kind: config.kind
+        )
+        let mergesPath = try resolveRequiredAssetPath(
+            config.mergesTxtAssetPath,
+            label: "mergesTxtAssetPath",
+            kind: config.kind
+        )
 
         let cacheKey = [config.kind, vocabPath, mergesPath].joined(separator: "|")
 
@@ -271,13 +279,14 @@ final class CoreMLTokenizerFactory {
         return tokenizer
     }
 
-    private func resolveRequiredAssetPath(_ rawValue: String?, label: String) throws -> String {
+    private func resolveRequiredAssetPath(_ rawValue: String?, label: String, kind: String) throws -> String {
         guard let raw = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             throw CoreMLTokenizerError.invalidConfiguration("Tokenizer config missing \(label).")
         }
 
         if raw.hasPrefix("module:") {
             let relative = String(raw.dropFirst("module:".count))
+            let candidates = moduleRelativeCandidates(for: relative, kind: kind, label: label)
             let bundle = Bundle.main
             let bundleCandidates = [
                 bundle.resourceURL,
@@ -287,17 +296,24 @@ final class CoreMLTokenizerFactory {
             ].compactMap { $0 }
 
             for candidate in bundleCandidates {
-                let path = candidate.appendingPathComponent(relative).path
-                if FileManager.default.fileExists(atPath: path) {
-                    return path
-                }
-                let bundleResourcePath = candidate.appendingPathComponent("ExpoCoreMLLLMResources.bundle").appendingPathComponent(relative).path
-                if FileManager.default.fileExists(atPath: bundleResourcePath) {
-                    return bundleResourcePath
+                for relativeCandidate in candidates {
+                    let path = candidate.appendingPathComponent(relativeCandidate).path
+                    if FileManager.default.fileExists(atPath: path) {
+                        return path
+                    }
+                    let bundleResourcePath = candidate
+                        .appendingPathComponent("ExpoCoreMLLLMResources.bundle")
+                        .appendingPathComponent(relativeCandidate)
+                        .path
+                    if FileManager.default.fileExists(atPath: bundleResourcePath) {
+                        return bundleResourcePath
+                    }
                 }
             }
 
-            throw CoreMLTokenizerError.assetMissing("Tokenizer asset not found for module path: \(raw)")
+            throw CoreMLTokenizerError.assetMissing(
+                "Tokenizer asset not found for module path: \(raw). Checked candidates: \(candidates.joined(separator: ", "))"
+            )
         }
 
         let expanded = (raw as NSString).expandingTildeInPath
@@ -306,5 +322,53 @@ final class CoreMLTokenizerFactory {
         }
 
         throw CoreMLTokenizerError.assetMissing("Tokenizer asset not found at path: \(raw)")
+    }
+
+    private func moduleRelativeCandidates(for relative: String, kind: String, label: String) -> [String] {
+        var candidates: [String] = [relative]
+
+        let normalizedRelative = relative.replacingOccurrences(of: "\\", with: "/")
+        let isVocab = label == "vocabJsonAssetPath"
+
+        // Primary packaged tokenizer assets currently live under tokenizers/gpt2
+        // with collision-safe filenames.
+        let canonical = isVocab
+            ? "tokenizers/gpt2/gpt2-vocab.json"
+            : "tokenizers/gpt2/gpt2-merges.txt"
+        candidates.append(canonical)
+
+        // Backward compatibility fallbacks for older packaging scripts.
+            candidates.append(normalizedRelative.replacingOccurrences(of: "vocab.json", with: "gpt2-vocab.json"))
+            candidates.append("tokenizers/gpt2/vocab.json")
+            candidates.append(normalizedRelative.replacingOccurrences(of: "merges.txt", with: "gpt2-merges.txt"))
+            candidates.append("tokenizers/gpt2/merges.txt")
+        // Keep kind-aware remap for callers that still pass byte-level paths.
+        if kind == "byte_level_bpe" {
+            if isVocab {
+                candidates.append("tokenizers/byte_level_bpe/vocab.json")
+            } else {
+                candidates.append("tokenizers/byte_level_bpe/merges.txt")
+            }
+        }
+
+            if normalizedRelative == "tokenizers/gpt2/gpt2-vocab.json" {
+                candidates.append("tokenizers/byte_level_bpe/vocab.json")
+            } else if normalizedRelative == "tokenizers/gpt2/gpt2-merges.txt" {
+                candidates.append("tokenizers/byte_level_bpe/merges.txt")
+            }
+        default:
+            break
+        }
+
+        if isVocab {
+            candidates.append("tokenizers/gpt2/gpt2-vocab.json")
+            candidates.append("tokenizers/byte_level_bpe/vocab.json")
+        } else {
+            candidates.append("tokenizers/gpt2/gpt2-merges.txt")
+            candidates.append("tokenizers/byte_level_bpe/merges.txt")
+        }
+
+        var seen = Set<String>()
+        return candidates.filter { seen.insert($0).inserted }
     }
 }

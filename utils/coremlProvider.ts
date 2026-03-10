@@ -41,6 +41,7 @@ export interface ICoreMLProvider {
   }): Promise<boolean>;
   generateNextToken?(): Promise<number | null>;
   endGenerationSession?(): Promise<void>;
+  getRuntimeMetrics?(): Promise<Record<string, unknown>>;
   unload(): Promise<void>;
   cancel(): Promise<void>;
   isLoaded(): Promise<boolean>;
@@ -273,6 +274,22 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
 
     try {
       await bridge.endGenerationSession();
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async getRuntimeMetrics(): Promise<Record<string, unknown>> {
+    const bridge = this.bridge as CoreMLBridge & {
+      getRuntimeMetrics?: () => Promise<Record<string, unknown>>;
+    };
+
+    if (typeof bridge.getRuntimeMetrics !== "function") {
+      return {};
+    }
+
+    try {
+      return await bridge.getRuntimeMetrics();
     } catch (error) {
       throw normalizeCoreMLError(error);
     }
