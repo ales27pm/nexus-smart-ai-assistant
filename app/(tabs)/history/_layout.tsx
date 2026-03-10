@@ -1,5 +1,5 @@
-import { Stack } from 'expo-router';
-import Colors from '@/constants/colors';
+import { Stack } from "expo-router";
+import Colors from "../../../constants/colors";
 
 export default function HistoryLayout() {
   return (
@@ -7,11 +7,11 @@ export default function HistoryLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: Colors.dark.surface },
         headerTintColor: Colors.dark.text,
-        headerTitleStyle: { fontWeight: '700' as const, fontSize: 16 },
+        headerTitleStyle: { fontWeight: "700" as const, fontSize: 16 },
         contentStyle: { backgroundColor: Colors.dark.background },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'History' }} />
+      <Stack.Screen name="index" options={{ title: "History" }} />
     </Stack>
   );
 }

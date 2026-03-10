@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from 'react';
+import React, { useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,23 @@ import {
   Alert,
   TextInput,
   ScrollView,
-} from 'react-native';
-import { Brain, Tag, Trash2, Zap, Star, Activity, Eye, Search, X, Filter } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
-import Colors from '@/constants/colors';
-import { useConversations } from '@/providers/ConversationsProvider';
-import { MemoryEntry, MemoryCategory } from '@/types';
+} from "react-native";
+import {
+  Brain,
+  Tag,
+  Trash2,
+  Zap,
+  Star,
+  Activity,
+  Eye,
+  Search,
+  X,
+  Filter,
+} from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import Colors from "../../../constants/colors";
+import { useConversations } from "@/providers/ConversationsProvider";
+import { MemoryEntry, MemoryCategory } from "@/types";
 
 const CATEGORY_COLORS: Record<string, string> = {
   preference: Colors.dark.toolMemoryStore,
@@ -28,19 +39,27 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 const ALL_CATEGORIES: MemoryCategory[] = [
-  'preference', 'fact', 'instruction', 'context', 'goal', 'persona', 'skill', 'entity', 'episodic',
+  "preference",
+  "fact",
+  "instruction",
+  "context",
+  "goal",
+  "persona",
+  "skill",
+  "entity",
+  "episodic",
 ];
 
 function formatDate(ts: number): string {
   const d = new Date(ts);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function formatDecay(decay: number): string {
-  if (decay > 0.8) return 'Strong';
-  if (decay > 0.5) return 'Active';
-  if (decay > 0.2) return 'Fading';
-  return 'Weak';
+  if (decay > 0.8) return "Strong";
+  if (decay > 0.5) return "Active";
+  if (decay > 0.2) return "Fading";
+  return "Weak";
 }
 
 function getDecayColor(decay: number): string {
@@ -52,22 +71,24 @@ function getDecayColor(decay: number): string {
 
 export default function MemoryScreen() {
   const { memories, deleteMemory, clearMemories } = useConversations();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<MemoryCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] =
+    useState<MemoryCategory | null>(null);
   const [showFilters, setShowFilters] = useState(false);
 
   const filtered = useMemo(() => {
     let result = memories;
     if (selectedCategory) {
-      result = result.filter(m => m.category === selectedCategory);
+      result = result.filter((m) => m.category === selectedCategory);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      result = result.filter(m =>
-        m.content.toLowerCase().includes(q) ||
-        m.keywords.some(k => k.toLowerCase().includes(q)) ||
-        m.category.toLowerCase().includes(q)
+      result = result.filter(
+        (m) =>
+          m.content.toLowerCase().includes(q) ||
+          m.keywords.some((k) => k.toLowerCase().includes(q)) ||
+          m.category.toLowerCase().includes(q),
       );
     }
     return result;
@@ -81,80 +102,112 @@ export default function MemoryScreen() {
     return counts;
   }, [memories]);
 
-  const handleDelete = useCallback((id: string) => {
-    Alert.alert('Delete Memory', 'Remove this memory entry?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        deleteMemory(id);
-      }},
-    ]);
-  }, [deleteMemory]);
+  const handleDelete = useCallback(
+    (id: string) => {
+      Alert.alert("Delete Memory", "Remove this memory entry?", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            deleteMemory(id);
+          },
+        },
+      ]);
+    },
+    [deleteMemory],
+  );
 
   const handleClearAll = useCallback(() => {
     if (memories.length === 0) return;
-    Alert.alert('Clear Memory Bank', 'This will erase all stored memories.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Erase All', style: 'destructive', onPress: () => clearMemories() },
+    Alert.alert("Clear Memory Bank", "This will erase all stored memories.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Erase All",
+        style: "destructive",
+        onPress: () => clearMemories(),
+      },
     ]);
   }, [memories.length, clearMemories]);
 
-  const autoCount = memories.filter((m) => m.source === 'auto-extract').length;
+  const autoCount = memories.filter((m) => m.source === "auto-extract").length;
 
-  const renderItem = useCallback(({ item }: { item: MemoryEntry }) => {
-    const catColor = CATEGORY_COLORS[item.category] ?? Colors.dark.textSecondary;
-    const decay = item.decay ?? 1.0;
-    const decayColor = getDecayColor(decay);
-    const isAutoExtracted = item.source === 'auto-extract';
+  const renderItem = useCallback(
+    ({ item }: { item: MemoryEntry }) => {
+      const catColor =
+        CATEGORY_COLORS[item.category] ?? Colors.dark.textSecondary;
+      const decay = item.decay ?? 1.0;
+      const decayColor = getDecayColor(decay);
+      const isAutoExtracted = item.source === "auto-extract";
 
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View style={[styles.catBadge, { backgroundColor: catColor + '18' }]}>
-            <Text style={[styles.catText, { color: catColor }]}>{item.category}</Text>
+      return (
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <View
+              style={[styles.catBadge, { backgroundColor: catColor + "18" }]}
+            >
+              <Text style={[styles.catText, { color: catColor }]}>
+                {item.category}
+              </Text>
+            </View>
+            {isAutoExtracted && (
+              <View style={styles.sourceBadge}>
+                <Zap size={8} color={Colors.dark.toolImageGen} />
+                <Text style={styles.sourceText}>auto</Text>
+              </View>
+            )}
+            <View style={styles.importanceWrap}>
+              {Array.from({ length: Math.min(item.importance, 5) }).map(
+                (_, i) => (
+                  <Star
+                    key={i}
+                    size={9}
+                    color={Colors.dark.warning}
+                    fill={Colors.dark.warning}
+                  />
+                ),
+              )}
+            </View>
+            <TouchableOpacity
+              onPress={() => handleDelete(item.id)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Trash2 size={13} color={Colors.dark.textTertiary} />
+            </TouchableOpacity>
           </View>
-          {isAutoExtracted && (
-            <View style={styles.sourceBadge}>
-              <Zap size={8} color={Colors.dark.toolImageGen} />
-              <Text style={styles.sourceText}>auto</Text>
+
+          <Text style={styles.cardContent} selectable>
+            {item.content}
+          </Text>
+
+          {item.keywords.length > 0 && (
+            <View style={styles.tagsRow}>
+              <Tag size={9} color={Colors.dark.textTertiary} />
+              <Text style={styles.tagsText} numberOfLines={1}>
+                {item.keywords.join(", ")}
+              </Text>
             </View>
           )}
-          <View style={styles.importanceWrap}>
-            {Array.from({ length: Math.min(item.importance, 5) }).map((_, i) => (
-              <Star key={i} size={9} color={Colors.dark.warning} fill={Colors.dark.warning} />
-            ))}
+
+          <View style={styles.cardFooter}>
+            <View style={styles.footerMeta}>
+              <Activity size={9} color={decayColor} />
+              <Text style={[styles.decayText, { color: decayColor }]}>
+                {formatDecay(decay)}
+              </Text>
+            </View>
+            <View style={styles.footerMeta}>
+              <Eye size={9} color={Colors.dark.textTertiary} />
+              <Text style={styles.accessText}>{item.accessCount ?? 0}×</Text>
+            </View>
+            <Text style={styles.cardDate}>{formatDate(item.timestamp)}</Text>
           </View>
-          <TouchableOpacity
-            onPress={() => handleDelete(item.id)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Trash2 size={13} color={Colors.dark.textTertiary} />
-          </TouchableOpacity>
         </View>
-
-        <Text style={styles.cardContent} selectable>{item.content}</Text>
-
-        {item.keywords.length > 0 && (
-          <View style={styles.tagsRow}>
-            <Tag size={9} color={Colors.dark.textTertiary} />
-            <Text style={styles.tagsText} numberOfLines={1}>{item.keywords.join(', ')}</Text>
-          </View>
-        )}
-
-        <View style={styles.cardFooter}>
-          <View style={styles.footerMeta}>
-            <Activity size={9} color={decayColor} />
-            <Text style={[styles.decayText, { color: decayColor }]}>{formatDecay(decay)}</Text>
-          </View>
-          <View style={styles.footerMeta}>
-            <Eye size={9} color={Colors.dark.textTertiary} />
-            <Text style={styles.accessText}>{item.accessCount ?? 0}×</Text>
-          </View>
-          <Text style={styles.cardDate}>{formatDate(item.timestamp)}</Text>
-        </View>
-      </View>
-    );
-  }, [handleDelete]);
+      );
+    },
+    [handleDelete],
+  );
 
   const keyExtractor = useCallback((item: MemoryEntry) => item.id, []);
 
@@ -178,7 +231,7 @@ export default function MemoryScreen() {
                 <TouchableOpacity
                   onPress={() => {
                     setShowSearch(false);
-                    setSearchQuery('');
+                    setSearchQuery("");
                   }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
@@ -190,7 +243,7 @@ export default function MemoryScreen() {
                 <View style={styles.headerLeft}>
                   <Brain size={14} color={Colors.dark.accent} />
                   <Text style={styles.headerCount}>
-                    {memories.length} memor{memories.length !== 1 ? 'ies' : 'y'}
+                    {memories.length} memor{memories.length !== 1 ? "ies" : "y"}
                   </Text>
                   {autoCount > 0 && (
                     <Text style={styles.headerAuto}>({autoCount} auto)</Text>
@@ -209,7 +262,11 @@ export default function MemoryScreen() {
                   >
                     <Filter
                       size={16}
-                      color={selectedCategory ? Colors.dark.accent : Colors.dark.textSecondary}
+                      color={
+                        selectedCategory
+                          ? Colors.dark.accent
+                          : Colors.dark.textSecondary
+                      }
                     />
                   </TouchableOpacity>
                   <TouchableOpacity onPress={handleClearAll}>
@@ -237,24 +294,30 @@ export default function MemoryScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={[
-                  styles.filterChipText,
-                  !selectedCategory && styles.filterChipTextActive,
-                ]}>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    !selectedCategory && styles.filterChipTextActive,
+                  ]}
+                >
                   All ({memories.length})
                 </Text>
               </TouchableOpacity>
-              {ALL_CATEGORIES.map(cat => {
+              {ALL_CATEGORIES.map((cat) => {
                 const count = categoryCounts.get(cat) ?? 0;
                 if (count === 0) return null;
                 const isActive = selectedCategory === cat;
-                const catColor = CATEGORY_COLORS[cat] ?? Colors.dark.textSecondary;
+                const catColor =
+                  CATEGORY_COLORS[cat] ?? Colors.dark.textSecondary;
                 return (
                   <TouchableOpacity
                     key={cat}
                     style={[
                       styles.filterChip,
-                      isActive && { backgroundColor: catColor + '20', borderColor: catColor },
+                      isActive && {
+                        backgroundColor: catColor + "20",
+                        borderColor: catColor,
+                      },
                     ]}
                     onPress={() => {
                       setSelectedCategory(isActive ? null : cat);
@@ -262,10 +325,12 @@ export default function MemoryScreen() {
                     }}
                     activeOpacity={0.7}
                   >
-                    <Text style={[
-                      styles.filterChipText,
-                      isActive && { color: catColor },
-                    ]}>
+                    <Text
+                      style={[
+                        styles.filterChipText,
+                        isActive && { color: catColor },
+                      ]}
+                    >
                       {cat} ({count})
                     </Text>
                   </TouchableOpacity>
@@ -279,7 +344,9 @@ export default function MemoryScreen() {
         data={filtered}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : styles.listContent}
+        contentContainerStyle={
+          filtered.length === 0 ? styles.emptyContainer : styles.listContent
+        }
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
@@ -287,12 +354,14 @@ export default function MemoryScreen() {
               <Brain size={32} color={Colors.dark.textTertiary} />
             </View>
             <Text style={styles.emptyTitle}>
-              {searchQuery || selectedCategory ? 'No matches' : 'Memory Bank Empty'}
+              {searchQuery || selectedCategory
+                ? "No matches"
+                : "Memory Bank Empty"}
             </Text>
             <Text style={styles.emptySubtitle}>
               {searchQuery || selectedCategory
-                ? 'Try different search terms or filters'
-                : 'NEXUS auto-extracts important facts from conversations and stores them here for future recall'}
+                ? "Try different search terms or filters"
+                : "NEXUS auto-extracts important facts from conversations and stores them here for future recall"}
             </Text>
           </View>
         }
@@ -311,15 +380,15 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.dark.borderSubtle,
   },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
   },
   headerCount: {
@@ -331,14 +400,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 16,
   },
   searchRow: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Colors.dark.surfaceElevated,
     borderRadius: 10,
     paddingHorizontal: 10,
@@ -371,7 +440,7 @@ const styles = StyleSheet.create({
   filterChipText: {
     fontSize: 12,
     color: Colors.dark.textSecondary,
-    fontWeight: '500' as const,
+    fontWeight: "500" as const,
   },
   filterChipTextActive: {
     color: Colors.dark.accent,
@@ -379,7 +448,7 @@ const styles = StyleSheet.create({
   clearBtn: {
     color: Colors.dark.error,
     fontSize: 13,
-    fontWeight: '500' as const,
+    fontWeight: "500" as const,
   },
   listContent: {
     padding: 16,
@@ -393,8 +462,8 @@ const styles = StyleSheet.create({
     borderColor: Colors.dark.borderSubtle,
   },
   cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     marginBottom: 8,
   },
@@ -405,13 +474,13 @@ const styles = StyleSheet.create({
   },
   catText: {
     fontSize: 9,
-    fontWeight: '700' as const,
-    textTransform: 'uppercase' as const,
+    fontWeight: "700" as const,
+    textTransform: "uppercase" as const,
     letterSpacing: 0.4,
   },
   sourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
     backgroundColor: Colors.dark.accentSoft,
     paddingHorizontal: 5,
@@ -421,10 +490,10 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: 8,
     color: Colors.dark.toolImageGen,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   importanceWrap: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 1,
     flex: 1,
   },
@@ -434,8 +503,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   tagsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 5,
     marginTop: 8,
   },
@@ -445,8 +514,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
     marginTop: 8,
     paddingTop: 6,
@@ -454,13 +523,13 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.dark.borderSubtle,
   },
   footerMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 3,
   },
   decayText: {
     fontSize: 10,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   accessText: {
     fontSize: 10,
@@ -469,15 +538,15 @@ const styles = StyleSheet.create({
   cardDate: {
     color: Colors.dark.textTertiary,
     fontSize: 10,
-    marginLeft: 'auto',
+    marginLeft: "auto",
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   emptyWrap: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 32,
   },
   emptyIcon: {
@@ -485,20 +554,20 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     backgroundColor: Colors.dark.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   emptyTitle: {
     color: Colors.dark.text,
     fontSize: 17,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
     marginBottom: 6,
   },
   emptySubtitle: {
     color: Colors.dark.textTertiary,
     fontSize: 14,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
     lineHeight: 20,
   },
 });

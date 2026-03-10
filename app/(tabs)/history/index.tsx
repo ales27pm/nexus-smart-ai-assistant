@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo, useRef } from 'react';
+import React, { useCallback, useState, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -9,19 +9,26 @@ import {
   TextInput,
   Animated,
   PanResponder,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { MessageSquare, Trash2, Clock, ChevronRight, Search, X } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
-import Colors from '@/constants/colors';
-import { useConversations } from '@/providers/ConversationsProvider';
-import { Conversation } from '@/types';
+} from "react-native";
+import { useRouter } from "expo-router";
+import {
+  MessageSquare,
+  Trash2,
+  Clock,
+  ChevronRight,
+  Search,
+  X,
+} from "lucide-react-native";
+import * as Haptics from "expo-haptics";
+import Colors from "../../../constants/colors";
+import { useConversations } from "@/providers/ConversationsProvider";
+import { Conversation } from "@/types";
 
 function formatTime(ts: number): string {
   const now = Date.now();
   const diff = now - ts;
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'Just now';
+  if (mins < 1) return "Just now";
   if (mins < 60) return `${mins}m ago`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
@@ -30,7 +37,13 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
-function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDelete: () => void }) {
+function SwipeableRow({
+  children,
+  onDelete,
+}: {
+  children: React.ReactNode;
+  onDelete: () => void;
+}) {
   const translateX = useRef(new Animated.Value(0)).current;
   const deleteOpacity = useRef(new Animated.Value(0)).current;
 
@@ -68,7 +81,7 @@ function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDel
           }).start();
         }
       },
-    })
+    }),
   ).current;
 
   const handleDelete = useCallback(() => {
@@ -83,8 +96,14 @@ function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDel
 
   return (
     <View style={styles.swipeContainer}>
-      <Animated.View style={[styles.deleteBackground, { opacity: deleteOpacity }]}>
-        <TouchableOpacity style={styles.deleteAction} onPress={handleDelete} activeOpacity={0.7}>
+      <Animated.View
+        style={[styles.deleteBackground, { opacity: deleteOpacity }]}
+      >
+        <TouchableOpacity
+          style={styles.deleteAction}
+          onPress={handleDelete}
+          activeOpacity={0.7}
+        >
           <Trash2 size={18} color="#fff" />
           <Text style={styles.deleteActionText}>Delete</Text>
         </TouchableOpacity>
@@ -100,67 +119,90 @@ function SwipeableRow({ children, onDelete }: { children: React.ReactNode; onDel
 }
 
 export default function HistoryScreen() {
-  const { conversations, setActiveId, deleteConversation, clearConversations } = useConversations();
+  const { conversations, setActiveId, deleteConversation, clearConversations } =
+    useConversations();
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
 
   const filtered = useMemo(() => {
     if (!searchQuery.trim()) return conversations;
     const q = searchQuery.toLowerCase();
-    return conversations.filter(c =>
-      c.title.toLowerCase().includes(q) ||
-      (c.preview ?? '').toLowerCase().includes(q)
+    return conversations.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        (c.preview ?? "").toLowerCase().includes(q),
     );
   }, [conversations, searchQuery]);
 
-  const handleOpen = useCallback((conv: Conversation) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setActiveId(conv.id);
-    router.navigate('/(tabs)/(chat)' as any);
-  }, [setActiveId, router]);
+  const handleOpen = useCallback(
+    (conv: Conversation) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setActiveId(conv.id);
+      router.navigate("/(tabs)/(chat)" as any);
+    },
+    [setActiveId, router],
+  );
 
-  const handleDelete = useCallback((id: string) => {
-    Alert.alert('Delete Conversation', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => deleteConversation(id) },
-    ]);
-  }, [deleteConversation]);
+  const handleDelete = useCallback(
+    (id: string) => {
+      Alert.alert("Delete Conversation", "This cannot be undone.", [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteConversation(id),
+        },
+      ]);
+    },
+    [deleteConversation],
+  );
 
   const handleClearAll = useCallback(() => {
     if (conversations.length === 0) return;
-    Alert.alert('Clear All History', 'Delete all conversations?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear All', style: 'destructive', onPress: () => clearConversations() },
+    Alert.alert("Clear All History", "Delete all conversations?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Clear All",
+        style: "destructive",
+        onPress: () => clearConversations(),
+      },
     ]);
   }, [conversations.length, clearConversations]);
 
-  const renderItem = useCallback(({ item }: { item: Conversation }) => (
-    <SwipeableRow onDelete={() => handleDelete(item.id)}>
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => handleOpen(item)}
-        activeOpacity={0.7}
-        testID={`conv-${item.id}`}
-      >
-        <View style={styles.cardIcon}>
-          <MessageSquare size={18} color={Colors.dark.accent} />
-        </View>
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
-          {item.preview ? (
-            <Text style={styles.cardPreview} numberOfLines={2}>{item.preview}</Text>
-          ) : null}
-          <View style={styles.cardMeta}>
-            <Clock size={11} color={Colors.dark.textTertiary} />
-            <Text style={styles.cardTime}>{formatTime(item.timestamp)}</Text>
-            <Text style={styles.cardCount}>{item.messageCount} messages</Text>
+  const renderItem = useCallback(
+    ({ item }: { item: Conversation }) => (
+      <SwipeableRow onDelete={() => handleDelete(item.id)}>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => handleOpen(item)}
+          activeOpacity={0.7}
+          testID={`conv-${item.id}`}
+        >
+          <View style={styles.cardIcon}>
+            <MessageSquare size={18} color={Colors.dark.accent} />
           </View>
-        </View>
-        <ChevronRight size={16} color={Colors.dark.textTertiary} />
-      </TouchableOpacity>
-    </SwipeableRow>
-  ), [handleOpen, handleDelete]);
+          <View style={styles.cardContent}>
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {item.title}
+            </Text>
+            {item.preview ? (
+              <Text style={styles.cardPreview} numberOfLines={2}>
+                {item.preview}
+              </Text>
+            ) : null}
+            <View style={styles.cardMeta}>
+              <Clock size={11} color={Colors.dark.textTertiary} />
+              <Text style={styles.cardTime}>{formatTime(item.timestamp)}</Text>
+              <Text style={styles.cardCount}>{item.messageCount} messages</Text>
+            </View>
+          </View>
+          <ChevronRight size={16} color={Colors.dark.textTertiary} />
+        </TouchableOpacity>
+      </SwipeableRow>
+    ),
+    [handleOpen, handleDelete],
+  );
 
   const keyExtractor = useCallback((item: Conversation) => item.id, []);
 
@@ -183,7 +225,7 @@ export default function HistoryScreen() {
               <TouchableOpacity
                 onPress={() => {
                   setShowSearch(false);
-                  setSearchQuery('');
+                  setSearchQuery("");
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
@@ -193,7 +235,8 @@ export default function HistoryScreen() {
           ) : (
             <>
               <Text style={styles.headerCount}>
-                {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+                {conversations.length} conversation
+                {conversations.length !== 1 ? "s" : ""}
               </Text>
               <View style={styles.headerActions}>
                 <TouchableOpacity
@@ -214,7 +257,9 @@ export default function HistoryScreen() {
         data={filtered}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : styles.listContent}
+        contentContainerStyle={
+          filtered.length === 0 ? styles.emptyContainer : styles.listContent
+        }
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyWrap}>
@@ -222,12 +267,12 @@ export default function HistoryScreen() {
               <MessageSquare size={32} color={Colors.dark.textTertiary} />
             </View>
             <Text style={styles.emptyTitle}>
-              {searchQuery ? 'No matches found' : 'No conversations yet'}
+              {searchQuery ? "No matches found" : "No conversations yet"}
             </Text>
             <Text style={styles.emptySubtitle}>
               {searchQuery
-                ? 'Try a different search term'
-                : 'Start a chat to see your history here'}
+                ? "Try a different search term"
+                : "Start a chat to see your history here"}
             </Text>
           </View>
         }
@@ -242,9 +287,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.dark.background,
   },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderBottomWidth: 1,
@@ -255,14 +300,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 16,
   },
   searchRow: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: Colors.dark.surfaceElevated,
     borderRadius: 10,
     paddingHorizontal: 10,
@@ -278,37 +323,37 @@ const styles = StyleSheet.create({
   clearBtn: {
     color: Colors.dark.error,
     fontSize: 13,
-    fontWeight: '500' as const,
+    fontWeight: "500" as const,
   },
   listContent: {
     paddingVertical: 4,
   },
   swipeContainer: {
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   deleteBackground: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     bottom: 0,
     right: 0,
     width: 100,
     backgroundColor: Colors.dark.error,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   deleteAction: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: 4,
   },
   deleteActionText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
@@ -321,8 +366,8 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 10,
     backgroundColor: Colors.dark.accentGlow,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   cardContent: {
     flex: 1,
@@ -331,7 +376,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: Colors.dark.text,
     fontSize: 15,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
   },
   cardPreview: {
     color: Colors.dark.textSecondary,
@@ -339,8 +384,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   cardMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
     marginTop: 2,
   },
@@ -355,11 +400,11 @@ const styles = StyleSheet.create({
   },
   emptyContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   emptyWrap: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: 32,
   },
   emptyIcon: {
@@ -367,19 +412,19 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: 20,
     backgroundColor: Colors.dark.surfaceElevated,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   emptyTitle: {
     color: Colors.dark.text,
     fontSize: 17,
-    fontWeight: '600' as const,
+    fontWeight: "600" as const,
     marginBottom: 6,
   },
   emptySubtitle: {
     color: Colors.dark.textTertiary,
     fontSize: 14,
-    textAlign: 'center' as const,
+    textAlign: "center" as const,
   },
 });

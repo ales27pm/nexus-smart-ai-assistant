@@ -18,7 +18,7 @@ import {
 import { RefreshCw, X } from "lucide-react-native";
 import { useRorkAgent, createRorkTool } from "@rork-ai/toolkit-sdk";
 import { z } from "zod";
-import Colors from "@/constants/colors";
+import Colors from "../../../constants/colors";
 import ChatBubble from "@/components/ChatBubble";
 import ToolCard from "@/components/ToolCard";
 import ChatInput, { ChatFile } from "@/components/ChatInput";

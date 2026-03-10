@@ -27,7 +27,7 @@ import {
   Send,
   Volume2,
 } from "lucide-react-native";
-import Colors from "@/constants/colors";
+import Colors from "../../../constants/colors";
 import {
   COREML_MODEL_PRESETS,
   CoreMLGenerateOptions,

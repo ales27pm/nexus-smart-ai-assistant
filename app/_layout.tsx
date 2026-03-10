@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ConversationsProvider } from "@/providers/ConversationsProvider";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import Colors from "@/constants/colors";
+import Colors from "../constants/colors";
 import { installGlobalErrorHandlers } from "@/utils/globalErrorHandler";
 
 SplashScreen.preventAutoHideAsync();

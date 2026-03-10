@@ -1,5 +1,5 @@
-import { View, Text, StyleSheet } from 'react-native';
-import Colors from '@/constants/colors';
+import { View, Text, StyleSheet } from "react-native";
+import Colors from "../constants/colors";
 
 export default function ModalScreen() {
   return (
@@ -12,8 +12,8 @@ export default function ModalScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: Colors.dark.background,
   },
   text: {

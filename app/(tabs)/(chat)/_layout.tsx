@@ -1,7 +1,7 @@
 import { Stack } from "expo-router";
 import { TouchableOpacity, StyleSheet } from "react-native";
 import { SquarePen } from "lucide-react-native";
-import Colors from "@/constants/colors";
+import Colors from "../../../constants/colors";
 import { useConversations } from "@/providers/ConversationsProvider";
 import * as Haptics from "expo-haptics";
 
