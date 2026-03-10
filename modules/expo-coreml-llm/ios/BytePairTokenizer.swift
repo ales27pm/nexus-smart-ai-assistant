@@ -330,14 +330,27 @@ final class CoreMLTokenizerFactory {
         let normalizedRelative = relative.replacingOccurrences(of: "\\", with: "/")
         let isVocab = label == "vocabJsonAssetPath"
 
-        switch kind {
-        case "byte_level_bpe":
-            if normalizedRelative == "tokenizers/byte_level_bpe/vocab.json" {
-                candidates.append("tokenizers/gpt2/gpt2-vocab.json")
-            } else if normalizedRelative == "tokenizers/byte_level_bpe/merges.txt" {
-                candidates.append("tokenizers/gpt2/gpt2-merges.txt")
+        // Primary packaged tokenizer assets currently live under tokenizers/gpt2
+        // with collision-safe filenames.
+        let canonical = isVocab
+            ? "tokenizers/gpt2/gpt2-vocab.json"
+            : "tokenizers/gpt2/gpt2-merges.txt"
+        candidates.append(canonical)
+
+        // Backward compatibility fallbacks for older packaging scripts.
+            candidates.append(normalizedRelative.replacingOccurrences(of: "vocab.json", with: "gpt2-vocab.json"))
+            candidates.append("tokenizers/gpt2/vocab.json")
+            candidates.append(normalizedRelative.replacingOccurrences(of: "merges.txt", with: "gpt2-merges.txt"))
+            candidates.append("tokenizers/gpt2/merges.txt")
+        // Keep kind-aware remap for callers that still pass byte-level paths.
+        if kind == "byte_level_bpe" {
+            if isVocab {
+                candidates.append("tokenizers/byte_level_bpe/vocab.json")
+            } else {
+                candidates.append("tokenizers/byte_level_bpe/merges.txt")
             }
-        case "gpt2_bpe":
+        }
+
             if normalizedRelative == "tokenizers/gpt2/gpt2-vocab.json" {
                 candidates.append("tokenizers/byte_level_bpe/vocab.json")
             } else if normalizedRelative == "tokenizers/gpt2/gpt2-merges.txt" {

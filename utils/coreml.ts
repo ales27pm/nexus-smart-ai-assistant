@@ -114,9 +114,9 @@ export const DEFAULT_COREML_MODEL_PRESET_ID: CoreMLModelPresetId = "int4Lut";
 export const DEFAULT_COREML_EOS_TOKEN_ID = modelManifest.eosTokenId;
 export const DEFAULT_COREML_BOS_TOKEN_ID = modelManifest.bosTokenId;
 export const DEFAULT_COREML_TOKENIZER_VOCAB_PATH =
-  "module:tokenizers/byte_level_bpe/vocab.json";
+  "module:tokenizers/gpt2/gpt2-vocab.json";
 export const DEFAULT_COREML_TOKENIZER_MERGES_PATH =
-  "module:tokenizers/byte_level_bpe/merges.txt";
+  "module:tokenizers/gpt2/gpt2-merges.txt";
 
 export const DEFAULT_COREML_TOKENIZER = {
   kind: "byte_level_bpe",

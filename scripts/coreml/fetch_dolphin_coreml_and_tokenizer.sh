@@ -24,21 +24,9 @@ fi
 COREML_REPO="$(jq -r '.coremlRepo' "$MANIFEST_PATH")"
 TOKENIZER_REPO="$(jq -r '.tokenizerRepo' "$MANIFEST_PATH")"
 MODEL_FILE="$(jq -r ' .activeModel ' "$MANIFEST_PATH")"
-TOKENIZER_BUNDLE_DIR_MANIFEST="$(jq -r ' .tokenizerBundleDir // "modules/expo-coreml-llm/ios/resources/tokenizers/byte_level_bpe" ' "$MANIFEST_PATH")"
-TOKENIZER_VOCAB_FILE="$(jq -r ' .tokenizerVocabFile // "vocab.json" ' "$MANIFEST_PATH")"
-TOKENIZER_MERGES_FILE="$(jq -r ' .tokenizerMergesFile // "merges.txt" ' "$MANIFEST_PATH")"
-
-# Avoid legacy basename collisions in CocoaPods resource bundles when targeting
-# tokenizers/gpt2; use unique GPT-2-prefixed filenames even if manifest/defaults
-# still specify vocab.json/merges.txt.
-if [[ "$TOKENIZER_BUNDLE_DIR_MANIFEST" == *"/tokenizers/gpt2" ]]; then
-  if [[ "$TOKENIZER_VOCAB_FILE" == "vocab.json" ]]; then
-    TOKENIZER_VOCAB_FILE="gpt2-vocab.json"
-  fi
-  if [[ "$TOKENIZER_MERGES_FILE" == "merges.txt" ]]; then
-    TOKENIZER_MERGES_FILE="gpt2-merges.txt"
-  fi
-fi
+TOKENIZER_BUNDLE_DIR_MANIFEST="$(jq -r ' .tokenizerBundleDir // "modules/expo-coreml-llm/ios/resources/tokenizers/gpt2" ' "$MANIFEST_PATH")"
+TOKENIZER_VOCAB_FILE="$(jq -r ' .tokenizerVocabFile // "gpt2-vocab.json" ' "$MANIFEST_PATH")"
+TOKENIZER_MERGES_FILE="$(jq -r ' .tokenizerMergesFile // "gpt2-merges.txt" ' "$MANIFEST_PATH")"
 
 if [ -z "$COREML_REPO" ] || [ "$COREML_REPO" = "null" ]; then
   echo "[!] Invalid coremlRepo in $MANIFEST_PATH"
