@@ -153,17 +153,14 @@ final class BytePairTokenizer: CoreMLTokenizer {
 
     private func bpe(token: String) -> [String] {
         cacheLock.lock()
+        defer { cacheLock.unlock() }
         if let cached = cache[token] {
-            cacheLock.unlock()
             return cached
         }
-        cacheLock.unlock()
 
         var word = token.map { String($0) }
         if word.count <= 1 {
-            cacheLock.lock()
             cache[token] = word
-            cacheLock.unlock()
             return word
         }
 
@@ -200,9 +197,7 @@ final class BytePairTokenizer: CoreMLTokenizer {
             if word.count <= 1 { break }
         }
 
-        cacheLock.lock()
         cache[token] = word
-        cacheLock.unlock()
         return word
     }
 
@@ -267,6 +262,10 @@ final class CoreMLTokenizerFactory {
         )
 
         lock.lock()
+        if let existing = cache[cacheKey] {
+            lock.unlock()
+            return existing
+        }
         cache[cacheKey] = tokenizer
         lock.unlock()
         return tokenizer

@@ -302,6 +302,10 @@ private struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
+/// CoreMLRuntimeEngine is not thread-safe: mutable state in `loadedModel`, `loadedInfo`,
+/// `activeSession`, and `lastMetrics` must be externally serialized.
+/// Use it through `CoreMLRuntimeActor` and avoid direct concurrent access or direct
+/// instantiation from outside that actor wrapper.
 final class CoreMLRuntimeEngine {
     private let prefixCache = PromptPrefixCache()
     private let cancellation = CancellationSource()
@@ -712,7 +716,7 @@ final class CoreMLRuntimeEngine {
 
     private func makeTokenArray(name: String, tokenIds: [Int], modelDescription: MLModelDescription) throws -> MLMultiArray {
         let shape = inferShape(name: name, modelDescription: modelDescription, count: tokenIds.count, allowScalar: false)
-        let array = try MLMultiArray(shape: shape.map(NSNumber.init), dataType: .int32)
+        let array = try MLMultiArray(shape: shape.map { NSNumber(value: $0) }, dataType: .int32)
         let flatCount = shape.reduce(1, *)
         guard flatCount >= tokenIds.count else {
             throw CoreMLRuntimeError.unsupportedInputShape(name)
@@ -725,7 +729,7 @@ final class CoreMLRuntimeEngine {
 
     private func makeBinaryMaskArray(name: String, length: Int, modelDescription: MLModelDescription) throws -> MLMultiArray {
         let shape = inferShape(name: name, modelDescription: modelDescription, count: length, allowScalar: false)
-        let array = try MLMultiArray(shape: shape.map(NSNumber.init), dataType: .int32)
+        let array = try MLMultiArray(shape: shape.map { NSNumber(value: $0) }, dataType: .int32)
         let flatCount = shape.reduce(1, *)
         for index in 0..<flatCount {
             array[index] = NSNumber(value: index < length ? 1 : 0)
@@ -735,7 +739,7 @@ final class CoreMLRuntimeEngine {
 
     private func makePositionArray(name: String, positions: [Int], modelDescription: MLModelDescription) throws -> MLMultiArray {
         let shape = inferShape(name: name, modelDescription: modelDescription, count: positions.count, allowScalar: true)
-        let array = try MLMultiArray(shape: shape.map(NSNumber.init), dataType: .int32)
+        let array = try MLMultiArray(shape: shape.map { NSNumber(value: $0) }, dataType: .int32)
         let flatCount = shape.reduce(1, *)
         for index in 0..<flatCount {
             let value = positions.isEmpty ? 0 : positions[min(index, positions.count - 1)]
@@ -785,7 +789,7 @@ final class CoreMLRuntimeEngine {
         vector.reserveCapacity(vocabSize)
         for vocabIndex in 0..<vocabSize {
             baseIndices[lastIndex] = vocabIndex
-            let nsIndices = baseIndices.map(NSNumber.init)
+            let nsIndices = baseIndices.map { NSNumber(value: $0) }
             vector.append(Float(truncating: array[nsIndices]))
         }
         return vector
