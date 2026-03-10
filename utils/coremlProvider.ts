@@ -34,6 +34,13 @@ export interface ICoreMLProvider {
       maxContext?: number;
     },
   ): Promise<number[]>;
+  beginGenerationSession?(options: {
+    promptTokenIds: number[];
+    maxContext?: number;
+    generation?: Omit<CoreMLGenerateOptions, "tokenizer">;
+  }): Promise<boolean>;
+  generateNextToken?(): Promise<number | null>;
+  endGenerationSession?(): Promise<void>;
   unload(): Promise<void>;
   cancel(): Promise<void>;
   isLoaded(): Promise<boolean>;
@@ -210,6 +217,62 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
   ): Promise<number[]> {
     try {
       return await this.bridge.generateFromTokens(tokenIds, options);
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async beginGenerationSession(options: {
+    promptTokenIds: number[];
+    maxContext?: number;
+    generation?: Omit<CoreMLGenerateOptions, "tokenizer">;
+  }): Promise<boolean> {
+    const bridge = this.bridge as CoreMLBridge & {
+      beginGenerationSession?: (opts: {
+        promptTokenIds: number[];
+        maxContext?: number;
+        generation?: Omit<CoreMLGenerateOptions, "tokenizer">;
+      }) => Promise<boolean>;
+    };
+
+    if (typeof bridge.beginGenerationSession !== "function") {
+      return false;
+    }
+
+    try {
+      return await bridge.beginGenerationSession(options);
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async generateNextToken(): Promise<number | null> {
+    const bridge = this.bridge as CoreMLBridge & {
+      generateNextToken?: () => Promise<number | null>;
+    };
+
+    if (typeof bridge.generateNextToken !== "function") {
+      return null;
+    }
+
+    try {
+      return await bridge.generateNextToken();
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async endGenerationSession(): Promise<void> {
+    const bridge = this.bridge as CoreMLBridge & {
+      endGenerationSession?: () => Promise<void>;
+    };
+
+    if (typeof bridge.endGenerationSession !== "function") {
+      return;
+    }
+
+    try {
+      await bridge.endGenerationSession();
     } catch (error) {
       throw normalizeCoreMLError(error);
     }

@@ -57,4 +57,42 @@ describe("generateCoreMLTextStream", () => {
       expect.any(Object),
     );
   });
+
+  it("uses incremental token session when provider supports KV-backed generation", async () => {
+    const provider: any = {
+      tokenize: jest.fn().mockResolvedValue([101, 102]),
+      beginGenerationSession: jest.fn().mockResolvedValue(true),
+      generateNextToken: jest
+        .fn()
+        .mockResolvedValueOnce(201)
+        .mockResolvedValueOnce(202)
+        .mockResolvedValueOnce(2),
+      endGenerationSession: jest.fn().mockResolvedValue(undefined),
+      generateFromTokens: jest.fn(),
+      decode: jest
+        .fn()
+        .mockResolvedValueOnce("Hello")
+        .mockResolvedValueOnce(" world")
+        .mockResolvedValueOnce(""),
+    };
+
+    const out = await generateCoreMLTextStream(provider, "prompt", {
+      maxNewTokens: 6,
+      stopTokenIds: [2],
+      tokenizer: { kind: "gpt2_bpe" },
+    });
+
+    expect(out).toBe("Hello world");
+    expect(provider.beginGenerationSession).toHaveBeenCalledWith({
+      promptTokenIds: [101, 102],
+      maxContext: 2048,
+      generation: expect.objectContaining({
+        maxNewTokens: 1,
+        maxContext: 2048,
+      }),
+    });
+    expect(provider.generateFromTokens).not.toHaveBeenCalled();
+    expect(provider.generateNextToken).toHaveBeenCalledTimes(3);
+    expect(provider.endGenerationSession).toHaveBeenCalledTimes(1);
+  });
 });

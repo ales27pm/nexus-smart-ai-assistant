@@ -16,6 +16,13 @@ export type CoreMLBridge = {
     tokenIds: number[],
     opts?: Omit<CoreMLGenerateOptions, "tokenizer"> & { maxContext?: number },
   ) => Promise<number[]>;
+  beginGenerationSession?: (opts: {
+    promptTokenIds: number[];
+    maxContext?: number;
+    generation?: Omit<CoreMLGenerateOptions, "tokenizer">;
+  }) => Promise<boolean>;
+  generateNextToken?: () => Promise<number | null>;
+  endGenerationSession?: () => Promise<void>;
   generate: (prompt: string, opts?: CoreMLGenerateOptions) => Promise<string>;
   cancel: () => Promise<void>;
 };
