@@ -147,6 +147,13 @@ type NativeModuleShape = {
     tokenIds: number[],
     opts: GenerateFromTokensOptions,
   ): Promise<number[]>;
+  beginGenerationSessionAsync?: (opts: {
+    promptTokenIds: number[];
+    maxContext?: number;
+    generation?: GenerateFromTokensOptions;
+  }) => Promise<boolean>;
+  generateNextTokenAsync?: () => Promise<number | null>;
+  endGenerationSessionAsync?: () => Promise<void>;
   cancelAsync(): Promise<void>;
 };
 
@@ -279,6 +286,31 @@ export const CoreMLLLM = {
     tokenIds: number[],
     opts: GenerateFromTokensOptions = {},
   ) => getNativeModule().generateFromTokensAsync(tokenIds, opts),
+  beginGenerationSession: (opts: {
+    promptTokenIds: number[];
+    maxContext?: number;
+    generation?: GenerateFromTokensOptions;
+  }) => {
+    const mod = getNativeModule();
+    if (typeof mod.beginGenerationSessionAsync !== "function") {
+      return Promise.resolve(false);
+    }
+    return mod.beginGenerationSessionAsync(opts);
+  },
+  generateNextToken: () => {
+    const mod = getNativeModule();
+    if (typeof mod.generateNextTokenAsync !== "function") {
+      return Promise.resolve(null);
+    }
+    return mod.generateNextTokenAsync();
+  },
+  endGenerationSession: () => {
+    const mod = getNativeModule();
+    if (typeof mod.endGenerationSessionAsync !== "function") {
+      return Promise.resolve();
+    }
+    return mod.endGenerationSessionAsync();
+  },
   cancel: () => getNativeModule().cancelAsync(),
 };
 

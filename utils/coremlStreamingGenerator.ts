@@ -39,40 +39,74 @@ export async function generateCoreMLTextStream(
   const generatedTokens: number[] = [];
   let emittedText = "";
 
-  for (let i = 0; i < maxNewTokens; i += 1) {
-    const contextWindow = [...promptTokenIds, ...generatedTokens];
-    const trimmedContext =
-      contextWindow.length > maxContext
-        ? contextWindow.slice(contextWindow.length - maxContext)
-        : contextWindow;
+  const generationOptions = {
+    maxNewTokens: 1,
+    temperature: options.temperature,
+    topK: options.topK,
+    topP: options.topP,
+    repetitionPenalty: options.repetitionPenalty,
+    seed: options.seed,
+    maxContext,
+  };
 
-    const tokenBatch = await provider.generateFromTokens(trimmedContext, {
-      maxNewTokens: 1,
-      temperature: options.temperature,
-      topK: options.topK,
-      topP: options.topP,
-      repetitionPenalty: options.repetitionPenalty,
-      seed: options.seed,
-      maxContext,
-    });
+  const canUseIncrementalSession =
+    typeof provider.beginGenerationSession === "function" &&
+    typeof provider.generateNextToken === "function";
 
-    if (!Array.isArray(tokenBatch) || tokenBatch.length === 0) {
-      break;
+  const incrementalSessionEnabled = canUseIncrementalSession
+    ? await provider.beginGenerationSession?.({
+        promptTokenIds,
+        maxContext,
+        generation: generationOptions,
+      })
+    : false;
+
+  try {
+    for (let i = 0; i < maxNewTokens; i += 1) {
+      let nextToken: number | undefined;
+
+      if (incrementalSessionEnabled) {
+        nextToken = (await provider.generateNextToken?.()) ?? undefined;
+      } else {
+        const contextWindow = [...promptTokenIds, ...generatedTokens];
+        const trimmedContext =
+          contextWindow.length > maxContext
+            ? contextWindow.slice(contextWindow.length - maxContext)
+            : contextWindow;
+
+        const tokenBatch = await provider.generateFromTokens(
+          trimmedContext,
+          generationOptions,
+        );
+
+        if (!Array.isArray(tokenBatch) || tokenBatch.length === 0) {
+          break;
+        }
+
+        nextToken = tokenBatch[tokenBatch.length - 1];
+      }
+
+      if (typeof nextToken !== "number") {
+        break;
+      }
+
+      generatedTokens.push(nextToken);
+
+      const decodedToken = await provider.decode([nextToken], tokenizer);
+      emittedText += decodedToken;
+      onToken?.(decodedToken);
+
+      if (stopTokenIds.includes(nextToken)) {
+        break;
+      }
+
+      if (stopSequences.some((sequence) => emittedText.includes(sequence))) {
+        break;
+      }
     }
-
-    const nextToken = tokenBatch[tokenBatch.length - 1];
-    generatedTokens.push(nextToken);
-
-    const decodedToken = await provider.decode([nextToken], tokenizer);
-    emittedText += decodedToken;
-    onToken?.(decodedToken);
-
-    if (stopTokenIds.includes(nextToken)) {
-      break;
-    }
-
-    if (stopSequences.some((sequence) => emittedText.includes(sequence))) {
-      break;
+  } finally {
+    if (incrementalSessionEnabled) {
+      await provider.endGenerationSession?.();
     }
   }
 
