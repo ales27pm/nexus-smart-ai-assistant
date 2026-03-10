@@ -202,6 +202,7 @@ struct PagedTokenArena: Sendable {
 struct PromptPrefixKey: Hashable, Sendable {
     let modelID: String
     let tokenizerID: String
+    let tokenHash: String
 }
 
 struct PrefixSnapshot: Sendable {
@@ -464,8 +465,9 @@ final class CoreMLRuntimeEngine {
         session.metrics.prefillTokensPerSecond = Double(max(prompt.count, 1)) / prefillElapsed
         activeSession = session
 
+        let prefixHash = Self.hashTokenIds(prompt)
         await prefixCache.store(PrefixSnapshot(
-            key: PromptPrefixKey(modelID: info.compiledURL.lastPathComponent, tokenizerID: tokenizerID),
+            key: PromptPrefixKey(modelID: info.compiledURL.lastPathComponent, tokenizerID: tokenizerID, tokenHash: prefixHash),
             tokens: prompt,
             createdAt: Date()
         ))
@@ -848,6 +850,10 @@ final class CoreMLRuntimeEngine {
             }
         }
         return nucleus.last?.index ?? 0
+    }
+
+    private static func hashTokenIds(_ tokenIds: [Int]) -> String {
+        hashString(tokenIds.map(String.init).joined(separator: ","))
     }
 
     private static func hashString(_ value: String) -> String {
