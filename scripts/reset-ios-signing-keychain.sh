@@ -104,6 +104,6 @@ fi
 echo "✅ Keychain reset complete."
 echo
 echo "Optional env exports for downstream signing tools:"
-echo "  export KEYCHAIN_PASSWORD='${KEYCHAIN_PASSWORD}'"
+echo "  export KEYCHAIN_PASSWORD='<set in your shell or secret manager>'"
 echo "  export MATCH_KEYCHAIN_NAME='${KEYCHAIN_NAME}'"
-echo "  export MATCH_KEYCHAIN_PASSWORD='${KEYCHAIN_PASSWORD}'"
+echo "  export MATCH_KEYCHAIN_PASSWORD='<set in your shell or secret manager>'"
