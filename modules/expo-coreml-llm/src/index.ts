@@ -154,6 +154,7 @@ type NativeModuleShape = {
   }) => Promise<boolean>;
   generateNextTokenAsync?: () => Promise<number | null>;
   endGenerationSessionAsync?: () => Promise<void>;
+  getRuntimeMetricsAsync?: () => Promise<Record<string, unknown>>;
   cancelAsync(): Promise<void>;
 };
 
@@ -310,6 +311,13 @@ export const CoreMLLLM = {
       return Promise.resolve();
     }
     return mod.endGenerationSessionAsync();
+  },
+  getRuntimeMetrics: () => {
+    const mod = getNativeModule();
+    if (typeof mod.getRuntimeMetricsAsync !== "function") {
+      return Promise.resolve({});
+    }
+    return mod.getRuntimeMetricsAsync();
   },
   cancel: () => getNativeModule().cancelAsync(),
 };

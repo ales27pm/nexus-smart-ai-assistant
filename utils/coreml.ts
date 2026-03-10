@@ -23,6 +23,7 @@ export type CoreMLBridge = {
   }) => Promise<boolean>;
   generateNextToken?: () => Promise<number | null>;
   endGenerationSession?: () => Promise<void>;
+  getRuntimeMetrics?: () => Promise<Record<string, unknown>>;
   generate: (prompt: string, opts?: CoreMLGenerateOptions) => Promise<string>;
   cancel: () => Promise<void>;
 };
