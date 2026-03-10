@@ -66,6 +66,11 @@ if [[ -z "$KEYCHAIN_NAME" ]]; then
   exit 1
 fi
 
+if [[ ! "$KEYCHAIN_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  echo "❌ Keychain name may only contain letters, numbers, dot, underscore, and hyphen." >&2
+  exit 1
+fi
+
 if [[ -z "$KEYCHAIN_PASSWORD" ]]; then
   echo "❌ Missing keychain password." >&2
   echo "   Provide --password or set KEYCHAIN_PASSWORD / BUILD_SIGNING_KEYCHAIN_PASSWORD / MATCH_KEYCHAIN_PASSWORD." >&2
