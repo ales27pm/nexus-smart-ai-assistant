@@ -16,6 +16,7 @@ import {
 import { ensureCoreMLModelAssets } from "@/utils/coremlModelManager";
 import type { ModelAssetProgressEvent } from "@/utils/coremlModelManager";
 import { ICoreMLProvider, NativeCoreMLProvider } from "@/utils/coremlProvider";
+import { generateCoreMLTextStream } from "@/utils/coremlStreamingGenerator";
 
 export type CoreMLInitializationEvent = ModelAssetProgressEvent;
 export type CoreMLManagerState = "Idle" | "Loading" | "Ready" | "Disposing";
@@ -130,6 +131,52 @@ export class CoreMLManager {
     options: CoreMLGenerateOptions = {},
     signal?: AbortSignal,
   ): Promise<string> {
+    const { prompt, output } = await this.runGeneration(
+      systemPrompt,
+      userText,
+      options,
+      signal,
+      (promptText, mergedOptions) =>
+        this.provider.generate(promptText, mergedOptions),
+    );
+
+    return cleanCoreMLOutput(output, prompt);
+  }
+
+  async generateStream(
+    systemPrompt: string,
+    userText: string,
+    onToken: (token: string) => void,
+    options: CoreMLGenerateOptions & { maxContext?: number } = {},
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const { prompt, output } = await this.runGeneration(
+      systemPrompt,
+      userText,
+      options,
+      signal,
+      (promptText, mergedOptions) =>
+        generateCoreMLTextStream(
+          this.provider,
+          promptText,
+          mergedOptions,
+          onToken,
+        ),
+    );
+
+    return cleanCoreMLOutput(output, prompt);
+  }
+
+  private async runGeneration(
+    systemPrompt: string,
+    userText: string,
+    options: CoreMLGenerateOptions & { maxContext?: number },
+    signal: AbortSignal | undefined,
+    executor: (
+      prompt: string,
+      opts: CoreMLGenerateOptions & { maxContext?: number },
+    ) => Promise<string>,
+  ): Promise<{ prompt: string; output: string }> {
     if (this.state !== "Ready") {
       throw new CoreMLError(
         `CoreML manager is busy (${this.state}). Try again when the model is ready.`,
@@ -145,12 +192,12 @@ export class CoreMLManager {
     }
 
     const prompt = buildCoreMLChatPrompt(systemPrompt, userText);
-    const opts: CoreMLGenerateOptions = {
+    const mergedOptions: CoreMLGenerateOptions & { maxContext?: number } = {
       ...DEFAULT_COREML_GENERATE_OPTIONS,
       ...options,
     };
-    this.busy = true;
 
+    this.busy = true;
     const abortHandler = () => {
       this.provider.cancel().catch((err) => {
         console.warn("[CoreMLManager] cancel failed", err);
@@ -167,8 +214,8 @@ export class CoreMLManager {
       }
 
       signal?.addEventListener("abort", abortHandler, { once: true });
-      const rawOutput = await this.provider.generate(prompt, opts);
-      return cleanCoreMLOutput(rawOutput, prompt);
+      const output = await executor(prompt, mergedOptions);
+      return { prompt, output };
     } catch (error) {
       throw toActionableCoreMLError(error);
     } finally {

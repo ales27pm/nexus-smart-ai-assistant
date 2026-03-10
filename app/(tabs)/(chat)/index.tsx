@@ -726,7 +726,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     isAvailable: isCoreMLAvailable,
-    generate: generateCoreML,
+    generateStream: generateCoreMLStream,
     loadStatus: coreMLLoadStatus,
   } = useCoreMLChat();
 
@@ -932,17 +932,40 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
             userText,
           );
           setMessages(thread as any);
-          const finalText = await generateCoreML(systemPrompt, userText);
-
-          const updated = thread.map((message: any) =>
-            message.id === assistantId
-              ? {
-                  ...message,
-                  parts: [{ type: "text", text: finalText }],
-                }
-              : message,
+          let streamedText = "";
+          const finalText = await generateCoreMLStream(
+            systemPrompt,
+            userText,
+            (token) => {
+              streamedText += token;
+              setMessages((current: any) =>
+                current.map((message: any) =>
+                  message.id === assistantId
+                    ? {
+                        ...message,
+                        parts: [{ type: "text", text: streamedText }],
+                      }
+                    : message,
+                ),
+              );
+            },
           );
-          setMessages(updated as any);
+
+          setMessages((current: any) =>
+            current.map((message: any) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    parts: [
+                      {
+                        type: "text",
+                        text: finalText || streamedText || "(no output)",
+                      },
+                    ],
+                  }
+                : message,
+            ),
+          );
         } catch (error: unknown) {
           const userMessage = {
             id: generateId(),
@@ -980,7 +1003,7 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
       useLocalLLM,
       isCoreMLAvailable,
       setMessages,
-      generateCoreML,
+      generateCoreMLStream,
     ],
   );
 

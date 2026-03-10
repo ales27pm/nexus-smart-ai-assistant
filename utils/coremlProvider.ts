@@ -20,6 +20,20 @@ export interface ICoreMLProvider {
     control?: CoreMLLoadControl,
   ): Promise<void>;
   generate(prompt: string, options?: CoreMLGenerateOptions): Promise<string>;
+  tokenize(
+    prompt: string,
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ): Promise<number[]>;
+  decode(
+    tokenIds: number[],
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ): Promise<string>;
+  generateFromTokens(
+    tokenIds: number[],
+    options?: Omit<CoreMLGenerateOptions, "tokenizer"> & {
+      maxContext?: number;
+    },
+  ): Promise<number[]>;
   unload(): Promise<void>;
   cancel(): Promise<void>;
   isLoaded(): Promise<boolean>;
@@ -161,6 +175,41 @@ export class NativeCoreMLProvider implements ICoreMLProvider {
     try {
       await this.bridge.unloadModel();
       this.activeLoadOptions = null;
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async tokenize(
+    prompt: string,
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ): Promise<number[]> {
+    try {
+      return await this.bridge.tokenize(prompt, tokenizer);
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async decode(
+    tokenIds: number[],
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ): Promise<string> {
+    try {
+      return await this.bridge.decode(tokenIds, tokenizer);
+    } catch (error) {
+      throw normalizeCoreMLError(error);
+    }
+  }
+
+  async generateFromTokens(
+    tokenIds: number[],
+    options?: Omit<CoreMLGenerateOptions, "tokenizer"> & {
+      maxContext?: number;
+    },
+  ): Promise<number[]> {
+    try {
+      return await this.bridge.generateFromTokens(tokenIds, options);
     } catch (error) {
       throw normalizeCoreMLError(error);
     }

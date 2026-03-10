@@ -2,7 +2,7 @@ import React from "react";
 import TestRenderer, { act } from "react-test-renderer";
 
 import { useCoreMLChat } from "@/hooks/useCoreMLChat";
-import { CoreMLLoadModelOptions } from "@/utils/coreml";
+import { CoreMLGenerateOptions, CoreMLLoadModelOptions } from "@/utils/coreml";
 import { CoreMLManager, CoreMLManagerState } from "@/utils/coreMLManager";
 
 import { createDeferred } from "./utils/asyncTestUtils";
@@ -22,6 +22,7 @@ type ManagerMock = Pick<
   | "initialize"
   | "dispose"
   | "generate"
+  | "generateStream"
   | "getActiveComputeUnits"
   | "getState"
   | "onStateChange"
@@ -44,6 +45,7 @@ function createManagerMock(initialState: CoreMLManagerState = "Idle"): {
     listeners.forEach((listener) => listener({ state }));
   });
   const generate = jest.fn(async () => "ok");
+  const generateStream = jest.fn(async () => "ok-stream");
   const getActiveComputeUnits = jest.fn(() => "all");
   const getState = jest.fn(() => state);
   const onStateChange = jest.fn(
@@ -57,6 +59,7 @@ function createManagerMock(initialState: CoreMLManagerState = "Idle"): {
     initialize,
     dispose,
     generate,
+    generateStream,
     getActiveComputeUnits,
     getState,
     onStateChange,
@@ -87,6 +90,48 @@ async function flushEffects() {
 }
 
 describe("useCoreMLChat", () => {
+  it("forwards stream generation options to manager.generateStream", async () => {
+    const managerSetup = createManagerMock("Ready");
+    let capturedHook: ReturnType<typeof useCoreMLChat> | null = null;
+
+    function CaptureHarness({ manager }: { manager: CoreMLManager }) {
+      capturedHook = useCoreMLChat(manager);
+      return null;
+    }
+
+    await act(async () => {
+      TestRenderer.create(<CaptureHarness manager={managerSetup.manager} />);
+    });
+    await flushEffects();
+
+    const options: CoreMLGenerateOptions & { maxContext?: number } = {
+      temperature: 0.3,
+      maxNewTokens: 8,
+      maxContext: 1024,
+    };
+
+    await act(async () => {
+      await capturedHook?.generateStream(
+        "system",
+        "user",
+        () => {},
+        options,
+        undefined,
+      );
+    });
+
+    const managerAsMock = managerSetup.manager as unknown as {
+      generateStream: jest.Mock;
+    };
+    expect(managerAsMock.generateStream).toHaveBeenCalledWith(
+      "system",
+      "user",
+      expect.any(Function),
+      options,
+      undefined,
+    );
+  });
+
   it("disposes the previous manager and initializes the new one when manager changes", async () => {
     const first = createManagerMock();
     const second = createManagerMock();

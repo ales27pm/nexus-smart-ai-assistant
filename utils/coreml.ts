@@ -4,6 +4,18 @@ export type CoreMLBridge = {
   loadModel: (opts: CoreMLLoadModelOptions) => Promise<unknown>;
   unloadModel: () => Promise<void>;
   isLoaded: () => Promise<boolean>;
+  tokenize: (
+    prompt: string,
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ) => Promise<number[]>;
+  decode: (
+    tokenIds: number[],
+    tokenizer: NonNullable<CoreMLGenerateOptions["tokenizer"]>,
+  ) => Promise<string>;
+  generateFromTokens: (
+    tokenIds: number[],
+    opts?: Omit<CoreMLGenerateOptions, "tokenizer"> & { maxContext?: number },
+  ) => Promise<number[]>;
   generate: (prompt: string, opts?: CoreMLGenerateOptions) => Promise<string>;
   cancel: () => Promise<void>;
 };
