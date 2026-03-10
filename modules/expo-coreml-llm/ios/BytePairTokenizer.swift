@@ -32,15 +32,11 @@ struct TokenizerConfig: Sendable {
     let kind: String
     let vocabJsonAssetPath: String?
     let mergesTxtAssetPath: String?
-    let bosTokenId: Int?
-    let eosTokenId: Int?
 
     init(dict: [String: Any]) {
         self.kind = (dict["kind"] as? String) ?? "byte_level_bpe"
         self.vocabJsonAssetPath = dict["vocabJsonAssetPath"] as? String
         self.mergesTxtAssetPath = dict["mergesTxtAssetPath"] as? String
-        self.bosTokenId = dict["bosTokenId"] as? Int
-        self.eosTokenId = dict["eosTokenId"] as? Int
     }
 }
 
@@ -51,8 +47,6 @@ final class BytePairTokenizer: CoreMLTokenizer {
     private let byteEncoder: [UInt8: String]
     private let byteDecoder: [String: UInt8]
     private let regex: NSRegularExpression
-    private let bosTokenId: Int?
-    private let eosTokenId: Int?
     private var cache: [String: [String]] = [:]
     private let cacheLock = NSLock()
 
@@ -61,7 +55,7 @@ final class BytePairTokenizer: CoreMLTokenizer {
         let right: String
     }
 
-    init(vocabJSON: URL, mergesTXT: URL, bosTokenId: Int?, eosTokenId: Int?) throws {
+    init(vocabJSON: URL, mergesTXT: URL) throws {
         let vocabData = try Data(contentsOf: vocabJSON)
         let mergesText = try String(contentsOf: mergesTXT, encoding: .utf8)
 
@@ -76,8 +70,6 @@ final class BytePairTokenizer: CoreMLTokenizer {
 
         self.encoder = rawVocab
         self.decoder = decoder
-        self.bosTokenId = bosTokenId
-        self.eosTokenId = eosTokenId
 
         let mapping = BytePairTokenizer.bytesToUnicode()
         self.byteEncoder = mapping
@@ -260,7 +252,7 @@ final class CoreMLTokenizerFactory {
         let vocabPath = try resolveRequiredAssetPath(config.vocabJsonAssetPath, label: "vocabJsonAssetPath")
         let mergesPath = try resolveRequiredAssetPath(config.mergesTxtAssetPath, label: "mergesTxtAssetPath")
 
-        let cacheKey = [config.kind, vocabPath, mergesPath, String(config.bosTokenId ?? -1), String(config.eosTokenId ?? -1)].joined(separator: "|")
+        let cacheKey = [config.kind, vocabPath, mergesPath].joined(separator: "|")
 
         lock.lock()
         if let existing = cache[cacheKey] {
@@ -271,9 +263,7 @@ final class CoreMLTokenizerFactory {
 
         let tokenizer = try BytePairTokenizer(
             vocabJSON: URL(fileURLWithPath: vocabPath),
-            mergesTXT: URL(fileURLWithPath: mergesPath),
-            bosTokenId: config.bosTokenId,
-            eosTokenId: config.eosTokenId
+            mergesTXT: URL(fileURLWithPath: mergesPath)
         )
 
         lock.lock()

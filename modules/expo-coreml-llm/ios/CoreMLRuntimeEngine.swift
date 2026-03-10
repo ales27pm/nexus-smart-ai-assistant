@@ -202,7 +202,6 @@ struct PagedTokenArena: Sendable {
 struct PromptPrefixKey: Hashable, Sendable {
     let modelID: String
     let tokenizerID: String
-    let tokenHash: String
 }
 
 struct PrefixSnapshot: Sendable {
@@ -427,7 +426,6 @@ final class CoreMLRuntimeEngine {
         arena.rebuild(from: prompt)
 
         let tokenizerID = options.generation.tokenizer?.kind ?? "native-token-ids"
-        let prefixHash = Self.hashTokenIds(prompt)
         let reusedPrefixTokens = await prefixCache.longestReusablePrefix(
             modelID: info.compiledURL.lastPathComponent,
             tokenizerID: tokenizerID,
@@ -463,7 +461,7 @@ final class CoreMLRuntimeEngine {
         activeSession = session
 
         await prefixCache.store(PrefixSnapshot(
-            key: PromptPrefixKey(modelID: info.compiledURL.lastPathComponent, tokenizerID: tokenizerID, tokenHash: prefixHash),
+            key: PromptPrefixKey(modelID: info.compiledURL.lastPathComponent, tokenizerID: tokenizerID),
             tokens: prompt,
             createdAt: Date()
         ))
@@ -702,9 +700,7 @@ final class CoreMLRuntimeEngine {
             output = try model.prediction(from: provider)
         }
 
-        let logitsValue = output.featureValue(for: info.logitsName)?.multiArrayValue
-            ?? output.featureNames.compactMap { output.featureValue(for: $0)?.multiArrayValue }.first
-        guard let logitsArray = logitsValue else {
+        guard let logitsArray = output.featureValue(for: info.logitsName)?.multiArrayValue else {
             throw CoreMLRuntimeError.missingFeatureValue(info.logitsName)
         }
         let logits = try flattenLastLogits(logitsArray)
@@ -752,7 +748,7 @@ final class CoreMLRuntimeEngine {
         guard let feature = modelDescription.inputDescriptionsByName[name], let constraint = feature.multiArrayConstraint else {
             return allowScalar ? [max(1, count)] : [1, max(1, count)]
         }
-        let rawShape = constraint.shape.map(\.intValue).filter { $0 > 0 }
+        let rawShape = constraint.shape.map(\.intValue)
         guard !rawShape.isEmpty else {
             return allowScalar ? [max(1, count)] : [1, max(1, count)]
         }
@@ -762,7 +758,7 @@ final class CoreMLRuntimeEngine {
             }
             return [max(1, count)]
         }
-        var shape = rawShape
+        var shape = rawShape.map { max(1, $0) }
         if let last = shape.indices.last {
             shape[last] = max(1, count)
         }
@@ -837,7 +833,8 @@ final class CoreMLRuntimeEngine {
         let total = nucleus.reduce(Float(0)) { $0 + $1.prob }
         guard total > 0 else { return nucleus.first?.index ?? 0 }
 
-        var rng = SeededGenerator(seed: UInt64(options.seed ?? history.count &+ 1))
+        let seedValue = (options.seed ?? history.count) &+ 1
+        var rng = SeededGenerator(seed: UInt64(seedValue))
         let threshold = Float.random(in: 0..<total, using: &rng)
         var running: Float = 0
         for candidate in nucleus {
@@ -853,7 +850,4 @@ final class CoreMLRuntimeEngine {
         value.data(using: .utf8)?.base64EncodedString().replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-") ?? value
     }
 
-    private static func hashTokenIds(_ tokenIds: [Int]) -> String {
-        hashString(tokenIds.map(String.init).joined(separator: ","))
-    }
 }
