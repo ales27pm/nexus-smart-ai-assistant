@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 
-import { useCoreMLChat } from "@/hooks/useCoreMLChat";
+import { useCoreMLChat } from "../../hooks/useCoreMLChat";
 import type { CoreMLLoadModelOptions } from "@/utils/coreml";
 import {
   delayDiagnosticPromise,
