@@ -118,14 +118,11 @@ export interface CognitionFrame {
   contextInjections: ContextInjection[];
   metacognition: MetacognitionState;
   intent: IntentClassification;
-  discourse?: DiscourseState;
-  reasoning?: ReasoningFrame;
-  salience?: SalienceMap;
   timestamp: number;
 }
 
 export interface ContextInjection {
-  source: 'memory' | 'emotion' | 'curiosity' | 'thought_tree' | 'persona' | 'temporal' | 'meta' | 'intent' | 'discourse' | 'reasoning' | 'salience' | 'user_model' | 'priming';
+  source: 'memory' | 'emotion' | 'curiosity' | 'thought_tree' | 'persona' | 'temporal' | 'meta' | 'intent' | 'priming';
   content: string;
   priority: number;
   tokenCost: number;
@@ -184,113 +181,6 @@ export interface IntentClassification {
   expectedResponseLength: 'brief' | 'moderate' | 'detailed' | 'comprehensive';
 }
 
-export interface DiscourseState {
-  turnCount: number;
-  topicStack: TopicFrame[];
-  currentTopic: string;
-  topicShiftDetected: boolean;
-  conversationPhase: 'opening' | 'exploration' | 'deep_dive' | 'resolution' | 'closing';
-  coherenceScore: number;
-  engagementLevel: number;
-  userSatisfaction: number;
-  threadDepth: number;
-  pendingQuestions: string[];
-  resolvedTopics: string[];
-}
-
-export interface TopicFrame {
-  topic: string;
-  enteredAt: number;
-  turnIndex: number;
-  depth: number;
-  resolved: boolean;
-  relatedTopics: string[];
-}
-
-export interface ReasoningFrame {
-  biases: CognitiveBias[];
-  contradictions: Contradiction[];
-  inferenceChain: InferenceStep[];
-  analogies: Analogy[];
-  assumptions: Assumption[];
-  confidenceDistribution: Record<string, number>;
-}
-
-export interface CognitiveBias {
-  type: 'anchoring' | 'confirmation' | 'recency' | 'availability' | 'dunning_kruger' | 'sunk_cost' | 'framing' | 'bandwagon' | 'authority';
-  description: string;
-  severity: number;
-  mitigation: string;
-}
-
-export interface Contradiction {
-  claim1: string;
-  claim2: string;
-  source1: string;
-  source2: string;
-  severity: number;
-  resolution: string;
-}
-
-export interface InferenceStep {
-  premise: string;
-  conclusion: string;
-  confidence: number;
-  type: 'deductive' | 'inductive' | 'abductive' | 'analogical';
-  supportingEvidence: string[];
-}
-
-export interface Analogy {
-  source: string;
-  target: string;
-  mapping: string;
-  strength: number;
-}
-
-export interface Assumption {
-  statement: string;
-  implicit: boolean;
-  confidence: number;
-  risk: string;
-}
-
-export interface SalienceMap {
-  keyEntities: SalientEntity[];
-  keyActions: string[];
-  keyConstraints: string[];
-  emotionalHotspots: string[];
-  informationDensity: number;
-  focusPoint: string;
-  peripheralContext: string[];
-}
-
-export interface SalientEntity {
-  text: string;
-  type: 'person' | 'place' | 'organization' | 'concept' | 'technology' | 'event' | 'quantity' | 'time';
-  importance: number;
-  isNovel: boolean;
-}
-
-export interface UserModel {
-  expertiseAreas: Record<string, number>;
-  communicationPreferences: {
-    verbosity: number;
-    formality: number;
-    technicalDepth: number;
-    emotionalOpenness: number;
-  };
-  interactionPatterns: {
-    avgMessageLength: number;
-    questionRatio: number;
-    topicBreadth: number;
-    sessionFrequency: number;
-  };
-  knownPreferences: string[];
-  activeGoals: string[];
-  recentTopics: string[];
-  trustLevel: number;
-}
-
 export interface AssociativeLink {
   sourceId: string;
   targetId: string;
@@ -306,3 +196,4 @@ export interface SpreadingActivation {
   depth: number;
   path: string[];
 }
+

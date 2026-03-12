@@ -51,7 +51,7 @@ export default function ChatInput({
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if ((!trimmed && attachedImages.length === 0) || disabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.sequence([
       Animated.timing(scaleAnim, {
         toValue: 0.85,
@@ -97,7 +97,7 @@ export default function ChatInput({
           uri = asset.uri;
         }
         setAttachedImages((prev) => [...prev, { type: "file", mimeType, uri }]);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         console.log("[ChatInput] Image attached:", mimeType);
       }
     } catch (e) {
@@ -152,7 +152,7 @@ export default function ChatInput({
       const data = await response.json();
       if (data.text) {
         setText((prev) => (prev ? prev + " " + data.text : data.text));
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         console.log("[ChatInput] Transcribed:", data.text.substring(0, 60));
       }
     } catch (e) {
@@ -202,7 +202,7 @@ export default function ChatInput({
       recordingRef.current = recording;
       setIsRecording(true);
       startPulse();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log("[ChatInput] Recording started (native)");
     } catch (e) {
       console.log("[ChatInput] Recording start error:", e);
@@ -254,7 +254,7 @@ export default function ChatInput({
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
       startPulse();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log("[ChatInput] Recording started (web)");
     } catch (e) {
       console.log("[ChatInput] Web recording error:", e);
@@ -320,7 +320,7 @@ export default function ChatInput({
 
   const handleOpenVoiceMode = useCallback(() => {
     if (onOpenVoiceMode && !disabled && !isTranscribing) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       onOpenVoiceMode();
     }
   }, [onOpenVoiceMode, disabled, isTranscribing]);
