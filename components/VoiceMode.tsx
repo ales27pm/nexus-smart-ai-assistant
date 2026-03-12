@@ -190,6 +190,8 @@ export default function VoiceMode({
   const lastWebMeteringErrorAtRef = useRef(0);
   const errorTextRef = useRef("");
   const hasNativeMeteringFatalErrorRef = useRef(false);
+  const startListeningRef = useRef<() => void>(() => {});
+  const finishSpeakingCycleRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     voiceStateRef.current = voiceState;
@@ -201,133 +203,6 @@ export default function VoiceMode({
   useEffect(() => {
     errorTextRef.current = errorText;
   }, [errorText]);
-
-  useEffect(() => {
-    if (visible) {
-      isActiveRef.current = true;
-      setVoiceState("idle");
-      setTranscript("");
-      setDisplayText("");
-      setErrorText("");
-      setTurns([]);
-      setShowHistory(false);
-      lastSpokenTextRef.current = "";
-      spokenLengthRef.current = 0;
-      speakQueueRef.current = [];
-      isSpeakingChunkRef.current = false;
-      isSpeakingRef.current = false;
-      retryCountRef.current = 0;
-      peakLevelRef.current = Platform.OS === "web" ? 0 : -160;
-      hadSpeechRef.current = false;
-      orbScale.setValue(1);
-      orbOpacity.setValue(0.6);
-      fadeAnim.setValue(0);
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
-      autoStartTimerRef.current = setTimeout(() => {
-        if (isActiveRef.current) {
-          console.log("[VoiceMode] Auto-starting listening");
-          startListening();
-        }
-      }, AUTO_LISTEN_DELAY);
-    } else {
-      isActiveRef.current = false;
-      clearAllTimers();
-      stopSpeaking();
-      cleanupAll();
-    }
-  }, [
-    visible,
-    cleanupAll,
-    clearAllTimers,
-    fadeAnim,
-    orbOpacity,
-    orbScale,
-    startListening,
-    stopSpeaking,
-  ]);
-
-  useEffect(() => {
-    if (!streamingText || isMutedRef.current) return;
-    if (
-      voiceStateRef.current !== "thinking" &&
-      voiceStateRef.current !== "speaking"
-    )
-      return;
-
-    const newContent = streamingText.substring(spokenLengthRef.current);
-    if (newContent.length < SPEECH_CHUNK_SIZE) return;
-
-    const sentenceEnd = newContent.search(/[.!?]\s/);
-    if (sentenceEnd > 20) {
-      const chunk = newContent.substring(0, sentenceEnd + 1);
-      spokenLengthRef.current += chunk.length;
-      enqueueSpeechChunk(chunk);
-    } else if (newContent.length > SPEECH_CHUNK_SIZE * 2) {
-      const commaEnd = newContent.search(/[,;:]\s/);
-      const breakAt = commaEnd > 20 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
-      const chunk = newContent.substring(0, breakAt);
-      spokenLengthRef.current += chunk.length;
-      enqueueSpeechChunk(chunk);
-    }
-    setDisplayText(streamingText);
-  }, [streamingText, enqueueSpeechChunk]);
-
-  useEffect(() => {
-    if (
-      isResponding &&
-      voiceStateRef.current !== "thinking" &&
-      voiceStateRef.current !== "speaking"
-    ) {
-      console.log("[VoiceMode] Agent responding, switching to thinking");
-      setVoiceState("thinking");
-      setDisplayText("");
-      spokenLengthRef.current = 0;
-      speakQueueRef.current = [];
-      lastResponseTextRef.current = "";
-    }
-
-    if (isResponding && lastAssistantText) {
-      lastResponseTextRef.current = lastAssistantText;
-    }
-
-    if (prevRespondingRef.current && !isResponding) {
-      const responseText = (
-        lastResponseTextRef.current || lastAssistantText
-      )?.trim();
-      console.log(
-        "[VoiceMode] Agent done responding, text length:",
-        responseText?.length ?? 0,
-      );
-      if (responseText) {
-        const remaining = responseText.substring(spokenLengthRef.current);
-        if (remaining.trim()) {
-          console.log(
-            "[VoiceMode] Speaking remaining:",
-            remaining.substring(0, 80),
-          );
-          enqueueSpeechChunk(remaining);
-        }
-        setDisplayText(responseText);
-        addTurn("assistant", responseText);
-        if (isMutedRef.current && !isSpeakingChunkRef.current) {
-          finishSpeakingCycle();
-        }
-      } else {
-        finishSpeakingCycle();
-      }
-    }
-    prevRespondingRef.current = isResponding;
-  }, [
-    isResponding,
-    lastAssistantText,
-    addTurn,
-    enqueueSpeechChunk,
-    finishSpeakingCycle,
-  ]);
 
   useEffect(() => {
     stopAllAnims();
@@ -980,7 +855,7 @@ export default function VoiceMode({
     if (speakQueueRef.current.length === 0) {
       isSpeakingChunkRef.current = false;
       if (!prevRespondingRef.current) {
-        finishSpeakingCycle();
+        finishSpeakingCycleRef.current();
       }
       return;
     }
@@ -1001,10 +876,10 @@ export default function VoiceMode({
       if (speakQueueRef.current.length > 0) {
         processNextChunk();
       } else if (!prevRespondingRef.current) {
-        finishSpeakingCycle();
+        finishSpeakingCycleRef.current();
       }
     }
-  }, [cleanTextForSpeech, finishSpeakingCycle, speakText]);
+  }, [cleanTextForSpeech, speakText]);
 
   const enqueueSpeechChunk = useCallback(
     (chunk: string) => {
@@ -1027,10 +902,12 @@ export default function VoiceMode({
       setVoiceState("idle");
       setDisplayText("");
       setTimeout(() => {
-        if (isActiveRef.current) startListening();
+        if (isActiveRef.current) startListeningRef.current();
       }, POST_SPEAK_LISTEN_DELAY);
     }
-  }, [startListening]);
+  }, []);
+
+  finishSpeakingCycleRef.current = finishSpeakingCycle;
 
   const transcribeAudio = useCallback(
     async (formData: FormData, attempt: number = 0): Promise<string | null> => {
@@ -1112,7 +989,7 @@ export default function VoiceMode({
           setErrorText("Didn't catch that. Try again.");
           setTimeout(() => {
             setErrorText("");
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 1200);
         }
         return;
@@ -1124,7 +1001,7 @@ export default function VoiceMode({
         );
         if (isActiveRef.current) {
           setTimeout(() => {
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 400);
         }
         return;
@@ -1133,7 +1010,7 @@ export default function VoiceMode({
         console.log("[VoiceMode] Noise transcription filtered:", trimmed);
         if (isActiveRef.current) {
           setTimeout(() => {
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 400);
         }
         return;
@@ -1147,7 +1024,7 @@ export default function VoiceMode({
       console.log("[VoiceMode] Sending to AI:", trimmed.substring(0, 80));
       onSend(trimmed);
     },
-    [onSend, addTurn, isNoiseTranscription, startListening],
+    [onSend, addTurn, isNoiseTranscription],
   );
 
   const handleTranscriptionFailure = useCallback(() => {
@@ -1160,10 +1037,10 @@ export default function VoiceMode({
       setErrorText("Could not understand. Try again.");
       setTimeout(() => {
         setErrorText("");
-        if (isActiveRef.current) startListening();
+        if (isActiveRef.current) startListeningRef.current();
       }, 1500);
     }
-  }, [startListening]);
+  }, []);
 
   const stopAndTranscribeNative = useCallback(async () => {
     try {
@@ -1199,7 +1076,7 @@ export default function VoiceMode({
         if (isActiveRef.current) {
           setVoiceState("idle");
           setTimeout(() => {
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 400);
         }
         return;
@@ -1214,7 +1091,7 @@ export default function VoiceMode({
         if (isActiveRef.current) {
           setVoiceState("idle");
           setTimeout(() => {
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 400);
         }
         return;
@@ -1245,7 +1122,6 @@ export default function VoiceMode({
     transcribeAudio,
     handleTranscriptReady,
     handleTranscriptionFailure,
-    startListening,
   ]);
 
   const stopAndTranscribeWeb = useCallback(async () => {
@@ -1301,7 +1177,7 @@ export default function VoiceMode({
         if (isActiveRef.current) {
           setVoiceState("idle");
           setTimeout(() => {
-            if (isActiveRef.current) startListening();
+            if (isActiveRef.current) startListeningRef.current();
           }, 400);
         }
         return;
@@ -1330,7 +1206,7 @@ export default function VoiceMode({
             if (isActiveRef.current) {
               setVoiceState("idle");
               setTimeout(() => {
-                if (isActiveRef.current) startListening();
+                if (isActiveRef.current) startListeningRef.current();
               }, 300);
             }
             resolve();
@@ -1362,7 +1238,6 @@ export default function VoiceMode({
     transcribeAudio,
     handleTranscriptReady,
     handleTranscriptionFailure,
-    startListening,
   ]);
 
   const startListeningNative = useCallback(async () => {
@@ -1590,6 +1465,8 @@ export default function VoiceMode({
     else startListeningNative();
   }, [startListeningNative, startListeningWeb, stopSpeaking]);
 
+  startListeningRef.current = startListening;
+
   const handleOrbPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (voiceState === "speaking") {
@@ -1659,6 +1536,133 @@ export default function VoiceMode({
       useNativeDriver: true,
     }).start();
   }, [showHistory, historyOpacity]);
+
+  useEffect(() => {
+    if (visible) {
+      isActiveRef.current = true;
+      setVoiceState("idle");
+      setTranscript("");
+      setDisplayText("");
+      setErrorText("");
+      setTurns([]);
+      setShowHistory(false);
+      lastSpokenTextRef.current = "";
+      spokenLengthRef.current = 0;
+      speakQueueRef.current = [];
+      isSpeakingChunkRef.current = false;
+      isSpeakingRef.current = false;
+      retryCountRef.current = 0;
+      peakLevelRef.current = Platform.OS === "web" ? 0 : -160;
+      hadSpeechRef.current = false;
+      orbScale.setValue(1);
+      orbOpacity.setValue(0.6);
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
+      autoStartTimerRef.current = setTimeout(() => {
+        if (isActiveRef.current) {
+          console.log("[VoiceMode] Auto-starting listening");
+          startListening();
+        }
+      }, AUTO_LISTEN_DELAY);
+    } else {
+      isActiveRef.current = false;
+      clearAllTimers();
+      stopSpeaking();
+      cleanupAll();
+    }
+  }, [
+    visible,
+    cleanupAll,
+    clearAllTimers,
+    fadeAnim,
+    orbOpacity,
+    orbScale,
+    startListening,
+    stopSpeaking,
+  ]);
+
+  useEffect(() => {
+    if (!streamingText || isMutedRef.current) return;
+    if (
+      voiceStateRef.current !== "thinking" &&
+      voiceStateRef.current !== "speaking"
+    )
+      return;
+
+    const newContent = streamingText.substring(spokenLengthRef.current);
+    if (newContent.length < SPEECH_CHUNK_SIZE) return;
+
+    const sentenceEnd = newContent.search(/[.!?]\s/);
+    if (sentenceEnd > 20) {
+      const chunk = newContent.substring(0, sentenceEnd + 1);
+      spokenLengthRef.current += chunk.length;
+      enqueueSpeechChunk(chunk);
+    } else if (newContent.length > SPEECH_CHUNK_SIZE * 2) {
+      const commaEnd = newContent.search(/[,;:]\s/);
+      const breakAt = commaEnd > 20 ? commaEnd + 1 : SPEECH_CHUNK_SIZE;
+      const chunk = newContent.substring(0, breakAt);
+      spokenLengthRef.current += chunk.length;
+      enqueueSpeechChunk(chunk);
+    }
+    setDisplayText(streamingText);
+  }, [streamingText, enqueueSpeechChunk]);
+
+  useEffect(() => {
+    if (
+      isResponding &&
+      voiceStateRef.current !== "thinking" &&
+      voiceStateRef.current !== "speaking"
+    ) {
+      console.log("[VoiceMode] Agent responding, switching to thinking");
+      setVoiceState("thinking");
+      setDisplayText("");
+      spokenLengthRef.current = 0;
+      speakQueueRef.current = [];
+      lastResponseTextRef.current = "";
+    }
+
+    if (isResponding && lastAssistantText) {
+      lastResponseTextRef.current = lastAssistantText;
+    }
+
+    if (prevRespondingRef.current && !isResponding) {
+      const responseText = (
+        lastResponseTextRef.current || lastAssistantText
+      )?.trim();
+      console.log(
+        "[VoiceMode] Agent done responding, text length:",
+        responseText?.length ?? 0,
+      );
+      if (responseText) {
+        const remaining = responseText.substring(spokenLengthRef.current);
+        if (remaining.trim()) {
+          console.log(
+            "[VoiceMode] Speaking remaining:",
+            remaining.substring(0, 80),
+          );
+          enqueueSpeechChunk(remaining);
+        }
+        setDisplayText(responseText);
+        addTurn("assistant", responseText);
+        if (isMutedRef.current && !isSpeakingChunkRef.current) {
+          finishSpeakingCycle();
+        }
+      } else {
+        finishSpeakingCycle();
+      }
+    }
+    prevRespondingRef.current = isResponding;
+  }, [
+    isResponding,
+    lastAssistantText,
+    addTurn,
+    enqueueSpeechChunk,
+    finishSpeakingCycle,
+  ]);
 
   const orbTint =
     voiceState === "listening"
