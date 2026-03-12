@@ -13,7 +13,6 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
-  Switch,
 } from "react-native";
 import { RefreshCw, X } from "lucide-react-native";
 import { useRorkAgent, createRorkTool } from "@rork-ai/toolkit-sdk";
@@ -43,14 +42,12 @@ import {
   extractMemoryCandidates,
   getEnhancedSystemPrompt,
 } from "@/utils/context";
-import { appendUserAndAssistantPlaceholder } from "@/utils/chatMessages";
 import {
   analyzeEmotion,
   assessMetacognition,
   buildThoughtTree,
   buildEmotionalMimicry,
 } from "@/utils/cognition";
-import { useCoreMLChat } from "@/hooks/useCoreMLChat";
 import { MemoryEntry, MemoryCategory } from "@/types";
 import { fetchWithTimeout } from "@/utils/fetchWithTimeout";
 import { validateWebScrapeUrl } from "@/utils/webScrape";
@@ -721,14 +718,8 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
   const [dismissed, setDismissed] = useState(false);
   const [voiceModeVisible, setVoiceModeVisible] = useState(false);
   const [isAgentResponding, setIsAgentResponding] = useState(false);
-  const [useLocalLLM, setUseLocalLLM] = useState(false);
   const lastAssistantLenRef = useRef(0);
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    isAvailable: isCoreMLAvailable,
-    generateStream: generateCoreMLStream,
-    loadStatus: coreMLLoadStatus,
-  } = useCoreMLChat();
 
   const { messages, sendMessage, setMessages, error } = useRorkAgent({
     tools,
@@ -923,74 +914,6 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
       );
       const userText = text.trim();
 
-      if (useLocalLLM && isCoreMLAvailable) {
-        const base = Array.isArray(messages) ? (messages as any[]) : [];
-
-        try {
-          const { thread, assistantId } = appendUserAndAssistantPlaceholder(
-            base,
-            userText,
-          );
-          setMessages(thread as any);
-          let streamedText = "";
-          const finalText = await generateCoreMLStream(
-            systemPrompt,
-            userText,
-            (token) => {
-              streamedText += token;
-              setMessages((current: any) =>
-                current.map((message: any) =>
-                  message.id === assistantId
-                    ? {
-                        ...message,
-                        parts: [{ type: "text", text: streamedText }],
-                      }
-                    : message,
-                ),
-              );
-            },
-          );
-
-          setMessages((current: any) =>
-            current.map((message: any) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    parts: [
-                      {
-                        type: "text",
-                        text: finalText || streamedText || "(no output)",
-                      },
-                    ],
-                  }
-                : message,
-            ),
-          );
-        } catch (error: unknown) {
-          const userMessage = {
-            id: generateId(),
-            role: "user",
-            parts: [{ type: "text", text: userText }],
-          };
-          const assistantErr: any = {
-            id: generateId(),
-            role: "assistant",
-            parts: [
-              {
-                type: "text",
-                text:
-                  error instanceof Error
-                    ? error.message
-                    : "CoreML generation failed.",
-              },
-            ],
-          };
-          setMessages([...base, userMessage, assistantErr] as any);
-        }
-        setIsAgentResponding(false);
-        return;
-      }
-
       const messagePayload: any = { text: userText, systemPrompt };
       if (files && files.length > 0) {
         messagePayload.files = files;
@@ -1000,10 +923,6 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
     [
       sendMessage,
       messages,
-      useLocalLLM,
-      isCoreMLAvailable,
-      setMessages,
-      generateCoreMLStream,
     ],
   );
 
@@ -1123,16 +1042,6 @@ Action: ${input.suggestedAction.replace(/_/g, " ")}`;
           </View>
         </View>
       )}
-      <View style={styles.localToggleRow}>
-        <Text style={styles.localToggleText}>
-          On-device (CoreML): {coreMLLoadStatus.state}
-        </Text>
-        <Switch
-          value={useLocalLLM}
-          onValueChange={(v) => setUseLocalLLM(v)}
-          disabled={!isCoreMLAvailable}
-        />
-      </View>
       <ChatInput
         onSend={handleSend}
         disabled={isStreaming}
@@ -1208,14 +1117,4 @@ const styles = StyleSheet.create({
   },
   retryText: { color: "#fff", fontSize: 12, fontWeight: "600" as const },
   dismissBtn: { padding: 4 },
-  localToggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderTopWidth: 1,
-    borderColor: Colors.dark.borderSubtle,
-  },
-  localToggleText: { color: Colors.dark.textSecondary, fontSize: 12 },
 });

@@ -3,8 +3,7 @@ import {
   Sparkles,
   Clock,
   Brain,
-  Smartphone,
-  FlaskConical,
+  Settings,
 } from "lucide-react-native";
 import Colors from "../../constants/colors";
 
@@ -50,20 +49,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="device/index"
+        name="settings"
         options={{
-          title: "Device",
+          title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <Smartphone size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="e2e"
-        options={{
-          title: "E2E",
-          tabBarIcon: ({ color, size }) => (
-            <FlaskConical size={size} color={color} />
+            <Settings size={size} color={color} />
           ),
         }}
       />

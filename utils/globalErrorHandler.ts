@@ -61,7 +61,7 @@ export function reportBoundaryError(error: Error, errorInfo: ErrorInfo): void {
     error,
     severity: "fatal",
     source: "react-boundary",
-    componentStack: errorInfo.componentStack,
+    componentStack: errorInfo.componentStack ?? undefined,
   });
 }
 

@@ -82,3 +82,6 @@ build-output.log
 modules/expo-coreml-llm/ios/resources/models/
 coremltools-venv/
 
+
+ios/
+android/
