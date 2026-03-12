@@ -11,15 +11,9 @@ import {
   MetacognitionState,
   MemoryEntry,
   RetrievalResult,
-  IntentClassification,
-  DiscourseState,
-  ReasoningFrame,
-  SalienceMap,
 } from '@/types';
 import { searchMemories, loadAssociativeLinks, getAssociativeMemories } from '@/utils/memory';
 import { classifyIntent, buildIntentInjection } from '@/utils/intent';
-import { analyzeDiscourse, buildDiscourseInjection } from '@/utils/discourse';
-import { buildReasoningFrame, extractSalience, buildReasoningInjection, buildSalienceInjection } from '@/utils/reasoning';
 
 const EMOTION_LEXICON: Record<string, { valence: number; arousal: number; label: string }> = {
   happy: { valence: 0.8, arousal: 0.6, label: 'joy' },
@@ -334,14 +328,12 @@ export function buildMetacognitionInjection(meta: MetacognitionState): string {
 }
 
 let _previousEmotion: EmotionalState | undefined;
-let _previousDiscourse: DiscourseState | null = null;
 
 export async function runCognitionEngine(
   userMessage: string,
   memories: MemoryEntry[],
   relevantMemories: RetrievalResult[],
   conversationLength: number,
-  recentMessages?: unknown[],
 ): Promise<CognitionFrame> {
   console.log('[COGNITION] Running pipeline for:', userMessage.substring(0, 60));
 
@@ -352,11 +344,6 @@ export async function runCognitionEngine(
   const thoughtTree = buildThoughtTree(userMessage, relevantMemories, metacognition);
   const curiositySignals = detectCuriosity(userMessage, memories, emotionalState);
   const intent = classifyIntent(userMessage, conversationLength);
-  const discourse = analyzeDiscourse(userMessage, recentMessages ?? [], _previousDiscourse);
-  _previousDiscourse = discourse;
-
-  const reasoning = buildReasoningFrame(userMessage, memories, relevantMemories);
-  const salience = extractSalience(userMessage, memories);
 
   let associativeMemories: RetrievalResult[] = [];
   try {
@@ -378,9 +365,6 @@ export async function runCognitionEngine(
   addInjection('curiosity', buildCuriosityInjection(curiositySignals), 5);
   addInjection('meta', buildMetacognitionInjection(metacognition), metacognition.uncertaintyLevel > 0.4 ? 7 : 3);
   addInjection('intent', buildIntentInjection(intent), intent.urgency > 0.6 ? 8 : 4);
-  addInjection('discourse', buildDiscourseInjection(discourse), discourse.userSatisfaction < 0.4 ? 9 : 3);
-  addInjection('reasoning', buildReasoningInjection(reasoning), reasoning.contradictions.length > 0 ? 8 : 3);
-  addInjection('salience', buildSalienceInjection(salience), salience.informationDensity > 0.7 ? 7 : 4);
 
   if (associativeMemories.length > 0) {
     const content = '## Associative Memory\n' + associativeMemories.map(r => `- [${r.matchType}] ${r.memory.content.substring(0, 80)}`).join('\n');
@@ -396,6 +380,6 @@ export async function runCognitionEngine(
 
   return {
     emotionalState, thoughtTree, curiositySignals, contextInjections, metacognition,
-    intent, discourse, reasoning, salience, timestamp: Date.now(),
+    intent, timestamp: Date.now(),
   };
 }

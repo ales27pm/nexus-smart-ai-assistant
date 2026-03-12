@@ -1,4 +1,4 @@
-import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult, CognitionFrame, ContextInjection } from '@/types';
+import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult, CognitionFrame } from '@/types';
 import { searchMemories, loadMemories, loadAssociativeLinks, getAssociativeMemories, primeMemories, saveMemories } from '@/utils/memory';
 import { runCognitionEngine } from '@/utils/cognition';
 import { generateText } from '@rork-ai/toolkit-sdk';
@@ -31,8 +31,6 @@ Current: ${dateStr}, ${timeStr} (${timeOfDay})
 - Tree of Thought reasoning for complex problems
 - Emotional mimicry — detect and adapt to user's emotional state and style
 - Metacognition — monitor own uncertainty and confidence
-- Intent classification and discourse tracking
-- Cognitive bias detection and mitigation
 
 ## Epistemic Honesty
 - Never fabricate facts. If unsure, say so explicitly.
@@ -99,7 +97,7 @@ function buildMemorySection(memories: RetrievalResult[]): string {
 }
 
 function buildCognitionSection(frame: CognitionFrame): string {
-  const TOKEN_BUDGET = 2500;
+  const TOKEN_BUDGET = 1500;
   let usedTokens = 0;
   const sections: string[] = [];
 
@@ -118,8 +116,6 @@ function buildCognitionSummary(frame: CognitionFrame): string {
   parts.push(`Intent: ${frame.intent.primary.replace(/_/g, ' ')} (${(frame.intent.confidence * 100).toFixed(0)}%)`);
   parts.push(`Emotion: ${frame.emotionalState.dominantEmotion} (${frame.emotionalState.valence}/${frame.emotionalState.arousal})`);
   parts.push(`Complexity: ${frame.metacognition.reasoningComplexity} | Uncertainty: ${(frame.metacognition.uncertaintyLevel * 100).toFixed(0)}%`);
-  parts.push(`Phase: ${frame.discourse.conversationPhase} | Satisfaction: ${(frame.discourse.userSatisfaction * 100).toFixed(0)}%`);
-  if (frame.reasoning.contradictions.length > 0) parts.push(`Contradictions: ${frame.reasoning.contradictions.length} — address these`);
   return parts.join('\n');
 }
 
@@ -173,7 +169,7 @@ export async function buildContextWindow(
 
   let cognitionFrame: CognitionFrame | null = null;
   try {
-    cognitionFrame = await runCognitionEngine(userMessage, memories, relevantMemories, recentMessages.length, recentMessages);
+    cognitionFrame = await runCognitionEngine(userMessage, memories, relevantMemories, recentMessages.length);
   } catch (e) {
     console.log('[NEXUS] Cognition error:', e);
   }
@@ -272,7 +268,7 @@ export async function getEnhancedSystemPrompt(
 
   let cognitionFrame: CognitionFrame | null = null;
   try {
-    cognitionFrame = await runCognitionEngine(userMessage, memories, relevantMemories, recentMessages.length, recentMessages);
+    cognitionFrame = await runCognitionEngine(userMessage, memories, relevantMemories, recentMessages.length);
   } catch (e) {
     console.log('[NEXUS] Cognition error:', e);
   }

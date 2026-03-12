@@ -118,9 +118,9 @@ export interface CognitionFrame {
   contextInjections: ContextInjection[];
   metacognition: MetacognitionState;
   intent: IntentClassification;
-  discourse: DiscourseState;
-  reasoning: ReasoningFrame;
-  salience: SalienceMap;
+  discourse?: DiscourseState;
+  reasoning?: ReasoningFrame;
+  salience?: SalienceMap;
   timestamp: number;
 }
 
