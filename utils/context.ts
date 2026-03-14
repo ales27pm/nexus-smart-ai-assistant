@@ -1,7 +1,7 @@
 import { MemoryEntry, ContextWindow, ContextConfig, RetrievalResult, CognitionFrame } from '@/types';
 import { searchMemories, loadMemories, loadAssociativeLinks, getAssociativeMemories, primeMemories, saveMemories } from '@/utils/memory';
 import { runCognitionEngine } from '@/utils/cognition';
-import { generateText } from '@rork-ai/toolkit-sdk';
+import { generateTextViaLlama, loadLlamaConfig } from '@/utils/llamaClient';
 
 const DEFAULT_CONFIG: ContextConfig = {
   maxTokens: 8000,
@@ -198,9 +198,10 @@ async function summarizeConversation(messages: unknown[]): Promise<string> {
     }
     if (textParts.length < 4) return '';
 
-    const summary = await generateText({
-      messages: [{ role: 'user', content: `Summarize this conversation in 2-3 sentences:\n\n${textParts.join('\n')}` }],
-    });
+    const config = await loadLlamaConfig();
+    const summary = await generateTextViaLlama(config, [
+      { role: 'user', content: `Summarize this conversation in 2-3 sentences:\n\n${textParts.join('\n')}` },
+    ]);
     console.log('[NEXUS] Summary generated:', summary.substring(0, 80));
     return summary;
   } catch (e) {
@@ -220,16 +221,15 @@ export async function extractMemoryCandidates(
     const hasMemoryWorthy = /\b(my name|i am|i'm|i live|i work|i like|i prefer|i hate|i love|remember|my favorite|i want to|i need to|my goal|always|never|from now on|i feel|i know|i can)\b/i.test(userMessage);
     if (!hasMemoryWorthy) return [];
 
-    const result = await generateText({
-      messages: [{
-        role: 'user',
-        content: `Extract memorable facts from this exchange. Return ONLY a JSON array (or empty array).
+    const config = await loadLlamaConfig();
+    const result = await generateTextViaLlama(config, [{
+      role: 'user',
+      content: `Extract memorable facts from this exchange. Return ONLY a JSON array (or empty array).
 Each item: { "content": "...", "keywords": ["..."], "category": "preference|fact|instruction|goal|persona|skill|entity|episodic", "importance": 1-5 }
 
 Exchange:
 ${combined.substring(0, 1500)}`,
-      }],
-    });
+    }]);
 
     const match = result.match(/\[[\s\S]*\]/);
     if (!match) return [];

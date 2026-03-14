@@ -69,7 +69,7 @@ export default function EmptyState({ onSuggestion }: EmptyStateProps) {
   }, [fadeAnim, slideAnim, glowAnim, chipAnims]);
 
   const handleSuggestion = useCallback((text: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onSuggestion?.(text);
   }, [onSuggestion]);
 
@@ -89,8 +89,8 @@ export default function EmptyState({ onSuggestion }: EmptyStateProps) {
         </View>
 
         <Text style={styles.title}>NEXUS</Text>
-        <Text style={styles.subtitle}>Context-Aware AI Agent</Text>
-        <Text style={styles.version}>TF-IDF Memory · Auto-Extract · Tool Orchestration</Text>
+        <Text style={styles.subtitle}>Powered by llama.cpp</Text>
+        <Text style={styles.version}>Local Inference · TF-IDF Memory · Tool Orchestration</Text>
 
         <View style={styles.capsGrid}>
           {CAPABILITIES.map((cap, i) => {
@@ -142,10 +142,10 @@ export default function EmptyState({ onSuggestion }: EmptyStateProps) {
 
         <View style={styles.hintBox}>
           <Text style={styles.hintTitle}>How it works</Text>
+          <Text style={styles.hintItem}>→ Runs locally via llama.cpp server</Text>
           <Text style={styles.hintItem}>→ Memories persist across sessions via semantic search</Text>
-          <Text style={styles.hintItem}>→ Important facts are auto-extracted and stored</Text>
           <Text style={styles.hintItem}>→ Tools chain together for complex tasks</Text>
-          <Text style={styles.hintItem}>→ Context window is optimized per message</Text>
+          <Text style={styles.hintItem}>→ Configure server URL in Settings tab</Text>
         </View>
       </Animated.View>
     </ScrollView>

@@ -15,7 +15,6 @@ import {
   Easing,
 } from "react-native";
 import { RefreshCw, X } from "lucide-react-native";
-import { useRorkAgent } from "@rork-ai/toolkit-sdk";
 import Colors from "../../../constants/colors";
 import ChatBubble from "@/components/ChatBubble";
 import ToolCard from "@/components/ToolCard";
@@ -23,6 +22,8 @@ import ChatInput, { ChatFile } from "@/components/ChatInput";
 import EmptyState from "@/components/EmptyState";
 import VoiceMode from "@/components/VoiceMode";
 import { useConversations } from "@/providers/ConversationsProvider";
+import { useLlama } from "@/providers/LlamaProvider";
+import { useLlamaChat, ChatMessage } from "@/hooks/useLlamaChat";
 import { loadMessages } from "@/utils/conversations";
 import { conversationPersistenceService } from "@/utils/conversationPersistence";
 import { loadMemories, generateId } from "@/utils/memory";
@@ -91,6 +92,7 @@ function TypingIndicator() {
 export default function ChatScreen() {
   const { activeId, setActiveId, upsertConversation, addMemory } =
     useConversations();
+  const { config } = useLlama();
   const convIdRef = useRef<string>(activeId ?? generateId());
   const hasLoadedRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
@@ -119,7 +121,7 @@ export default function ChatScreen() {
   const lastAssistantLenRef = useRef(0);
   const respondingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { messages, sendMessage, setMessages, error } = useRorkAgent({
+  const { messages, sendMessage, setMessages, error } = useLlamaChat(config, {
     tools,
   });
 
@@ -136,10 +138,10 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!isAgentResponding || messages.length === 0) return;
-    const last = messages[messages.length - 1] as any;
+    const last = messages[messages.length - 1];
     if (last.role !== "assistant") return;
     const hasActiveTool = last.parts?.some(
-      (p: any) =>
+      (p) =>
         p.type === "tool" &&
         (p.state === "input-streaming" || p.state === "input-available"),
     );
@@ -149,8 +151,8 @@ export default function ChatScreen() {
     }
     const textLen =
       last.parts
-        ?.filter((p: any) => p.type === "text")
-        .map((p: any) => p.text ?? "")
+        ?.filter((p) => p.type === "text")
+        .map((p) => p.text ?? "")
         .join("").length ?? 0;
     if (textLen !== lastAssistantLenRef.current) {
       lastAssistantLenRef.current = textLen;
@@ -169,9 +171,9 @@ export default function ChatScreen() {
       hasLoadedRef.current = false;
       void loadMessages(activeId).then((msgs) => {
         if (msgs && msgs.length > 0) {
-          setMessages(msgs as Parameters<typeof setMessages>[0]);
+          setMessages(msgs as ChatMessage[]);
         } else {
-          setMessages([] as unknown as Parameters<typeof setMessages>[0]);
+          setMessages([] as ChatMessage[]);
         }
         hasLoadedRef.current = true;
       });
@@ -187,25 +189,26 @@ export default function ChatScreen() {
       conversationId: id,
       messages,
       onPersistMeta: (pendingMessages) => {
-        const firstUserMsg = pendingMessages.find(
-          (m: any) => m.role === "user",
-        ) as any;
+        const typedMessages = pendingMessages as ChatMessage[];
+        const firstUserMsg = typedMessages.find(
+          (m) => m.role === "user",
+        );
         const title =
           firstUserMsg?.parts
-            ?.find((p: any) => p.type === "text")
+            ?.find((p) => p.type === "text")
             ?.text?.substring(0, 60) ?? "New Chat";
-        const lastMsg = pendingMessages[pendingMessages.length - 1] as any;
+        const lastMsg = typedMessages[typedMessages.length - 1];
         const lastText =
           lastMsg?.parts
-            ?.filter((p: any) => p.type === "text")
-            .map((p: any) => p.text)
+            ?.filter((p) => p.type === "text")
+            .map((p) => p.text)
             .join(" ") ?? "";
         upsertConversation({
           id,
           title,
           preview: lastText.substring(0, 100),
           timestamp: Date.now(),
-          messageCount: pendingMessages.length,
+          messageCount: typedMessages.length,
         });
       },
     });
@@ -249,11 +252,7 @@ export default function ChatScreen() {
         { isVoiceMode: options?.isVoiceMode },
       );
       const userText = text.trim();
-      const messagePayload: any = { text: userText, systemPrompt };
-      if (files && files.length > 0) {
-        messagePayload.files = files;
-      }
-      sendMessage(messagePayload);
+      sendMessage({ text: userText, systemPrompt, files });
     },
     [sendMessage, messages],
   );
@@ -265,10 +264,10 @@ export default function ChatScreen() {
     [handleSend],
   );
 
-  const renderMessage = useCallback(({ item }: { item: any }) => {
+  const renderMessage = useCallback(({ item }: { item: ChatMessage }) => {
     return (
       <View>
-        {item.parts.map((part: any, i: number) => {
+        {item.parts.map((part, i) => {
           if (part.type === "text" && part.text) {
             return (
               <ChatBubble
@@ -295,15 +294,15 @@ export default function ChatScreen() {
     );
   }, []);
 
-  const keyExtractor = useCallback((item: any) => item.id, []);
+  const keyExtractor = useCallback((item: ChatMessage) => item.id, []);
 
   const isStreaming = useMemo(() => {
     if (isAgentResponding) return true;
     if (messages.length === 0) return false;
-    const last = messages[messages.length - 1] as any;
+    const last = messages[messages.length - 1];
     if (last.role === "user") return true;
     return last.parts.some(
-      (p: any) =>
+      (p) =>
         p.type === "tool" &&
         (p.state === "input-streaming" || p.state === "input-available"),
     );
@@ -311,23 +310,23 @@ export default function ChatScreen() {
 
   const streamingAssistantText = useMemo(() => {
     if (messages.length === 0) return "";
-    const last = messages[messages.length - 1] as any;
+    const last = messages[messages.length - 1];
     if (last.role !== "assistant") return "";
     return (
       last.parts
-        ?.filter((p: any) => p.type === "text")
-        .map((p: any) => p.text)
+        ?.filter((p) => p.type === "text")
+        .map((p) => p.text)
         .join(" ") ?? ""
     );
   }, [messages]);
 
   const lastAssistantText = useMemo(() => {
     if (messages.length === 0) return "";
-    const last = messages[messages.length - 1] as any;
+    const last = messages[messages.length - 1];
     return (
       last?.parts
-        ?.filter((p: any) => p.type === "text")
-        .map((p: any) => p.text)
+        ?.filter((p) => p.type === "text")
+        .map((p) => p.text)
         .join(" ") ?? ""
     );
   }, [messages]);
@@ -339,7 +338,7 @@ export default function ChatScreen() {
       ) : (
         <FlatList
           ref={flatListRef}
-          data={messages as any[]}
+          data={messages}
           renderItem={renderMessage}
           keyExtractor={keyExtractor}
           contentContainerStyle={styles.messageList}
@@ -353,7 +352,7 @@ export default function ChatScreen() {
             <Text style={styles.errorText}>
               {error.message === "Load failed" ||
               error.message === "Failed to fetch"
-                ? "Connection error — check your network"
+                ? "Connection error — check your network and llama.cpp server"
                 : (error.message ?? "Something went wrong")}
             </Text>
             <View style={styles.errorActions}>
@@ -363,9 +362,9 @@ export default function ChatScreen() {
                   setDismissed(true);
                   const lastUserMsg = [...messages]
                     .reverse()
-                    .find((m: any) => m.role === "user") as any;
+                    .find((m) => m.role === "user");
                   const lastText = lastUserMsg?.parts?.find(
-                    (p: any) => p.type === "text",
+                    (p) => p.type === "text",
                   )?.text;
                   if (lastText) void handleSend(lastText);
                 }}

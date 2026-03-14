@@ -5,11 +5,12 @@ import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { StatusBar } from "expo-status-bar";
 import { ConversationsProvider } from "@/providers/ConversationsProvider";
+import { LlamaProvider } from "@/providers/LlamaProvider";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import Colors from "../constants/colors";
 import { installGlobalErrorHandlers } from "@/utils/globalErrorHandler";
 
-SplashScreen.preventAutoHideAsync();
+void SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
@@ -25,7 +26,7 @@ function RootLayoutNav() {
 export default function RootLayout() {
   useEffect(() => {
     installGlobalErrorHandlers();
-    SplashScreen.hideAsync();
+    void SplashScreen.hideAsync();
   }, []);
 
   return (
@@ -34,10 +35,12 @@ export default function RootLayout() {
         style={{ flex: 1, backgroundColor: Colors.dark.background }}
       >
         <ErrorBoundary>
-          <ConversationsProvider>
-            <StatusBar style="light" />
-            <RootLayoutNav />
-          </ConversationsProvider>
+          <LlamaProvider>
+            <ConversationsProvider>
+              <StatusBar style="light" />
+              <RootLayoutNav />
+            </ConversationsProvider>
+          </LlamaProvider>
         </ErrorBoundary>
       </GestureHandlerRootView>
     </QueryClientProvider>

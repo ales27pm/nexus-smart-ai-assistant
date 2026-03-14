@@ -1,4 +1,3 @@
-import { createRorkTool } from "@rork-ai/toolkit-sdk";
 import { z } from "zod";
 import {
   loadMemories,
@@ -20,6 +19,7 @@ import {
 import { fetchWithTimeout } from "@/utils/fetchWithTimeout";
 import { validateWebScrapeUrl } from "@/utils/webScrape";
 import { MemoryEntry, MemoryCategory } from "@/types";
+import { ToolDefinition } from "@/hooks/useLlamaChat";
 
 function getWebSearchTimeoutMs(): number {
   if (typeof navigator === "undefined") return 8000;
@@ -78,63 +78,102 @@ async function runCognitiveAnalysis(
   return `## Analysis\nProblem: "${problem}"\nComplexity: ${meta.reasoningComplexity} | Convergence: ${(tree.convergenceScore * 100).toFixed(0)}%\n\n${branches}\n\nExplore highest-confidence paths and synthesize.`;
 }
 
+function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
+  const schemaDef = (schema as any)._zpiDef ?? (schema as any)._def ?? (schema as any).def;
+  if (!schemaDef) return { type: "object", properties: {} };
+
+  const typeName = schemaDef.typeName ?? schemaDef.type ?? '';
+
+  if (typeName === 'ZodObject' || (schema as any).shape) {
+    const shape = (schema as any).shape as Record<string, z.ZodType> | undefined;
+    if (!shape) return { type: "object", properties: {} };
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+
+    for (const [key, value] of Object.entries(shape)) {
+      const valueDef = (value as any)._zpiDef ?? (value as any)._def ?? (value as any).def;
+      const valueTypeName = valueDef?.typeName ?? valueDef?.type ?? '';
+      const isOptional = valueTypeName === 'ZodOptional';
+
+      if (!isOptional) required.push(key);
+
+      const innerType = isOptional
+        ? (valueDef?.innerType ?? valueDef?.value ?? value)
+        : value;
+      properties[key] = zodTypeToJson(innerType as z.ZodType);
+    }
+
+    return { type: "object", properties, required };
+  }
+  return { type: "object", properties: {} };
+}
+
+function zodTypeToJson(t: z.ZodType): Record<string, unknown> {
+  const def = (t as any)._zpiDef ?? (t as any)._def ?? (t as any).def;
+  const typeName: string = def?.typeName ?? def?.type ?? '';
+  const desc: string = (def?.description ?? (t as any).description ?? '') as string;
+
+  if (typeName === 'ZodString' || typeName === 'string') return { type: "string", description: desc };
+  if (typeName === 'ZodNumber' || typeName === 'number') return { type: "number", description: desc };
+  if (typeName === 'ZodEnum' || typeName === 'enum') {
+    const values = def?.values ?? def?.entries ?? [];
+    return { type: "string", enum: values, description: desc };
+  }
+  if (typeName === 'ZodArray' || typeName === 'array') {
+    const element = def?.type ?? def?.element ?? def?.items;
+    return { type: "array", items: element ? zodTypeToJson(element as z.ZodType) : { type: "string" }, description: desc };
+  }
+  if (typeName === 'ZodOptional' || typeName === 'optional') {
+    const inner = def?.innerType ?? def?.value ?? t;
+    return zodTypeToJson(inner as z.ZodType);
+  }
+  return { type: "string", description: desc };
+}
+
 interface CreateToolsOptions {
   addMemory: (entry: MemoryEntry) => void;
   getMessageCount: () => number;
 }
 
-export function createAgentTools(options: CreateToolsOptions) {
+export function createAgentTools(options: CreateToolsOptions): Record<string, ToolDefinition> {
   const { addMemory, getMessageCount } = options;
 
   return {
-    webSearch: createRorkTool({
+    webSearch: {
       description:
         "Search the internet for current information, news, facts, or real-time data.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         query: z.string().describe("Search query"),
-      }),
-      async execute(input: { query: string }) {
-        return runWebSearch(input.query);
+      })),
+      async execute(input: Record<string, unknown>) {
+        return runWebSearch(input.query as string);
       },
-    }),
+    },
 
-    storeMemory: createRorkTool({
+    storeMemory: {
       description:
         "Store info in persistent memory. Use when user shares preferences, goals, instructions, or says 'remember'.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         content: z.string().describe("Information to store"),
         keywords: z.array(z.string()).describe("3-6 keywords"),
         category: z.enum([
-          "preference",
-          "fact",
-          "instruction",
-          "context",
-          "goal",
-          "persona",
-          "skill",
-          "entity",
-          "episodic",
+          "preference", "fact", "instruction", "context", "goal", "persona", "skill", "entity", "episodic",
         ]),
-        importance: z
-          .number()
-          .min(1)
-          .max(5)
-          .describe("1=trivial, 5=critical"),
-      }),
-      async execute(input: {
-        content: string;
-        keywords: string[];
-        category: string;
-        importance: number;
-      }) {
-        console.log("[NEXUS] Storing:", input.content.substring(0, 60));
+        importance: z.number().describe("1=trivial, 5=critical"),
+      })),
+      async execute(input: Record<string, unknown>) {
+        const content = input.content as string;
+        const keywords = input.keywords as string[];
+        const category = input.category as string;
+        const importance = input.importance as number;
+        console.log("[NEXUS] Storing:", content.substring(0, 60));
         const entry: MemoryEntry = {
           id: generateId(),
-          content: input.content,
-          keywords: input.keywords,
-          category: input.category as MemoryCategory,
+          content,
+          keywords,
+          category: category as MemoryCategory,
           timestamp: Date.now(),
-          importance: input.importance,
+          importance,
           source: "conversation",
           accessCount: 0,
           lastAccessed: Date.now(),
@@ -156,44 +195,32 @@ export function createAgentTools(options: CreateToolsOptions) {
         } catch (e) {
           console.log("[NEXUS] Link error:", e);
         }
-        return `Stored [${input.category}/${input.importance}★]: "${input.content.substring(0, 80)}"`;
+        return `Stored [${category}/${importance}★]: "${content.substring(0, 80)}"`;
       },
-    }),
+    },
 
-    recallMemory: createRorkTool({
+    recallMemory: {
       description:
         "Search user's memory bank for preferences, past facts, or stored info.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         query: z.string().describe("Search query"),
-        category: z
-          .enum([
-            "preference",
-            "fact",
-            "instruction",
-            "context",
-            "goal",
-            "persona",
-            "skill",
-            "entity",
-            "episodic",
-            "all",
-          ])
-          .optional(),
-        maxResults: z.number().min(1).max(15).optional(),
-      }),
-      async execute(input: {
-        query: string;
-        category?: string;
-        maxResults?: number;
-      }) {
-        console.log("[NEXUS] Recalling:", input.query);
+        category: z.enum([
+          "preference", "fact", "instruction", "context", "goal", "persona", "skill", "entity", "episodic", "all",
+        ]).optional(),
+        maxResults: z.number().optional(),
+      })),
+      async execute(input: Record<string, unknown>) {
+        const query = input.query as string;
+        const categoryInput = input.category as string | undefined;
+        const maxResults = (input.maxResults as number) ?? 8;
+        console.log("[NEXUS] Recalling:", query);
         const memories = await loadMemories();
         const categoryFilter =
-          input.category && input.category !== "all"
-            ? [input.category as MemoryCategory]
+          categoryInput && categoryInput !== "all"
+            ? [categoryInput as MemoryCategory]
             : undefined;
-        const results = searchMemories(memories, input.query, {
-          maxResults: input.maxResults ?? 8,
+        const results = searchMemories(memories, query, {
+          maxResults,
           categoryFilter,
         });
         if (results.length === 0)
@@ -218,81 +245,56 @@ export function createAgentTools(options: CreateToolsOptions) {
           2,
         );
       },
-    }),
+    },
 
-    deepAnalysis: createRorkTool({
+    deepAnalysis: {
       description:
         "Structured multi-dimensional analysis for complex topics.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         topic: z.string().describe("Subject to analyze"),
-        framework: z
-          .enum([
-            "swot",
-            "pros_cons",
-            "comparison",
-            "root_cause",
-            "decision_matrix",
-            "general",
-          ])
-          .optional(),
-      }),
-      async execute(input: { topic: string; framework?: string }) {
-        const framework = input.framework ?? "general";
+        framework: z.enum([
+          "swot", "pros_cons", "comparison", "root_cause", "decision_matrix", "general",
+        ]).optional(),
+      })),
+      async execute(input: Record<string, unknown>) {
+        const topic = input.topic as string;
+        const framework = (input.framework as string) ?? "general";
         const msgCount = getMessageCount();
         if (framework === "swot") {
-          const dimensions = [
-            "Strengths",
-            "Weaknesses",
-            "Opportunities",
-            "Threats",
-          ];
+          const dimensions = ["Strengths", "Weaknesses", "Opportunities", "Threats"];
           const memories = await loadMemories();
           const branchAnalyses = await Promise.all(
             dimensions.map((dimension) =>
-              runCognitiveAnalysis(
-                `${input.topic} — ${dimension}`,
-                msgCount,
-                memories,
-              ),
+              runCognitiveAnalysis(`${topic} — ${dimension}`, msgCount, memories),
             ),
           );
-          return `## Deep Analysis: SWOT\nTopic: ${input.topic}\n\n${dimensions
-            .map(
-              (dimension, idx) => `### ${dimension}\n${branchAnalyses[idx]}`,
-            )
+          return `## Deep Analysis: SWOT\nTopic: ${topic}\n\n${dimensions
+            .map((dimension, idx) => `### ${dimension}\n${branchAnalyses[idx]}`)
             .join("\n\n")}`;
         }
-
         if (framework === "pros_cons") {
           const dimensions = ["Pros", "Cons"];
           const memories = await loadMemories();
           const branchAnalyses = await Promise.all(
             dimensions.map((dimension) =>
-              runCognitiveAnalysis(
-                `${input.topic} — ${dimension}`,
-                msgCount,
-                memories,
-              ),
+              runCognitiveAnalysis(`${topic} — ${dimension}`, msgCount, memories),
             ),
           );
-          return `## Deep Analysis: Pros/Cons\nTopic: ${input.topic}\n\n${dimensions
-            .map(
-              (dimension, idx) => `### ${dimension}\n${branchAnalyses[idx]}`,
-            )
+          return `## Deep Analysis: Pros/Cons\nTopic: ${topic}\n\n${dimensions
+            .map((dimension, idx) => `### ${dimension}\n${branchAnalyses[idx]}`)
             .join("\n\n")}`;
         }
-
-        return `Analysis: ${framework.toUpperCase()} | "${input.topic}". Provide structured analysis with evidence-based reasoning.`;
+        return `Analysis: ${framework.toUpperCase()} | "${topic}". Provide structured analysis with evidence-based reasoning.`;
       },
-    }),
+    },
 
-    webScrape: createRorkTool({
+    webScrape: {
       description: "Fetch and extract content from a URL.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         url: z.string().describe("URL to fetch"),
-      }),
-      async execute(input: { url: string }) {
-        const { safeUrl, errorMessage } = validateWebScrapeUrl(input.url);
+      })),
+      async execute(input: Record<string, unknown>) {
+        const { safeUrl, errorMessage } = validateWebScrapeUrl(input.url as string);
         if (!safeUrl) {
           return errorMessage ?? "Invalid URL.";
         }
@@ -324,262 +326,108 @@ export function createAgentTools(options: CreateToolsOptions) {
           return `Failed to fetch ${safeUrl}: ${e instanceof Error ? e.message : "Unknown error"}`;
         }
       },
-    }),
+    },
 
-    generateImage: createRorkTool({
-      description:
-        "Generate an image. Use for creative requests or visualizations.",
-      zodSchema: z.object({
-        prompt: z.string().describe("Detailed image prompt"),
-        size: z.enum(["1024x1024", "1024x1792", "1792x1024"]).optional(),
-      }),
-      async execute(input: { prompt: string; size?: string }) {
-        const maxRetries = 2;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-          try {
-            console.log(
-              `[NEXUS] Generating image (attempt ${attempt + 1}):`,
-              input.prompt.substring(0, 60),
-            );
-            const response = await fetchWithTimeout(
-              "https://toolkit.rork.com/images/generate/",
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  prompt: input.prompt,
-                  size: input.size ?? "1024x1024",
-                }),
-              },
-              60000,
-            );
-            console.log(
-              "[NEXUS] Image API status:",
-              response.status,
-              response.statusText,
-            );
-            if (!response.ok) {
-              const errorBody = await response.text().catch(() => "");
-              console.log(
-                "[NEXUS] Image API error body:",
-                errorBody.substring(0, 300),
-              );
-              if (
-                attempt < maxRetries &&
-                (response.status >= 500 || response.status === 429)
-              ) {
-                console.log(`[NEXUS] Retrying in ${(attempt + 1) * 2}s...`);
-                await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-                continue;
-              }
-              return JSON.stringify({
-                error: true,
-                message: `Image generation service returned ${response.status}. Please try again later.`,
-              });
-            }
-            const rawText = await response.text();
-            console.log(
-              "[NEXUS] Image response length:",
-              rawText.length,
-              "preview:",
-              rawText.substring(0, 100),
-            );
-            let data: any;
-            try {
-              data = JSON.parse(rawText);
-            } catch {
-              console.log("[NEXUS] Failed to parse image response as JSON");
-              if (attempt < maxRetries) {
-                await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-                continue;
-              }
-              return JSON.stringify({
-                error: true,
-                message:
-                  "Received invalid response from image service. Please try again.",
-              });
-            }
-            console.log("[NEXUS] Image response keys:", Object.keys(data));
-            if (data.image?.base64Data) {
-              const mimeType = data.image.mimeType ?? "image/png";
-              console.log(
-                "[NEXUS] Image generated successfully, base64 length:",
-                data.image.base64Data.length,
-                "mimeType:",
-                mimeType,
-              );
-              return JSON.stringify({
-                success: true,
-                imageUri: `data:${mimeType};base64,${data.image.base64Data}`,
-                prompt: input.prompt.substring(0, 100),
-              });
-            }
-            console.log(
-              "[NEXUS] No image data in response:",
-              JSON.stringify(data).substring(0, 300),
-            );
-            if (attempt < maxRetries) {
-              console.log(`[NEXUS] Retrying in ${(attempt + 1) * 2}s...`);
-              await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-              continue;
-            }
-            return JSON.stringify({
-              error: true,
-              message:
-                "Image generation did not return image data. The service may be busy — please try again in a moment.",
-            });
-          } catch (e: unknown) {
-            console.log("[NEXUS] Image generation error:", e);
-            if (
-              attempt < maxRetries &&
-              e instanceof Error &&
-              (e.name === "AbortError" ||
-                e.message.includes("network") ||
-                e.message.includes("fetch"))
-            ) {
-              console.log(
-                `[NEXUS] Retrying after error in ${(attempt + 1) * 2}s...`,
-              );
-              await new Promise((r) => setTimeout(r, (attempt + 1) * 2000));
-              continue;
-            }
-            return JSON.stringify({
-              error: true,
-              message: `Image generation failed: ${e instanceof Error ? e.message : "Unknown error"}. Please try again.`,
-            });
-          }
-        }
-        return JSON.stringify({
-          error: true,
-          message:
-            "Image generation failed after multiple attempts. Please try again later.",
-        });
-      },
-    }),
-
-    calculator: createRorkTool({
+    calculator: {
       description: "Evaluate math expressions. Use instead of mental math.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         expression: z.string().describe("Math expression"),
-      }),
-      async execute(input: { expression: string }) {
+      })),
+      async execute(input: Record<string, unknown>) {
         try {
-          let expr = input.expression
+          let expr = (input.expression as string)
             .replace(/(\d+)%\s*of\s*(\d+(?:\.\d+)?)/gi, "($1/100)*$2")
             .replace(/(\d+(?:\.\d+)?)\s*%/g, "($1/100)");
           const safeExpr = expr.replace(
             /[^0-9+\-*/().%,\s]|Math\.\w+/g,
             (m) => (m.startsWith("Math.") ? m : ""),
           );
-          // eslint-disable-next-line no-implied-eval
+          // eslint-disable-next-line @typescript-eslint/no-implied-eval
           const fn = new Function("Math", `return (${safeExpr})`);
           const result = fn(Math);
           if (typeof result !== "number" || !isFinite(result))
-            return `Could not evaluate: "${input.expression}"`;
+            return `Could not evaluate: "${String(input.expression)}"`;
           const formatted = Number.isInteger(result)
             ? result.toString()
             : result.toFixed(6).replace(/\.?0+$/, "");
-          return `${input.expression} = ${formatted}`;
+          return `${String(input.expression)} = ${formatted}`;
         } catch (e: unknown) {
           return `Error: ${e instanceof Error ? e.message : "Unknown"}`;
         }
       },
-    }),
+    },
 
-    cognitiveAnalysis: createRorkTool({
+    cognitiveAnalysis: {
       description: "Tree of Thought reasoning for complex problems.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         problem: z.string().describe("Problem to reason through"),
-        preferredApproach: z
-          .enum(["analytical", "creative", "balanced", "adversarial"])
-          .optional(),
-      }),
-      async execute(input: { problem: string; preferredApproach?: string }) {
-        return runCognitiveAnalysis(input.problem, getMessageCount());
+        preferredApproach: z.enum(["analytical", "creative", "balanced", "adversarial"]).optional(),
+      })),
+      async execute(input: Record<string, unknown>) {
+        return runCognitiveAnalysis(input.problem as string, getMessageCount());
       },
-    }),
+    },
 
-    emotionalPulse: createRorkTool({
+    emotionalPulse: {
       description: "Analyze emotional undertone and adapt response.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         context: z.string().describe("Context to analyze"),
-      }),
-      async execute(input: { context: string }) {
-        const emotion = analyzeEmotion(input.context);
+      })),
+      async execute(input: Record<string, unknown>) {
+        const emotion = analyzeEmotion(input.context as string);
         const mimicry = buildEmotionalMimicry(emotion);
         return `Emotion: ${emotion.valence}/${emotion.arousal}, ${emotion.dominantEmotion}\nStyle: ${emotion.style}\n\n${mimicry}`;
       },
-    }),
+    },
 
-    askClarification: createRorkTool({
+    askClarification: {
       description: "Ask clarifying question when request is ambiguous.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         originalQuery: z.string(),
         ambiguityType: z.enum([
-          "vague_reference",
-          "multiple_interpretations",
-          "missing_context",
-          "unclear_scope",
-          "unclear_intent",
+          "vague_reference", "multiple_interpretations", "missing_context", "unclear_scope", "unclear_intent",
         ]),
-        possibleInterpretations: z.array(z.string()).min(1).max(4),
+        possibleInterpretations: z.array(z.string()),
         clarifyingQuestion: z.string(),
         bestGuess: z.string().optional(),
-      }),
-      async execute(input: {
-        originalQuery: string;
-        ambiguityType: string;
-        possibleInterpretations: string[];
-        clarifyingQuestion: string;
-        bestGuess?: string;
-      }) {
-        const interps = input.possibleInterpretations
+      })),
+      async execute(input: Record<string, unknown>) {
+        const possibleInterpretations = input.possibleInterpretations as string[];
+        const interps = possibleInterpretations
           .map((i, idx) => `${idx + 1}. ${i}`)
           .join("\n");
-        return `## Clarification Needed\nType: ${input.ambiguityType.replace(/_/g, " ")}\nInterpretations:\n${interps}\n${input.bestGuess ? `Best guess: ${input.bestGuess}\n` : ""}Ask: ${input.clarifyingQuestion}`;
+        const bestGuessStr = typeof input.bestGuess === 'string' ? input.bestGuess : '';
+        const clarifyingQ = String(input.clarifyingQuestion);
+        return `## Clarification Needed\nType: ${(input.ambiguityType as string).replace(/_/g, " ")}\nInterpretations:\n${interps}\n${bestGuessStr ? `Best guess: ${bestGuessStr}\n` : ""}Ask: ${clarifyingQ}`;
       },
-    }),
+    },
 
-    admitUncertainty: createRorkTool({
+    admitUncertainty: {
       description:
         "Use when you don't know the answer. Follow with webSearch.",
-      zodSchema: z.object({
+      parameters: zodToJsonSchema(z.object({
         topic: z.string(),
         uncertaintyReason: z.enum([
-          "outside_training",
-          "time_sensitive",
-          "too_specific",
-          "conflicting_info",
-          "no_knowledge",
-          "low_confidence",
+          "outside_training", "time_sensitive", "too_specific", "conflicting_info", "no_knowledge", "low_confidence",
         ]),
         whatYouKnow: z.string().optional(),
-        suggestedAction: z.enum([
-          "search_web",
-          "ask_user",
-          "provide_partial",
-          "defer",
-        ]),
-      }),
-      async execute(input: {
-        topic: string;
-        uncertaintyReason: string;
-        whatYouKnow?: string;
-        suggestedAction: string;
-      }) {
-        if (input.suggestedAction === "search_web") {
-          const searchQuery = input.whatYouKnow
-            ? `${input.topic} ${input.whatYouKnow}`
-            : input.topic;
+        suggestedAction: z.enum(["search_web", "ask_user", "provide_partial", "defer"]),
+      })),
+      async execute(input: Record<string, unknown>) {
+        const topic = input.topic as string;
+        const uncertaintyReason = input.uncertaintyReason as string;
+        const whatYouKnow = input.whatYouKnow as string | undefined;
+        const suggestedAction = input.suggestedAction as string;
+
+        if (suggestedAction === "search_web") {
+          const searchQuery = whatYouKnow ? `${topic} ${whatYouKnow}` : topic;
           const searchResults = await runWebSearch(searchQuery);
-          return `## Uncertainty\nTopic: ${input.topic}\nReason: ${input.uncertaintyReason.replace(/_/g, " ")}\nAction: search web\n\n${searchResults}`;
+          return `## Uncertainty\nTopic: ${topic}\nReason: ${uncertaintyReason.replace(/_/g, " ")}\nAction: search web\n\n${searchResults}`;
         }
-        return `## Uncertainty\nTopic: ${input.topic}\nReason: ${input.uncertaintyReason.replace(/_/g, " ")}${
-          input.whatYouKnow
-            ? `\nPartial: ${input.whatYouKnow}`
-            : ""
-        }\nAction: ${input.suggestedAction.replace(/_/g, " ")}`;
+        return `## Uncertainty\nTopic: ${topic}\nReason: ${uncertaintyReason.replace(/_/g, " ")}${
+          whatYouKnow ? `\nPartial: ${whatYouKnow}` : ""
+        }\nAction: ${suggestedAction.replace(/_/g, " ")}`;
       },
-    }),
+    },
   };
 }

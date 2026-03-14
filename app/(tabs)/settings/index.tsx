@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -6,16 +6,26 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  TextInput,
+  ActivityIndicator,
 } from "react-native";
 import {
   Brain,
   MessageSquare,
   Info,
   ChevronRight,
+  Server,
+  Wifi,
+  WifiOff,
+  Thermometer,
+  Hash,
+  RotateCw,
+  Cpu,
 } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import Colors from "../../../constants/colors";
 import { useConversations } from "@/providers/ConversationsProvider";
+import { useLlama } from "@/providers/LlamaProvider";
 
 function SettingsRow({
   icon: Icon,
@@ -24,20 +34,18 @@ function SettingsRow({
   detail,
   onPress,
   destructive,
+  rightElement,
 }: {
   icon: React.ElementType;
   iconColor: string;
   label: string;
   detail?: string;
-  onPress: () => void;
+  onPress?: () => void;
   destructive?: boolean;
+  rightElement?: React.ReactNode;
 }) {
-  return (
-    <TouchableOpacity
-      style={styles.row}
-      onPress={onPress}
-      activeOpacity={0.6}
-    >
+  const content = (
+    <View style={styles.row}>
       <View style={[styles.rowIcon, { backgroundColor: iconColor + "15" }]}>
         <Icon size={16} color={iconColor} />
       </View>
@@ -49,14 +57,69 @@ function SettingsRow({
         </Text>
         {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
       </View>
-      <ChevronRight size={16} color={Colors.dark.textTertiary} />
-    </TouchableOpacity>
+      {rightElement ?? <ChevronRight size={16} color={Colors.dark.textTertiary} />}
+    </View>
+  );
+
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.6}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  return content;
+}
+
+function ParamSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (v: number) => void;
+}) {
+  const decrease = () => {
+    const next = Math.max(min, value - step);
+    onChange(parseFloat(next.toFixed(2)));
+    void Haptics.selectionAsync();
+  };
+  const increase = () => {
+    const next = Math.min(max, value + step);
+    onChange(parseFloat(next.toFixed(2)));
+    void Haptics.selectionAsync();
+  };
+
+  return (
+    <View style={styles.paramRow}>
+      <Text style={styles.paramLabel}>{label}</Text>
+      <View style={styles.paramControls}>
+        <TouchableOpacity style={styles.paramBtn} onPress={decrease} activeOpacity={0.6}>
+          <Text style={styles.paramBtnText}>−</Text>
+        </TouchableOpacity>
+        <Text style={styles.paramValue}>{value}</Text>
+        <TouchableOpacity style={styles.paramBtn} onPress={increase} activeOpacity={0.6}>
+          <Text style={styles.paramBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 export default function SettingsScreen() {
   const { conversations, memories, clearConversations, clearMemories } =
     useConversations();
+  const { config, isConnected, isCheckingHealth, updateConfig, checkHealth } =
+    useLlama();
+  const [editingUrl, setEditingUrl] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(config.serverUrl);
 
   const handleClearHistory = useCallback(() => {
     if (conversations.length === 0) {
@@ -102,8 +165,142 @@ export default function SettingsScreen() {
     );
   }, [memories.length, clearMemories]);
 
+  const handleSaveUrl = useCallback(() => {
+    const trimmed = urlDraft.trim().replace(/\/+$/, '');
+    if (!trimmed) return;
+    updateConfig({ serverUrl: trimmed });
+    setEditingUrl(false);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setTimeout(() => checkHealth(trimmed), 500);
+  }, [urlDraft, updateConfig, checkHealth]);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>LLAMA.CPP SERVER</Text>
+        <View style={styles.card}>
+          <SettingsRow
+            icon={isConnected ? Wifi : WifiOff}
+            iconColor={isConnected ? Colors.dark.accent : Colors.dark.error}
+            label="Server Status"
+            detail={isConnected ? "Connected" : "Disconnected"}
+            rightElement={
+              isCheckingHealth ? (
+                <ActivityIndicator size="small" color={Colors.dark.accent} />
+              ) : (
+                <TouchableOpacity
+                  onPress={() => checkHealth()}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <RotateCw size={16} color={Colors.dark.textSecondary} />
+                </TouchableOpacity>
+              )
+            }
+          />
+          <View style={styles.separator} />
+          {editingUrl ? (
+            <View style={styles.urlEditRow}>
+              <View style={[styles.rowIcon, { backgroundColor: Colors.dark.info + "15" }]}>
+                <Server size={16} color={Colors.dark.info} />
+              </View>
+              <TextInput
+                style={styles.urlInput}
+                value={urlDraft}
+                onChangeText={setUrlDraft}
+                placeholder="http://localhost:8080"
+                placeholderTextColor={Colors.dark.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                returnKeyType="done"
+                onSubmitEditing={handleSaveUrl}
+                autoFocus
+                testID="server-url-input"
+              />
+              <TouchableOpacity style={styles.saveBtn} onPress={handleSaveUrl} activeOpacity={0.7}>
+                <Text style={styles.saveBtnText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <SettingsRow
+              icon={Server}
+              iconColor={Colors.dark.info}
+              label="Server URL"
+              detail={config.serverUrl}
+              onPress={() => {
+                setUrlDraft(config.serverUrl);
+                setEditingUrl(true);
+              }}
+            />
+          )}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>MODEL PARAMETERS</Text>
+        <View style={styles.card}>
+          <View style={styles.paramSection}>
+            <View style={styles.paramHeader}>
+              <Thermometer size={13} color={Colors.dark.toolAnalysis} />
+              <Text style={styles.paramHeaderText}>Temperature</Text>
+            </View>
+            <ParamSlider
+              label="Creativity"
+              value={config.temperature}
+              min={0}
+              max={2}
+              step={0.1}
+              onChange={(v) => updateConfig({ temperature: v })}
+            />
+          </View>
+          <View style={styles.separator} />
+          <View style={styles.paramSection}>
+            <View style={styles.paramHeader}>
+              <Cpu size={13} color={Colors.dark.cyan} />
+              <Text style={styles.paramHeaderText}>Top P</Text>
+            </View>
+            <ParamSlider
+              label="Nucleus sampling"
+              value={config.topP}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(v) => updateConfig({ topP: v })}
+            />
+          </View>
+          <View style={styles.separator} />
+          <View style={styles.paramSection}>
+            <View style={styles.paramHeader}>
+              <Hash size={13} color={Colors.dark.purple} />
+              <Text style={styles.paramHeaderText}>Max Tokens</Text>
+            </View>
+            <ParamSlider
+              label="Response length"
+              value={config.maxTokens}
+              min={256}
+              max={8192}
+              step={256}
+              onChange={(v) => updateConfig({ maxTokens: v })}
+            />
+          </View>
+          <View style={styles.separator} />
+          <View style={styles.paramSection}>
+            <View style={styles.paramHeader}>
+              <RotateCw size={13} color={Colors.dark.rose} />
+              <Text style={styles.paramHeaderText}>Repeat Penalty</Text>
+            </View>
+            <ParamSlider
+              label="Repetition control"
+              value={config.repeatPenalty}
+              min={1}
+              max={2}
+              step={0.05}
+              onChange={(v) => updateConfig({ repeatPenalty: v })}
+            />
+          </View>
+        </View>
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>DATA</Text>
         <View style={styles.card}>
@@ -132,27 +329,27 @@ export default function SettingsScreen() {
         <View style={styles.card}>
           <View style={styles.aboutRow}>
             <Info size={14} color={Colors.dark.textTertiary} />
-            <Text style={styles.aboutText}>NEXUS AI Assistant</Text>
+            <Text style={styles.aboutText}>NEXUS — Powered by llama.cpp</Text>
           </View>
           <Text style={styles.aboutDetail}>
-            Context-aware AI with persistent memory, semantic search, and
-            multi-tool orchestration.
+            Local-first AI assistant using llama.cpp for inference. Features persistent
+            memory, semantic search, tool orchestration, and streaming responses.
           </Text>
           <View style={styles.aboutChips}>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>llama.cpp</Text>
+            </View>
+            <View style={styles.chip}>
+              <Text style={styles.chipText}>Local Inference</Text>
+            </View>
             <View style={styles.chip}>
               <Text style={styles.chipText}>TF-IDF Memory</Text>
             </View>
             <View style={styles.chip}>
-              <Text style={styles.chipText}>Auto-Extract</Text>
+              <Text style={styles.chipText}>Tool Calling</Text>
             </View>
             <View style={styles.chip}>
-              <Text style={styles.chipText}>Voice Mode</Text>
-            </View>
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>Web Search</Text>
-            </View>
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>Image Gen</Text>
+              <Text style={styles.chipText}>Streaming</Text>
             </View>
           </View>
         </View>
@@ -219,6 +416,86 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: Colors.dark.borderSubtle,
     marginLeft: 60,
+  },
+  urlEditRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  urlInput: {
+    flex: 1,
+    color: Colors.dark.text,
+    fontSize: 14,
+    backgroundColor: Colors.dark.surfaceElevated,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: Colors.dark.border,
+  },
+  saveBtn: {
+    backgroundColor: Colors.dark.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  saveBtnText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
+  paramSection: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  paramHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  paramHeaderText: {
+    color: Colors.dark.textSecondary,
+    fontSize: 13,
+    fontWeight: "600" as const,
+  },
+  paramRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  paramLabel: {
+    color: Colors.dark.textTertiary,
+    fontSize: 12,
+  },
+  paramControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  paramBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: Colors.dark.surfaceElevated,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: Colors.dark.borderSubtle,
+  },
+  paramBtnText: {
+    color: Colors.dark.text,
+    fontSize: 16,
+    fontWeight: "600" as const,
+  },
+  paramValue: {
+    color: Colors.dark.text,
+    fontSize: 14,
+    fontWeight: "600" as const,
+    minWidth: 48,
+    textAlign: "center" as const,
   },
   aboutRow: {
     flexDirection: "row",
