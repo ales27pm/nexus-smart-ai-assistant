@@ -1,8 +1,6 @@
-import React, { useEffect, useRef } from "react";
+import React from "react";
 import {
   Animated,
-  Easing,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,6 +10,9 @@ import {
 import { ArrowRight, Sparkles } from "lucide-react-native";
 import * as Haptics from "expo-haptics";
 import Colors from "@/constants/colors";
+import { Typography } from "@/constants/typography";
+import { EmptyStateBackground } from "@/components/empty-state/EmptyStateBackground";
+import { useEmptyStateAnimations } from "@/hooks/useEmptyStateAnimations";
 
 const QUICK_STARTS = [
   "Plan my top 3 priorities for today",
@@ -23,76 +24,12 @@ interface EmptyStateProps {
 }
 
 export default function EmptyState({ onSuggestion }: EmptyStateProps) {
-  const entranceOpacity = useRef(new Animated.Value(0)).current;
-  const entranceY = useRef(new Animated.Value(18)).current;
-  const auraOpacity = useRef(new Animated.Value(0.22)).current;
-  const markScale = useRef(new Animated.Value(0.98)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(entranceOpacity, {
-        toValue: 1,
-        duration: 520,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(entranceY, {
-        toValue: 0,
-        duration: 520,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    const auraLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(auraOpacity, {
-          toValue: 0.42,
-          duration: 2400,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(auraOpacity, {
-          toValue: 0.22,
-          duration: 2400,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    const markLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(markScale, {
-          toValue: 1.02,
-          duration: 2600,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(markScale, {
-          toValue: 0.98,
-          duration: 2600,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    auraLoop.start();
-    markLoop.start();
-
-    return () => {
-      auraLoop.stop();
-      markLoop.stop();
-    };
-  }, [auraOpacity, entranceOpacity, entranceY, markScale]);
+  const { entranceOpacity, entranceY, auraOpacity, markScale } =
+    useEmptyStateAnimations();
 
   return (
     <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-      <View style={styles.background} pointerEvents="none">
-        <View style={styles.atmosphereTop} />
-        <View style={styles.atmosphereBottom} />
-      </View>
+      <EmptyStateBackground />
 
       <Animated.View
         style={[
@@ -119,63 +56,34 @@ export default function EmptyState({ onSuggestion }: EmptyStateProps) {
           Keep context, reason faster, and turn rough ideas into clear actions.
         </Text>
 
-        <View style={styles.ctaGroup}>
-          {QUICK_STARTS.map((prompt) => (
-            <Pressable
-              key={prompt}
-              style={styles.cta}
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onSuggestion?.(prompt);
-              }}
-            >
-              <Text style={styles.ctaText}>{prompt}</Text>
-              <ArrowRight size={16} color={Colors.dark.accent} />
-            </Pressable>
-          ))}
-        </View>
+        {onSuggestion ? (
+          <View style={styles.ctaGroup}>
+            {QUICK_STARTS.map((prompt) => (
+              <Pressable
+                key={prompt}
+                style={styles.cta}
+                onPress={() => {
+                  void Haptics.impactAsync(
+                    Haptics.ImpactFeedbackStyle.Light,
+                  ).catch(() => {});
+                  onSuggestion(prompt);
+                }}
+              >
+                <Text style={styles.ctaText}>{prompt}</Text>
+                <ArrowRight size={16} color={Colors.dark.accent} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
       </Animated.View>
     </ScrollView>
   );
 }
 
-const headingFont = Platform.select({
-  ios: "AvenirNext-Bold",
-  android: "serif",
-  default: "Georgia",
-});
-
-const bodyFont = Platform.select({
-  ios: "AvenirNext-Regular",
-  android: "sans-serif-medium",
-  default: "Helvetica",
-});
-
 const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     backgroundColor: Colors.dark.background,
-  },
-  background: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  atmosphereTop: {
-    position: "absolute",
-    top: -180,
-    left: -100,
-    width: 360,
-    height: 360,
-    borderRadius: 180,
-    backgroundColor: "rgba(16, 185, 129, 0.18)",
-  },
-  atmosphereBottom: {
-    position: "absolute",
-    right: -130,
-    bottom: -220,
-    width: 420,
-    height: 420,
-    borderRadius: 210,
-    backgroundColor: "rgba(251, 191, 36, 0.16)",
   },
   hero: {
     flex: 1,
@@ -205,7 +113,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   brand: {
-    fontFamily: headingFont,
+    fontFamily: Typography.serifDisplay,
     color: Colors.dark.text,
     fontSize: 44,
     lineHeight: 48,
@@ -213,7 +121,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   headline: {
-    fontFamily: headingFont,
+    fontFamily: Typography.display,
     color: Colors.dark.text,
     fontSize: 28,
     lineHeight: 34,
@@ -222,7 +130,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   support: {
-    fontFamily: bodyFont,
+    fontFamily: Typography.body,
     color: Colors.dark.textSecondary,
     fontSize: 16,
     lineHeight: 24,
@@ -248,7 +156,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: 12,
     color: Colors.dark.text,
-    fontFamily: bodyFont,
+    fontFamily: Typography.body,
     fontSize: 16,
     lineHeight: 22,
   },
