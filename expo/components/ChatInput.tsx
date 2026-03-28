@@ -27,6 +27,8 @@ interface ChatInputProps {
   onSend: (text: string, files?: ChatFile[]) => void;
   disabled?: boolean;
   onOpenVoiceMode?: () => void;
+  appearance?: "dark" | "light";
+  placeholder?: string;
 }
 
 const STT_URL = "https://toolkit.rork.com/stt/transcribe/";
@@ -35,6 +37,8 @@ export default function ChatInput({
   onSend,
   disabled,
   onOpenVoiceMode,
+  appearance = "dark",
+  placeholder,
 }: ChatInputProps) {
   const [text, setText] = useState("");
   const [attachedImages, setAttachedImages] = useState<ChatFile[]>([]);
@@ -152,7 +156,9 @@ export default function ChatInput({
       const data = await response.json();
       if (data.text) {
         setText((prev) => (prev ? prev + " " + data.text : data.text));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success,
+        );
         console.log("[ChatInput] Transcribed:", data.text.substring(0, 60));
       }
     } catch (e) {
@@ -326,6 +332,7 @@ export default function ChatInput({
   }, [onOpenVoiceMode, disabled, isTranscribing]);
 
   const hasContent = text.trim().length > 0 || attachedImages.length > 0;
+  const palette = appearance === "light" ? Colors.light : Colors.dark;
 
   return (
     <KeyboardAvoidingView
@@ -350,7 +357,21 @@ export default function ChatInput({
             ))}
           </View>
         )}
-        <View style={styles.inputRow}>
+        <View
+          style={[
+            styles.inputRow,
+            {
+              backgroundColor:
+                appearance === "light"
+                  ? Colors.light.surface
+                  : Colors.dark.inputBackground,
+              borderColor:
+                appearance === "light"
+                  ? Colors.light.borderSubtle
+                  : Colors.dark.border,
+            },
+          ]}
+        >
           <TouchableOpacity
             style={styles.actionBtn}
             activeOpacity={0.6}
@@ -360,13 +381,11 @@ export default function ChatInput({
           >
             <Plus
               size={18}
-              color={
-                disabled ? Colors.dark.textTertiary : Colors.dark.textSecondary
-              }
+              color={disabled ? palette.textTertiary : palette.textSecondary}
             />
           </TouchableOpacity>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: palette.text }]}
             value={text}
             onChangeText={setText}
             placeholder={
@@ -374,10 +393,10 @@ export default function ChatInput({
                 ? "Listening..."
                 : isTranscribing
                   ? "Transcribing..."
-                  : "Ask anything..."
+                  : (placeholder ?? "Ask anything...")
             }
             placeholderTextColor={
-              isRecording ? Colors.dark.error : Colors.dark.textTertiary
+              isRecording ? Colors.dark.error : palette.textTertiary
             }
             multiline
             maxLength={4000}
@@ -389,7 +408,16 @@ export default function ChatInput({
           {hasContent ? (
             <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
               <TouchableOpacity
-                style={[styles.sendBtn, disabled && styles.sendBtnDisabled]}
+                style={[
+                  styles.sendBtn,
+                  {
+                    backgroundColor:
+                      appearance === "light"
+                        ? Colors.dark.text
+                        : Colors.dark.accent,
+                  },
+                  disabled && styles.sendBtnDisabled,
+                ]}
                 onPress={handleSend}
                 disabled={disabled}
                 activeOpacity={0.7}
@@ -397,13 +425,13 @@ export default function ChatInput({
               >
                 <Send
                   size={16}
-                  color={disabled ? Colors.dark.textTertiary : "#fff"}
+                  color={disabled ? palette.textTertiary : "#fff"}
                 />
               </TouchableOpacity>
             </Animated.View>
           ) : isTranscribing ? (
             <View style={styles.actionBtn}>
-              <ActivityIndicator size="small" color={Colors.dark.accent} />
+              <ActivityIndicator size="small" color={palette.accent} />
             </View>
           ) : (
             <View style={styles.micRow}>
@@ -416,14 +444,21 @@ export default function ChatInput({
               >
                 <AudioLines
                   size={16}
-                  color={disabled ? Colors.dark.textTertiary : Colors.dark.cyan}
+                  color={disabled ? palette.textTertiary : palette.accent}
                 />
               </TouchableOpacity>
               <Animated.View
                 style={{ transform: [{ scale: isRecording ? pulseAnim : 1 }] }}
               >
                 <TouchableOpacity
-                  style={[styles.actionBtn, isRecording && styles.recordingBtn]}
+                  style={[
+                    styles.actionBtn,
+                    isRecording && styles.recordingBtn,
+                    isRecording &&
+                      appearance === "dark" && {
+                        backgroundColor: Colors.dark.errorDim,
+                      },
+                  ]}
                   activeOpacity={0.6}
                   onPress={toggleRecording}
                   disabled={disabled}
@@ -432,7 +467,7 @@ export default function ChatInput({
                   {isRecording ? (
                     <MicOff size={18} color={Colors.dark.error} />
                   ) : (
-                    <Mic size={18} color={Colors.dark.textSecondary} />
+                    <Mic size={18} color={palette.textSecondary} />
                   )}
                 </TouchableOpacity>
               </Animated.View>
@@ -449,8 +484,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderTopWidth: 1,
-    borderTopColor: Colors.dark.borderSubtle,
-    backgroundColor: Colors.dark.background,
+    borderTopColor: "transparent",
+    backgroundColor: "transparent",
   },
   previewRow: {
     flexDirection: "row",
@@ -481,11 +516,11 @@ const styles = StyleSheet.create({
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: Colors.dark.inputBackground,
+    backgroundColor: Colors.light.surface,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: Colors.dark.border,
-    paddingHorizontal: 6,
+    borderColor: Colors.light.borderSubtle,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     gap: 2,
   },
@@ -509,11 +544,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   recordingBtn: {
-    backgroundColor: Colors.dark.errorDim,
+    backgroundColor: Colors.light.accentSoft,
   },
   input: {
     flex: 1,
-    color: Colors.dark.text,
     fontSize: 15,
     maxHeight: 120,
     paddingVertical: 8,
