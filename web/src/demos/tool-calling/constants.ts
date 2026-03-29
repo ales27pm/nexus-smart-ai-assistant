@@ -1,8 +1,11 @@
 export const MODELS = [
-  { id: 'onnx-community/LFM2-350M-Instruct', label: 'LFM2-350M (fast)' },
-  { id: 'onnx-community/LFM2-700M-Instruct', label: 'LFM2-700M' },
-  { id: 'onnx-community/LFM2-1.2B-Instruct', label: 'LFM2-1.2B (best)' },
-]
+  { id: "onnx-community/LFM2-350M-ONNX", label: "LFM2-350M (fast)" },
+  { id: "onnx-community/LFM2-700M-ONNX", label: "LFM2-700M" },
+  {
+    id: "LiquidAI/LFM2.5-1.2B-Instruct-ONNX",
+    label: "LFM2.5-1.2B Instruct (best)",
+  },
+];
 
 export const DEFAULT_TOOLS_CODE = `\
 # Define your Python-style tools here.
@@ -54,13 +57,13 @@ def search_web(query: str, num_results: int = 3) -> dict:
             for i in range(min(num_results, 10))
         ]
     }
-`
+`;
 
 export const SYSTEM_PROMPT = `You are a helpful assistant with access to tools. When you need to call a tool, use the following Python-style syntax:
 
 tool_name(arg1="value1", arg2="value2")
 
-Only call one tool at a time. Wait for the result before calling another tool.`
+Only call one tool at a time. Wait for the result before calling another tool.`;
 
 export const EXAMPLE_PROMPTS = [
   "What's the weather like in Tokyo and Paris?",
@@ -68,4 +71,4 @@ export const EXAMPLE_PROMPTS = [
   "Search the web for the latest LLM benchmarks",
   "What is 2^32 + the square root of 144?",
   "Find information about WebGPU browser support",
-]
+];
