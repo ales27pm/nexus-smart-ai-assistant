@@ -1,0 +1,8 @@
+{
+  "android": {
+    "package": "com.anonymous.workspace"
+  },
+  "ios": {
+    "bundleIdentifier": "com.anonymous.workspace"
+  }
+}
